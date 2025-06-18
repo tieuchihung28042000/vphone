@@ -10,12 +10,7 @@ function Login() {
   const handleLogin = async (e) => {
     e.preventDefault();
 
-    const apiUrl = import.meta.env.VITE_API_URL;
-
-    if (!apiUrl) {
-      alert("❌ Thiếu cấu hình biến môi trường VITE_API_URL");
-      return;
-    }
+    const apiUrl = import.meta.env.VITE_API_URL || window.location.origin;
 
     try {
       const res = await fetch(`${apiUrl}/api/auth/login`, {

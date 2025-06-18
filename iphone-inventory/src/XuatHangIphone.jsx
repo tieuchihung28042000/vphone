@@ -15,7 +15,7 @@ export default function XuatHangIphone() {
     }
 
     try {
-      const response = await axios.post("http://localhost:4000/api/xuat-hang", {
+      const response = await axios.post(`${import.meta.env.VITE_API_URL || window.location.origin}/api/xuat-hang`, {
         imei,
         price_sell: priceSell,
         customer,
