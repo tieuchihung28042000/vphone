@@ -706,11 +706,15 @@ function NhapHang() {
         {/* Thông tin tổng hợp */}
         <div className="font-semibold mt-4 text-right text-blue-700 space-y-1">
           <div>Tổng số sản phẩm: {filteredItems.length} sản phẩm</div>
-          <div>Tổng tiền nhập hàng toàn bộ kho:{" "}
+          <div>Đã bán: {filteredItems.filter(item => item.status === 'sold').length} sản phẩm</div>
+          <div>Còn lại: {filteredItems.filter(item => item.status !== 'sold').length} sản phẩm</div>
+          <div>Tổng tiền nhập hàng (chưa bán):{" "}
             {formatNumber(
-              filteredItems.reduce((sum, item) =>
-                sum + (Number(item.price_import || 0) * Number(item.quantity || 1)), 0
-              )
+              filteredItems
+                .filter(item => item.status !== 'sold') // Chỉ tính sản phẩm chưa bán
+                .reduce((sum, item) =>
+                  sum + (Number(item.price_import || 0) * Number(item.quantity || 1)), 0
+                )
             )}đ
           </div>
         </div>
