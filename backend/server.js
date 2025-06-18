@@ -17,7 +17,11 @@ const app = express();
 // Danh sách origin frontend được phép truy cập API backend
 const allowedOrigins = [
   'http://localhost:5174',
+  'http://localhost:5175',
+  'http://localhost:3000',
   'https://chinhthuc-jade.vercel.app',
+  'http://app.vphone.vn',
+  'https://app.vphone.vn',
 ];
 
 app.use(cors({
@@ -25,6 +29,11 @@ app.use(cors({
     // Cho phép các request không có origin (Postman, mobile apps)
     if (!origin) return callback(null, true);
     if (!allowedOrigins.includes(origin)) {
+      console.log('⚠️ CORS warning - Origin not in allowlist:', origin);
+      // Trong development, cho phép tất cả origins
+      if (process.env.NODE_ENV !== 'production') {
+        return callback(null, true);
+      }
       const msg = '❌ CORS bị chặn: ' + origin;
       return callback(new Error(msg), false);
     }

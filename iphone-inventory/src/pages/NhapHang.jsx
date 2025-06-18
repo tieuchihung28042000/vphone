@@ -709,13 +709,13 @@ function NhapHang() {
           <div>Đã bán: {filteredItems.filter(item => item.status === 'sold').length} sản phẩm</div>
           <div>Còn lại: {filteredItems.filter(item => item.status !== 'sold').length} sản phẩm</div>
           <div>Tổng tiền nhập hàng (chưa bán):{" "}
-            {formatNumber(
+          {formatNumber(
               filteredItems
                 .filter(item => item.status !== 'sold') // Chỉ tính sản phẩm chưa bán
                 .reduce((sum, item) =>
-                  sum + (Number(item.price_import || 0) * Number(item.quantity || 1)), 0
-                )
-            )}đ
+              sum + (Number(item.price_import || 0) * Number(item.quantity || 1)), 0
+            )
+          )}đ
           </div>
         </div>
         <div className="flex justify-center space-x-2 mt-4">
