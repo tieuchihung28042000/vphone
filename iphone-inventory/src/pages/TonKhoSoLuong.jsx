@@ -3,15 +3,21 @@ import * as XLSX from "xlsx";
 import { useNavigate } from "react-router-dom";
 import LogoutButton from "../components/LogoutButton";
 
+// Nếu bạn cần hàm formatNumber, bật dòng này
+// function formatNumber(num) { return num ? num.toLocaleString('vi-VN') : '0'; }
+
 function TonKhoSoLuong() {
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [branchFilter, setBranchFilter] = useState("all");
   const [monthFilter, setMonthFilter] = useState("");
+  const [categoryFilter, setCategoryFilter] = useState("all"); // Thêm state lọc category
+  const [categories, setCategories] = useState([]);            // Thêm state list category
   const [selectedSKU, setSelectedSKU] = useState(null);
   const [imeiList, setImeiList] = useState([]);
   const [showLowStockOnly, setShowLowStockOnly] = useState(false);
+  const [branches, setBranches] = useState([]);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -36,8 +42,9 @@ function TonKhoSoLuong() {
             grouped[key] = {
               sku: item.sku || "Không rõ",
               tenSanPham: item.tenSanPham || item.product_name || "Không rõ",
-              branch: item.branch || "Mặc định",
+              branch: (item.branch || "Mặc định").trim(),
               importMonth,
+              category: item.category || "Không rõ", // Có category ở đây
               totalImport: 0,
               totalSold: 0,
               totalRemain: 0,
@@ -45,10 +52,14 @@ function TonKhoSoLuong() {
             };
           }
 
-          grouped[key].totalImport += 1;
-          if (item.status === "sold") {
-            grouped[key].totalSold += 1;
-          } else {
+          const isAccessory = !item.imei;
+          const importQty = isAccessory ? Number(item.quantity) || 0 : 1;
+          const soldQty = isAccessory ? Number(item.sold_quantity) || 0 : (item.status === "sold" ? 1 : 0);
+
+          grouped[key].totalImport += importQty;
+          grouped[key].totalSold += soldQty;
+
+          if (!isAccessory && item.status !== "sold") {
             grouped[key].imeis.push(item.imei);
           }
         });
@@ -61,6 +72,19 @@ function TonKhoSoLuong() {
           .filter((g) => g.totalRemain >= 0);
 
         setData(result);
+
+        // --- Lấy danh sách chi nhánh tự động từ dữ liệu ---
+        const allBranches = Array.from(
+          new Set(result.map(row => (row.branch || "Mặc định").trim()))
+        );
+        setBranches(allBranches);
+
+        // --- Lấy danh sách category tự động từ dữ liệu ---
+        const allCategories = Array.from(
+          new Set(result.map(row => (row.category || "Không rõ").trim()))
+        );
+        setCategories(allCategories);
+
         setLoading(false);
       })
       .catch((err) => {
@@ -75,7 +99,8 @@ function TonKhoSoLuong() {
     const matchBranch = branchFilter === "all" || row.branch === branchFilter;
     const matchMonth = monthFilter === "" || row.importMonth === monthFilter;
     const matchLowStock = !showLowStockOnly || row.totalRemain < 2;
-    return matchSearch && matchBranch && matchMonth && matchLowStock;
+    const matchCategory = categoryFilter === "all" || row.category === categoryFilter; // Bổ sung lọc category
+    return matchSearch && matchBranch && matchMonth && matchLowStock && matchCategory;
   });
 
   const exportToExcel = () => {
@@ -136,9 +161,20 @@ function TonKhoSoLuong() {
           onChange={(e) => setBranchFilter(e.target.value)}
         >
           <option value="all">Tất cả chi nhánh</option>
-          <option value="Gò Vấp">Gò Vấp</option>
-          <option value="Dĩ An">Dĩ An</option>
-          <option value="Thủ Đức">Thủ Đức</option>
+          {branches.map(branch => (
+            <option key={branch} value={branch}>{branch}</option>
+          ))}
+        </select>
+        {/* Thêm dropdown lọc thư mục/category */}
+        <select
+          className="border rounded px-4 py-2"
+          value={categoryFilter}
+          onChange={e => setCategoryFilter(e.target.value)}
+        >
+          <option value="all">Tất cả thư mục</option>
+          {categories.map(cat => (
+            <option key={cat} value={cat}>{cat}</option>
+          ))}
         </select>
         <input
           type="month"
@@ -160,12 +196,6 @@ function TonKhoSoLuong() {
           />
           <span className="text-sm">⚠️ Chỉ hiện hàng còn dưới 2</span>
         </label>
-        <button
-          onClick={() => navigate("/canh-bao-ton-kho")}
-          className="bg-red-600 text-white px-4 py-2 rounded hover:bg-red-700"
-        >
-          ⚠️ Danh sách cần nhập
-        </button>
       </div>
 
       {loading ? (
@@ -178,6 +208,7 @@ function TonKhoSoLuong() {
             <tr className="bg-gray-100 text-left">
               <th className="border p-2">Mã hàng (SKU)</th>
               <th className="border p-2">Tên sản phẩm</th>
+              <th className="border p-2 text-center">Thư mục</th>
               <th className="border p-2 text-center">Tổng nhập</th>
               <th className="border p-2 text-center">Tổng xuất</th>
               <th className="border p-2 text-center">Còn lại</th>
@@ -196,6 +227,7 @@ function TonKhoSoLuong() {
               >
                 <td className="border p-2 text-blue-700 underline">{row.sku}</td>
                 <td className="border p-2">{row.tenSanPham}</td>
+                <td className="border p-2 text-center">{row.category}</td>
                 <td className="border p-2 text-center">{row.totalImport}</td>
                 <td className="border p-2 text-center">{row.totalSold}</td>
                 <td

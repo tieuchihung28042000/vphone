@@ -1,15 +1,28 @@
 import { useState, useEffect } from "react";
 import LogoutButton from "../components/LogoutButton";
 
+// Hàm format số có dấu cách
+function formatNumberInput(val) {
+  // Xóa ký tự không phải số
+  let num = val.replace(/\D/g, "");
+  // Format dấu cách mỗi 3 số
+  return num.replace(/\B(?=(\d{3})+(?!\d))/g, " ");
+}
+// Hàm xóa format
+function unformatNumberInput(val) {
+  return val.replace(/\D/g, "");
+}
+
 function XuatHang() {
   const [formData, setFormData] = useState({
     imei: "",
     sold_date: "",
     sku: "",
     product_name: "",
+    quantity: "",
     price_sell: "",
     customer_name: "",
-    customer_phone: "", // <-- Thêm trường SĐT khách hàng
+    customer_phone: "",
     warranty: "",
     note: "",
     debt: "",
@@ -32,15 +45,20 @@ function XuatHang() {
   // Lấy danh sách đơn xuất
   const fetchSales = async () => {
     try {
-      const res = await fetch(`${import.meta.env.VITE_API_URL}/api/xuat-hang-list`);
+      const today = new Date();
+      const from = "2020-01-01";
+      const to = today.toISOString().slice(0, 10);
+      const res = await fetch(
+        `${import.meta.env.VITE_API_URL}/api/bao-cao-don-hang-chi-tiet?from=${from}&to=${to}`
+      );
       const data = await res.json();
-      setSales(Array.isArray(data.items) ? data.items : []);
+      setSales(Array.isArray(data.orders) ? data.orders : []);
     } catch (err) {
       setSales([]);
     }
   };
 
-  // Lấy tồn kho để gợi ý (chỉ lấy những sản phẩm còn tồn kho)
+  // Lấy tồn kho để gợi ý
   const fetchSuggestList = async (query) => {
     if (!query || query.length < 2) return setSuggestList([]);
     const res = await fetch(`${import.meta.env.VITE_API_URL}/api/ton-kho`);
@@ -83,7 +101,11 @@ function XuatHang() {
   // Khi nhập IMEI sẽ tự động fill tên máy & SKU nếu tìm thấy
   const handleImeiChange = async (e) => {
     const imei = e.target.value;
-    setFormData((prev) => ({ ...prev, imei }));
+    setFormData((prev) => ({
+      ...prev,
+      imei,
+      quantity: 1, // iPhone luôn chỉ 1 máy/lần
+    }));
     if (imei.length >= 8) {
       const res = await fetch(`${import.meta.env.VITE_API_URL}/api/ton-kho`);
       const data = await res.json();
@@ -93,6 +115,7 @@ function XuatHang() {
           ...prev,
           product_name: found.product_name || found.tenSanPham || "",
           sku: found.sku || "",
+          quantity: 1,
         }));
       }
     }
@@ -112,6 +135,7 @@ function XuatHang() {
       product_name: item.name,
       sku: item.sku,
       imei: item.isAccessory ? "" : (item.imeis.length === 1 ? item.imeis[0] : ""),
+      quantity: "" // ĐỂ TRỐNG khi là phụ kiện
     }));
     setShowSuggest(false);
     setSelectImeis(item.isAccessory ? [] : (item.imeis.length > 1 ? item.imeis : []));
@@ -119,21 +143,48 @@ function XuatHang() {
 
   // Nếu nhiều IMEI thì chọn tiếp
   const handleSelectImei = (imei) => {
-    setFormData(prev => ({ ...prev, imei }));
+    setFormData(prev => ({
+      ...prev,
+      imei,
+      quantity: 1
+    }));
     setSelectImeis([]);
   };
 
+  // Sửa lại handleChange để format cho price_sell và debt
   const handleChange = (e) => {
-    setFormData((prev) => ({
-      ...prev,
-      [e.target.name]: e.target.value,
-    }));
+    const { name, value, type } = e.target;
+
+    if (name === "price_sell" || name === "debt") {
+      setFormData((prev) => ({
+        ...prev,
+        [name]: formatNumberInput(value),
+      }));
+    } else if (name === "quantity") {
+      setFormData((prev) => ({
+        ...prev,
+        [name]: value.replace(/\D/g, ""),
+      }));
+    } else {
+      setFormData((prev) => ({
+        ...prev,
+        [name]: type === "number" ? Number(value) : value,
+      }));
+    }
   };
 
   // Nộp hoặc cập nhật đơn xuất
   const handleSubmit = async (e) => {
     e.preventDefault();
     setProfit(null);
+
+    // Chuyển giá và công nợ về số trước khi gửi
+    const cleanForm = {
+      ...formData,
+      price_sell: formData.price_sell ? Number(unformatNumberInput(formData.price_sell)) : "",
+      debt: formData.debt ? Number(unformatNumberInput(formData.debt)) : "",
+      quantity: formData.quantity ? Number(formData.quantity) : "",
+    };
 
     try {
       let url = `${import.meta.env.VITE_API_URL}/api/xuat-hang`;
@@ -145,7 +196,7 @@ function XuatHang() {
       const res = await fetch(url, {
         method,
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(formData),
+        body: JSON.stringify(cleanForm),
       });
 
       const data = await res.json();
@@ -158,9 +209,10 @@ function XuatHang() {
           sold_date: "",
           sku: "",
           product_name: "",
+          quantity: "",
           price_sell: "",
           customer_name: "",
-          customer_phone: "", // reset SĐT khách
+          customer_phone: "",
           warranty: "",
           note: "",
           debt: "",
@@ -176,32 +228,7 @@ function XuatHang() {
     }
   };
 
-  // Sửa đơn xuất (fill form để edit)
-  const handleEdit = (item) => {
-    setFormData({
-      imei: item.imei || "",
-      sold_date: item.sold_date ? item.sold_date.slice(0, 10) : "",
-      sku: item.sku || "",
-      product_name: item.product_name || "",
-      price_sell: item.price_sell || "",
-      customer_name: item.customer_name || "",
-      customer_phone: item.customer_phone || "", // Thêm SĐT khách hàng khi sửa
-      warranty: item.warranty || "",
-      note: item.note || "",
-      debt: item.debt || "",
-    });
-    setEditingId(item._id);
-    setMessage("");
-    setProfit(item.profit || null);
-    window.scrollTo({ top: 0, behavior: "smooth" });
-  };
-
-  // Xoá đơn xuất
-  const handleDelete = async (id) => {
-    if (!window.confirm("Bạn chắc chắn xoá đơn xuất này?")) return;
-    await fetch(`${import.meta.env.VITE_API_URL}/api/xuat-hang/${id}`, { method: "DELETE" });
-    fetchSales();
-  };
+  // ... Sửa đơn xuất và các hàm khác giữ nguyên ...
 
   const inputClass = "w-full border p-2 rounded h-10";
 
@@ -219,6 +246,33 @@ function XuatHang() {
       const dateB = new Date(b.sold_date || "");
       return dateB - dateA;
     });
+// Sửa đơn xuất (fill form để edit)
+const handleEdit = (item) => {
+  setFormData({
+    imei: item.imei || "",
+    sold_date: item.sold_date ? item.sold_date.slice(0, 10) : "",
+    sku: item.sku || "",
+    product_name: item.product_name || "",
+    quantity: item.quantity || "",
+    price_sell: item.price_sell || "",
+    customer_name: item.customer_name || "",
+    customer_phone: item.customer_phone || "",
+    warranty: item.warranty || "",
+    note: item.note || "",
+    debt: item.debt || "",
+  });
+  setEditingId(item._id);
+  setMessage("");
+  setProfit(item.profit || null);
+  window.scrollTo({ top: 0, behavior: "smooth" });
+};
+
+// Xoá đơn xuất
+const handleDelete = async (id) => {
+  if (!window.confirm("Bạn chắc chắn xoá đơn xuất này?")) return;
+  await fetch(`${import.meta.env.VITE_API_URL}/api/xuat-hang/${id}`, { method: "DELETE" });
+  fetchSales();
+};
 
   return (
     <div className="max-w-xl mx-auto p-6 bg-white rounded-xl shadow mt-10 relative">
@@ -264,6 +318,8 @@ function XuatHang() {
           onChange={handleChange}
           className={inputClass}
         />
+
+        {/* TÊN SẢN PHẨM */}
         <div className="relative">
           <input
             type="text"
@@ -295,6 +351,26 @@ function XuatHang() {
             </div>
           )}
         </div>
+
+        {/* SỐ LƯỢNG - Chỉ hiện nếu KHÔNG có IMEI */}
+        {!formData.imei && (
+          <div>
+            <label className="block text-gray-600 text-sm font-medium mb-1">Số lượng</label>
+            <input
+              type="number"
+              name="quantity"
+              placeholder="Nhập số lượng phụ kiện cần bán"
+              value={formData.quantity}
+              onChange={handleChange}
+              className={inputClass}
+              min={1}
+            />
+            <span className="text-xs text-gray-500 ml-1">
+              Chỉ nhập số lượng khi bán phụ kiện (không điền IMEI)
+            </span>
+          </div>
+        )}
+
         {/* Nếu nhiều IMEI cho 1 sản phẩm, chọn IMEI */}
         {selectImeis.length > 1 && (
           <div className="bg-blue-50 border rounded px-3 py-2">
@@ -313,8 +389,10 @@ function XuatHang() {
             </div>
           </div>
         )}
+
+        {/* GIÁ BÁN (tự có dấu cách) */}
         <input
-          type="number"
+          type="text"
           name="price_sell"
           placeholder="Giá bán"
           value={formData.price_sell}
@@ -354,15 +432,14 @@ function XuatHang() {
           onChange={handleChange}
           className={inputClass}
         />
-        {/* Thêm trường Công nợ */}
+        {/* Công nợ (tự có dấu cách) */}
         <input
-          type="number"
+          type="text"
           name="debt"
           placeholder="Công nợ (nếu có)"
           value={formData.debt}
           onChange={handleChange}
           className={inputClass}
-          min="0"
         />
 
         <button
@@ -416,6 +493,7 @@ function XuatHang() {
               <th className="border p-2">IMEI</th>
               <th className="border p-2">SKU</th>
               <th className="border p-2">Tên sản phẩm</th>
+              <th className="border p-2">Số lượng</th>
               <th className="border p-2 text-center">Giá bán</th>
               <th className="border p-2">Ngày bán</th>
               <th className="border p-2">Khách hàng</th>
@@ -432,6 +510,7 @@ function XuatHang() {
                 <td className="border p-2">{item.imei || ""}</td>
                 <td className="border p-2">{item.sku || ""}</td>
                 <td className="border p-2">{item.product_name || ""}</td>
+                <td className="border p-2 text-center">{item.quantity || 1}</td>
                 <td className="border p-2 text-center">{item.price_sell ? Number(item.price_sell).toLocaleString() : ""}đ</td>
                 <td className="border p-2">{item.sold_date ? item.sold_date.slice(0, 10) : ""}</td>
                 <td className="border p-2">{item.customer_name || ""}</td>
@@ -447,7 +526,7 @@ function XuatHang() {
             ))}
             {filteredSales.length === 0 && (
               <tr>
-                <td colSpan="11" className="text-center py-4 text-gray-500">
+                <td colSpan="12" className="text-center py-4 text-gray-500">
                   Không có đơn xuất nào.
                 </td>
               </tr>

@@ -11,9 +11,25 @@ function DanhSachCanhBao() {
     fetch(`${import.meta.env.VITE_API_URL}/api/canh-bao-ton-kho`)
       .then((res) => res.json())
       .then((res) => {
-        setData(res.items);
-        setLoading(false);
-      })
+  // GOM NHÓM THEO SKU + CHI NHÁNH
+  const map = {};
+  res.items.forEach(item => {
+    const key = (item.sku || '') + '|' + (item.branch || '');
+    if (!map[key]) {
+      map[key] = {
+        sku: item.sku,
+        tenSanPham: item.tenSanPham || item.product_name,
+        branch: item.branch,
+        totalRemain: 0,
+      };
+    }
+    map[key].totalRemain += Number(item.totalRemain || item.quantity || 0);
+  });
+
+  setData(Object.values(map));
+  setLoading(false);
+})
+
       .catch((err) => {
         console.error("Lỗi:", err);
         setLoading(false);
@@ -61,11 +77,12 @@ function DanhSachCanhBao() {
           </button>
         </div>
         <button
-          onClick={() => navigate("/ton-kho")}
-          className="bg-gray-600 text-white px-4 py-2 rounded hover:bg-gray-700"
-        >
-          ⬅️ Quay lại tồn kho
-        </button>
+  onClick={() => navigate("/ton-kho-so-luong")}
+  className="bg-blue-600 text-white px-4 py-2 rounded mb-4"
+>
+  🡄 QUAY LẠI TỒN KHO
+</button>
+
       </div>
 
       {message && (

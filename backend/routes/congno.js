@@ -6,10 +6,10 @@ const Inventory = require('../models/Inventory');
 router.get('/cong-no-list', async (req, res) => {
   try {
     const items = await Inventory.find({
-      debt: { $gt: 0 },
-      status: "sold",
-      customer_name: { $ne: null, $ne: "" }
-    });
+  status: "sold",
+  customer_name: { $ne: null, $ne: "" }
+});
+
 
     // Gom nhóm theo customer_name + customer_phone
     const grouped = {};
@@ -198,6 +198,40 @@ router.put('/cong-no-pay/:id', async (req, res) => {
     res.json({ message: "Đã cập nhật công nợ!", order });
   } catch (err) {
     res.status(500).json({ message: '❌ Lỗi server khi cập nhật nợ', error: err.message });
+  }
+});
+// 6. Lấy lịch sử cộng/trừ công nợ của 1 khách hàng (tổng hợp từ các đơn)
+router.get('/lich-su/:customer_name/:customer_phone', async (req, res) => {
+  const { customer_name, customer_phone } = req.params;
+  if (!customer_name) return res.status(400).json({ message: "Thiếu tên khách hàng" });
+  try {
+    const query = { customer_name };
+    if (customer_phone) query.customer_phone = customer_phone;
+
+    // Lấy tất cả các đơn đã bán của khách
+    const orders = await Inventory.find(query).sort({ sold_date: -1 });
+
+    // Gom toàn bộ lịch sử cộng/trừ nợ từ các đơn
+    let lichSu = [];
+    orders.forEach(order => {
+      if (Array.isArray(order.debt_history)) {
+        order.debt_history.forEach(log => {
+          lichSu.push({
+            ...log,
+            imei: order.imei,
+            product_name: order.product_name,
+            price_sell: order.price_sell,
+            sold_date: order.sold_date
+          });
+        });
+      }
+    });
+
+    // Sắp xếp lịch sử theo thời gian mới nhất lên trước
+    lichSu = lichSu.sort((a, b) => new Date(b.date) - new Date(a.date));
+    res.json({ lichSu });
+  } catch (err) {
+    res.status(500).json({ message: '❌ Lỗi server khi lấy lịch sử công nợ', error: err.message });
   }
 });
 

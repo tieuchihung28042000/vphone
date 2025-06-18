@@ -36,11 +36,11 @@ app.use(cors({
 app.options('*', cors());
 app.use(express.json());
 
-// Đăng ký các route API
+// ==== Đăng ký các route API ====
 app.use('/api', adminRoutes);
+app.use('/api', reportRoutes); // ĐÃ SỬA, đặt đúng path
 app.use('/api/auth', authRoutes);
 app.use('/api/user', userRoutes);
-app.use('/api/report', reportRoutes);
 app.use('/api/branches', branchRoutes);
 app.use('/api/categories', categoryRoutes);
 app.use('/api/cong-no', congNoRoutes);

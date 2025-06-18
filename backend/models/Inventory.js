@@ -1,7 +1,7 @@
 const mongoose = require("mongoose");
 
 const InventorySchema = new mongoose.Schema({
-  imei: { type: String, unique: true, sparse: true },
+imei: { type: String, default: null },
 
   sku: { type: String, required: true },
   product_name: { type: String, required: true },

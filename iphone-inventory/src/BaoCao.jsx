@@ -182,37 +182,40 @@ function BaoCao() {
           <div className="overflow-x-auto">
             <table className="min-w-full border text-sm">
               <thead>
-                <tr className="bg-gray-100">
-                  <th className="border p-2">Mã hàng (SKU)</th>
-                  <th className="border p-2">Tên SP</th>
-                  <th className="border p-2">Thời gian bán</th>
-                  <th className="border p-2">Khách hàng</th>
-                  <th className="border p-2">Giá vốn</th>
-                  <th className="border p-2">Giá bán</th>
-                  <th className="border p-2">Lợi nhuận</th>
-                </tr>
-              </thead>
+  <tr className="bg-gray-100">
+    <th className="border p-2">Mã hàng (SKU)</th>
+    <th className="border p-2">Tên SP</th>
+    <th className="border p-2">Thời gian bán</th>
+    <th className="border p-2">Khách hàng</th>
+    <th className="border p-2">Số lượng</th> {/* Thêm dòng này */}
+    <th className="border p-2">Giá vốn</th>
+    <th className="border p-2">Giá bán</th>
+    <th className="border p-2">Lợi nhuận</th>
+  </tr>
+</thead>
               <tbody>
-                {orders.length > 0 ? (
-                  orders.map((item, idx) => (
-                    <tr key={item._id || idx}>
-                      <td className="border p-2">{item.sku}</td>
-                      <td className="border p-2">{item.product_name}</td>
-                      <td className="border p-2">{item.sold_date?.slice(0, 10)}</td>
-                      <td className="border p-2">{item.customer_name}</td>
-                      <td className="border p-2 text-right">{item.price_import?.toLocaleString() || 0} đ</td>
-                      <td className="border p-2 text-right">{item.price_sell?.toLocaleString() || 0} đ</td>
-                      <td className="border p-2 text-right">
-                        {(item.price_sell - (item.price_import || 0))?.toLocaleString() || 0} đ
-                      </td>
-                    </tr>
-                  ))
-                ) : (
-                  <tr>
-                    <td className="border p-2 text-center" colSpan={7}>Không có dữ liệu đơn hàng nào.</td>
-                  </tr>
-                )}
-              </tbody>
+  {orders.length > 0 ? (
+    orders.map((item, idx) => (
+      <tr key={item._id || idx}>
+        <td className="border p-2">{item.sku}</td>
+        <td className="border p-2">{item.product_name}</td>
+        <td className="border p-2">{item.sold_date?.slice(0, 10)}</td>
+        <td className="border p-2">{item.customer_name}</td>
+        <td className="border p-2 text-center">{item.quantity || 1}</td> {/* Thêm dòng này */}
+        <td className="border p-2 text-right">{item.price_import?.toLocaleString() || 0} đ</td>
+        <td className="border p-2 text-right">{item.price_sell?.toLocaleString() || 0} đ</td>
+        <td className="border p-2 text-right">
+          {((item.price_sell - (item.price_import || 0)) * (item.quantity || 1))?.toLocaleString() || 0} đ
+        </td>
+      </tr>
+    ))
+  ) : (
+    <tr>
+      <td className="border p-2 text-center" colSpan={8}>Không có dữ liệu đơn hàng nào.</td>
+    </tr>
+  )}
+</tbody>
+
             </table>
           </div>
         </div>

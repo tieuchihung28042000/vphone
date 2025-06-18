@@ -188,15 +188,7 @@ function Login() {
         </form>
 
         <div style={{ textAlign: "center", marginTop: 10 }}>
-          <span style={{ color: "#aaa", fontSize: 15 }}>
-            Chưa có tài khoản?{" "}
-            <Link
-              to="/dang-ky"
-              style={{ color: "#2196f3", textDecoration: "underline" }}
-            >
-              Đăng ký ngay
-            </Link>
-          </span>
+         
         </div>
       </div>
     </div>

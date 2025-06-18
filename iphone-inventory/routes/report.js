@@ -142,5 +142,37 @@ router.post('/send-reset-link', async (req, res) => {
     res.status(500).json({ message: '❌ Gửi email thất bại', error: err.message });
   }
 });
+// API: Cảnh báo tồn kho phụ kiện (gộp mỗi mã 1 dòng)
+router.get('/canh-bao-ton-kho', async (req, res) => {
+  try {
+    // Lấy toàn bộ hàng phụ kiện (không có imei) còn trong kho
+    const accessories = await Inventory.find({
+      status: 'in_stock',
+      $or: [{ imei: null }, { imei: "" }],
+    });
+
+    // Gom nhóm theo SKU + chi nhánh
+    const grouped = {};
+    for (const item of accessories) {
+      const key = (item.sku || "") + "|" + (item.branch || "");
+      if (!grouped[key]) {
+        grouped[key] = {
+          sku: item.sku,
+          tenSanPham: item.product_name || item.tenSanPham,
+          branch: item.branch,
+          totalRemain: 0,
+        };
+      }
+      grouped[key].totalRemain += Number(item.quantity) || 0;
+    }
+
+    // Lọc ra chỉ những sản phẩm có tồn kho < 2
+    const items = Object.values(grouped).filter(row => row.totalRemain < 2);
+
+    res.json({ items });
+  } catch (err) {
+    res.status(500).json({ message: "Lỗi truy vấn cảnh báo tồn kho", error: err.message });
+  }
+});
 
 module.exports = router;
