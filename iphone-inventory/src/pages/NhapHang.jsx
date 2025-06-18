@@ -740,12 +740,6 @@ function NhapHang() {
             )
           )}đ
           </div>
-          {/* Debug info */}
-          {process.env.NODE_ENV === 'development' && (
-            <div className="text-xs text-gray-500 mt-2">
-              Debug: Items={items.length}, Filtered={filteredItems.length}, API={import.meta.env.VITE_API_URL}
-            </div>
-          )}
         </div>
         <div className="flex justify-center space-x-2 mt-4">
           {Array.from({ length: totalPages }, (_, i) => (
