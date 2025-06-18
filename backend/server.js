@@ -45,6 +45,17 @@ app.use('/api/branches', branchRoutes);
 app.use('/api/categories', categoryRoutes);
 app.use('/api/cong-no', congNoRoutes);
 
+// API lấy danh sách nhập hàng
+app.get('/api/nhap-hang', async (req, res) => {
+  try {
+    const items = await Inventory.find().sort({ import_date: -1, _id: -1 });
+    res.status(200).json({ items });
+  } catch (error) {
+    console.error('❌ Lỗi khi lấy danh sách nhập hàng:', error.message);
+    res.status(500).json({ message: '❌ Lỗi server khi lấy danh sách', error: error.message });
+  }
+});
+
 // API nhập hàng
 app.post('/api/nhap-hang', async (req, res) => {
   try {
