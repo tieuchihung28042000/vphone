@@ -64,8 +64,25 @@ function NhapHang() {
   // Fetch đúng API nhập hàng, hiển thị mọi bản ghi nhập, không bị trừ số lượng
   const fetchItems = async () => {
     try {
-      const res = await fetch(`${import.meta.env.VITE_API_URL}/api/nhap-hang`);
+      // Debug API URL
+      const apiUrl = import.meta.env.VITE_API_URL || window.location.origin;
+      console.log('🔍 API URL:', apiUrl);
+      
+      const res = await fetch(`${apiUrl}/api/nhap-hang`);
+      console.log('📡 API Response status:', res.status);
+      
+      if (!res.ok) {
+        throw new Error(`API Error: ${res.status} - ${res.statusText}`);
+      }
+      
       const data = await res.json();
+      console.log('📊 Data received:', data?.items?.length, 'items');
+      
+      if (!data.items) {
+        console.error('❌ No items in response:', data);
+        return;
+      }
+      
       // Sắp xếp mới nhất lên đầu (theo ngày nhập, nếu trùng ngày thì theo id)
       const sorted = data.items.sort((a, b) => {
         const dateA = a.import_date || '';
@@ -74,21 +91,27 @@ function NhapHang() {
         if (dateA < dateB) return 1;
         return b._id.localeCompare(a._id);
       });
+      
       setItems(sorted);
+      console.log('✅ Items set:', sorted.length);
     } catch (err) {
       console.error("❌ Lỗi khi tải dữ liệu nhập hàng:", err);
     }
   };
 
   const fetchBranches = () => {
-    fetch(`${import.meta.env.VITE_API_URL}/api/branches`)
+    const apiUrl = import.meta.env.VITE_API_URL || window.location.origin;
+    fetch(`${apiUrl}/api/branches`)
       .then(res => res.json())
-      .then(data => setBranches(data));
+      .then(data => setBranches(data))
+      .catch(err => console.error('❌ Lỗi fetch branches:', err));
   };
   const fetchCategories = () => {
-    fetch(`${import.meta.env.VITE_API_URL}/api/categories`)
+    const apiUrl = import.meta.env.VITE_API_URL || window.location.origin;
+    fetch(`${apiUrl}/api/categories`)
       .then(res => res.json())
-      .then(data => setCategories(data));
+      .then(data => setCategories(data))
+      .catch(err => console.error('❌ Lỗi fetch categories:', err));
   };
 
   useEffect(() => {
@@ -717,6 +740,12 @@ function NhapHang() {
             )
           )}đ
           </div>
+          {/* Debug info */}
+          {process.env.NODE_ENV === 'development' && (
+            <div className="text-xs text-gray-500 mt-2">
+              Debug: Items={items.length}, Filtered={filteredItems.length}, API={import.meta.env.VITE_API_URL}
+            </div>
+          )}
         </div>
         <div className="flex justify-center space-x-2 mt-4">
           {Array.from({ length: totalPages }, (_, i) => (
