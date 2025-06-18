@@ -8,10 +8,7 @@ const ADMIN_EMAIL = "vphone24h1@gmail.com";
 const ADMIN_PASSWORD = "0985630451vU";
 
 async function createAdmin() {
-  await mongoose.connect(process.env.MONGODB_URI, {
-    useNewUrlParser: true,
-    useUnifiedTopology: true,
-  });
+  await mongoose.connect(process.env.MONGODB_URI);
 
   const existing = await User.findOne({ email: ADMIN_EMAIL });
   if (existing) {
