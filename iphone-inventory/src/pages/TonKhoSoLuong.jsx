@@ -136,6 +136,18 @@ function TonKhoSoLuong() {
           📤 Xuất hàng
         </button>
         <button
+          onClick={() => navigate("/so-quy")}
+          className="bg-orange-600 text-white px-3 py-1 rounded hover:bg-orange-700"
+        >
+          💰 Sổ quỹ
+        </button>
+        <button
+          onClick={() => navigate("/cong-no")}
+          className="bg-red-600 text-white px-3 py-1 rounded hover:bg-red-700"
+        >
+          💳 Công nợ
+        </button>
+        <button
           onClick={() => navigate("/bao-cao")}
           className="bg-purple-600 text-white px-3 py-1 rounded hover:bg-purple-700"
         >

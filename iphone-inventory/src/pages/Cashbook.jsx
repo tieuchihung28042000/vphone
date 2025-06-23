@@ -1,786 +1,700 @@
 import React, { useState, useEffect } from "react";
-import {
-  startOfToday,
-  endOfToday,
-  startOfYesterday,
-  endOfYesterday,
-  startOfWeek,
-  endOfWeek,
-  startOfMonth,
-  endOfMonth,
-  format,
-} from "date-fns";
-import * as XLSX from "xlsx";
-import { saveAs } from "file-saver";
+import { format } from "date-fns";
+import LogoutButton from "../components/LogoutButton";
 
-// ======= Format số tiền: tách 3 số =======
+// ======= Format số tiền =======
+function formatMoney(amount) {
+  return Number(amount).toLocaleString('vi-VN') + 'đ';
+}
+
 function formatNumberInput(val) {
   if (!val) return "";
   let num = val.toString().replace(/\D/g, "");
   return num.replace(/\B(?=(\d{3})+(?!\d))/g, " ");
 }
+
 function unformatNumberInput(val) {
   return val.replace(/\D/g, "");
 }
 
-// 1. COMPONENT: Editable Select with Add (+)
-function EditableSelect({ label, value, setValue, storageKey, placeholder = "", ...rest }) {
-  const [options, setOptions] = useState([]);
-  const [showInput, setShowInput] = useState(false);
-  const [newValue, setNewValue] = useState("");
-
-  useEffect(() => {
-    const saved = JSON.parse(localStorage.getItem(storageKey) || "[]");
-    setOptions(saved.length ? saved : [placeholder]);
-  }, [storageKey, placeholder]);
-
-  const handleAdd = () => {
-    const trimmed = newValue.trim();
-    if (!trimmed) return;
-    if (options.includes(trimmed)) {
-      setShowInput(false);
-      return;
-    }
-    const updated = [...options, trimmed];
-    setOptions(updated);
-    localStorage.setItem(storageKey, JSON.stringify(updated));
-    setValue(trimmed);
-    setNewValue("");
-    setShowInput(false);
-  };
-
-  return (
-    <div className="relative flex items-center w-full">
-      <select
-        className="border rounded px-2 py-1 w-full pr-8"
-        value={value}
-        onChange={e => setValue(e.target.value)}
-        {...rest}
-      >
-        <option>{placeholder}</option>
-        {options
-          .filter(opt => opt && opt !== placeholder)
-          .map(opt => (
-            <option key={opt} value={opt}>{opt}</option>
-          ))}
-      </select>
-      <button
-        type="button"
-        className="absolute right-1 top-1/2 -translate-y-1/2 text-xl px-1 text-gray-600"
-        style={{ lineHeight: 1 }}
-        tabIndex={-1}
-        onClick={() => setShowInput(!showInput)}
-      >
-        +
-      </button>
-      {showInput && (
-        <div className="absolute top-full left-0 bg-white border p-2 z-50 w-60 mt-1 rounded shadow">
-          <input
-            className="border px-2 py-1 w-full mb-2"
-            value={newValue}
-            onChange={e => setNewValue(e.target.value)}
-            onKeyDown={e => e.key === "Enter" && handleAdd()}
-            placeholder={`Nhập ${label.toLowerCase()} mới`}
-            autoFocus
-          />
-          <div className="flex gap-2">
-            <button
-              type="button"
-              className="bg-blue-500 text-white px-3 py-1 rounded"
-              onClick={handleAdd}
-            >Lưu</button>
-            <button
-              type="button"
-              className="bg-gray-200 px-3 py-1 rounded"
-              onClick={() => { setShowInput(false); setNewValue(""); }}
-            >Huỷ</button>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-// 2. COMPONENT: FilterTime giữ nguyên
-function FilterTime({ filter, setFilter }) {
-  const [showCustom, setShowCustom] = useState(false);
-  const [from, setFrom] = useState("");
-  const [to, setTo] = useState("");
-
-  const handleSelect = (e) => {
-    const val = e.target.value;
-    let newFilter = { ...filter, time: val };
-
-    if (val === "Hôm nay") {
-      newFilter.fromDate = format(startOfToday(), "yyyy-MM-dd");
-      newFilter.toDate = format(endOfToday(), "yyyy-MM-dd");
-      setShowCustom(false);
-    } else if (val === "Hôm qua") {
-      newFilter.fromDate = format(startOfYesterday(), "yyyy-MM-dd");
-      newFilter.toDate = format(endOfYesterday(), "yyyy-MM-dd");
-      setShowCustom(false);
-    } else if (val === "Tuần này") {
-      newFilter.fromDate = format(startOfWeek(new Date(), { weekStartsOn: 1 }), "yyyy-MM-dd");
-      newFilter.toDate = format(endOfWeek(new Date(), { weekStartsOn: 1 }), "yyyy-MM-dd");
-      setShowCustom(false);
-    } else if (val === "Tháng này") {
-      newFilter.fromDate = format(startOfMonth(new Date()), "yyyy-MM-dd");
-      newFilter.toDate = format(endOfMonth(new Date()), "yyyy-MM-dd");
-      setShowCustom(false);
-    } else if (val === "Tuỳ chọn...") {
-      setShowCustom(true);
-      return;
-    }
-    setFilter(newFilter);
-  };
-
-  const handleCustomDate = () => {
-    setFilter({
-      ...filter,
-      time: "Tuỳ chọn...",
-      fromDate: from,
-      toDate: to,
-    });
-  };
-
-  return (
-    <div>
-      <div className="font-medium">Thời gian</div>
-      <select
-        className="mt-1 w-full border rounded px-2 py-1"
-        value={filter.time || ""}
-        onChange={handleSelect}
-      >
-        <option value="">Chọn...</option>
-        <option>Hôm nay</option>
-        <option>Hôm qua</option>
-        <option>Tuần này</option>
-        <option>Tháng này</option>
-        <option>Tuỳ chọn...</option>
-      </select>
-      {showCustom && (
-        <div className="flex gap-2 mt-2">
-          <input
-            type="date"
-            className="border rounded px-2 py-1 flex-1"
-            value={from}
-            onChange={e => setFrom(e.target.value)}
-            placeholder="Từ ngày"
-          />
-          <input
-            type="date"
-            className="border rounded px-2 py-1 flex-1"
-            value={to}
-            onChange={e => setTo(e.target.value)}
-            placeholder="Đến ngày"
-          />
-          <button
-            className="bg-blue-500 text-white px-2 rounded"
-            onClick={handleCustomDate}
-          >
-            Lọc
-          </button>
-        </div>
-      )}
-    </div>
-  );
-}
-
-// 3. MAIN COMPONENT (Bộ lọc phía trên bảng + Xuất Excel)
+// ======= MAIN COMPONENT =======
 export default function Cashbook() {
-  // Danh sách nguồn tiền
-  const sourcesArr = [
-    { key: "tien_mat", label: "Tiền mặt" },
-    { key: "the", label: "Thẻ" },
-    { key: "vi_dien_tu", label: "Ví điện tử" },
-  ];
-
-  // Quỹ đầu kỳ từng nguồn
-  const getOpening = src => Number(localStorage.getItem(`opening-balance-${src}`) || 0);
-  const [opening, setOpening] = useState({
-    tien_mat: getOpening("tien_mat"),
-    the: getOpening("the"),
-    vi_dien_tu: getOpening("vi_dien_tu"),
-  });
-  const [editingBalance, setEditingBalance] = useState(false);
-  const [editInput, setEditInput] = useState({ ...opening });
-
-  // Các state khác giữ nguyên
-  const [filter, setFilter] = useState({
-    source: "Tất cả",
-    time: "Tháng này",
-    fromDate: "",
-    toDate: "",
-    type: "Tất cả",
-    status: "Tất cả",
-    search: "",
-  });
-  const [data, setData] = useState([]);
-  const [showModal, setShowModal] = useState(false);
-  const [modalType, setModalType] = useState("thu"); // "thu" | "chi"
-  const [editItem, setEditItem] = useState(null);
-
-  // Lấy lại danh sách backend
-  const reloadData = async () => {
-    let url = `/api/cashbook?`;
-    if (filter.fromDate) url += `from=${filter.fromDate}&`;
-    if (filter.toDate) url += `to=${filter.toDate}&`;
-    if (filter.type && filter.type !== "Tất cả") url += `type=${filter.type}&`;
-    if (filter.source && filter.source !== "Tất cả") url += `source=${filter.source}&`;
-    if (filter.search) url += `search=${encodeURIComponent(filter.search)}&`;
-    const res = await fetch(url);
-    const items = await res.json();
-    setData(items);
-  };
-
-  useEffect(() => {
-    reloadData();
-    // eslint-disable-next-line
-  }, [filter.fromDate, filter.toDate, filter.type, filter.source, filter.search]);
-
-  // Tổng hợp từng nguồn tiền
-  const summaryBySource = sourcesArr.map(src => {
-    const filtered = data.filter(i => i.source === src.key);
-    const thu = filtered.filter(i => i.amount > 0).reduce((a, b) => a + b.amount, 0);
-    const chi = filtered.filter(i => i.amount < 0).reduce((a, b) => a + b.amount, 0);
-    const ton = opening[src.key] + thu + chi;
-    return { ...src, thu, chi, ton, opening: opening[src.key] };
-  });
-
-  // Tổng hợp tổng (tất cả)
-  const totalOpening = opening.tien_mat + opening.the + opening.vi_dien_tu;
-  const totalThu = data.filter(i => i.amount > 0).reduce((a, b) => a + b.amount, 0);
-  const totalChi = data.filter(i => i.amount < 0).reduce((a, b) => a + b.amount, 0);
-  const tonQuy = totalOpening + totalThu + totalChi;
-
-  const fmoney = (num) =>
-    (num > 0 ? "+" : "") +
-    num.toLocaleString("vi-VN") +
-    " đ";
-
-  const handleOpenModal = (type, item = null) => {
-    setEditItem(item);
-    setModalType(type); // "thu" | "chi"
-    setShowModal(true);
-  };
-  const handleCloseModal = () => {
-    setEditItem(null);
-    setShowModal(false);
-  };
-
-  // Sửa quỹ đầu kỳ
-  const handleBalanceSave = () => {
-    Object.keys(editInput).forEach(k => {
-      localStorage.setItem(`opening-balance-${k}`, Number(editInput[k]) || 0);
-    });
-    setOpening({ ...editInput });
-    setEditingBalance(false);
-  };
-
-  // ===== XUẤT EXCEL =====
-  function handleExportExcel() {
-    const exportData = data.map((item, idx) => ({
-      "STT": idx + 1,
-      "Mã phiếu": item.code || item._id,
-      "Thời gian": item.date ? format(new Date(item.date), "dd/MM/yyyy HH:mm") : "",
-      "Loại thu chi": item.content || item.type,
-      "Người nộp/nhận": item.person || item.customer || item.supplier,
-      "Nguồn": item.source === "tien_mat"
-        ? "Tiền mặt"
-        : item.source === "the"
-        ? "Thẻ"
-        : item.source === "vi_dien_tu"
-        ? "Ví điện tử"
-        : "",
-      "Giá trị": item.amount,
-      "Ghi chú": item.note || "",
-    }));
-
-    const worksheet = XLSX.utils.json_to_sheet(exportData);
-    const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, "ThuChi");
-
-    const excelBuffer = XLSX.write(workbook, { bookType: "xlsx", type: "array" });
-    saveAs(new Blob([excelBuffer], { type: "application/octet-stream" }), "so_quy_thu_chi.xlsx");
-  }
-
-  return (
-    <div className="flex flex-col min-h-screen bg-gray-50">
-      {/* Tổng hợp từng nguồn */}
-      <div className="flex gap-6 mb-8 justify-center">
-        {summaryBySource.map(src => (
-          <div
-            key={src.key}
-            className="rounded-2xl shadow bg-white border border-purple-200 min-w-[210px] px-6 py-5 flex flex-col items-center"
-          >
-            <div className="font-extrabold text-3xl mb-2" style={{ color: '#7c3aed', letterSpacing: '1px' }}>
-              {src.label}
-            </div>
-            <div className="flex flex-col items-center mb-2 mt-1">
-              <span className="text-xs text-gray-600 font-semibold mb-0.5">Đầu kỳ</span>
-              <span className="font-extrabold text-fuchsia-800 text-3xl">
-                {src.opening.toLocaleString("vi-VN")}
-              </span>
-            </div>
-            <div className="flex flex-col w-full gap-1">
-              <div className="flex justify-between w-full">
-                <span className="text-xs text-gray-700">Thu</span>
-                <span className="font-bold text-blue-600">{src.thu.toLocaleString("vi-VN")}</span>
-              </div>
-              <div className="flex justify-between w-full">
-                <span className="text-xs text-gray-700">Chi</span>
-                <span className="font-bold text-red-500">{src.chi.toLocaleString("vi-VN")}</span>
-              </div>
-              <div className="flex justify-between w-full border-t border-gray-200 pt-1 mt-1">
-                <span className="text-xs text-gray-700">Tồn</span>
-                <span className="font-bold text-green-600">{src.ton.toLocaleString("vi-VN")}</span>
-              </div>
-            </div>
-          </div>
-        ))}
-      </div>
-
-      {/* Thanh action + tổng hợp tổng */}
-      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2 mb-4">
-        <div>
-          <button
-            onClick={() => handleOpenModal("thu")}
-            className="bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded mr-2"
-          >
-            + Lập phiếu thu
-          </button>
-          <button
-            onClick={() => handleOpenModal("chi")}
-            className="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded"
-          >
-            + Lập phiếu chi
-          </button>
-        </div>
-        <div className="flex gap-3">
-          <div className="text-sm flex items-center">
-            <div className="font-medium text-gray-500 mr-1">Quỹ đầu kỳ</div>
-            {!editingBalance ? (
-              <>
-                <div className="font-semibold text-gray-700">
-                  {totalOpening.toLocaleString("vi-VN")}
-                </div>
-                <button
-                  onClick={() => { setEditingBalance(true); setEditInput({ ...opening }); }}
-                  className="ml-1 text-blue-500 underline text-xs"
-                  title="Sửa quỹ đầu kỳ"
-                >Sửa</button>
-              </>
-            ) : (
-              <div className="flex items-center gap-2">
-                <input
-                  type="number"
-                  value={editInput.tien_mat}
-                  onChange={e => setEditInput(v => ({ ...v, tien_mat: Number(e.target.value) }))}
-                  className="border px-2 py-1 rounded w-24"
-                  placeholder="Tiền mặt"
-                />
-                <input
-                  type="number"
-                  value={editInput.the}
-                  onChange={e => setEditInput(v => ({ ...v, the: Number(e.target.value) }))}
-                  className="border px-2 py-1 rounded w-20"
-                  placeholder="Thẻ"
-                />
-                <input
-                  type="number"
-                  value={editInput.vi_dien_tu}
-                  onChange={e => setEditInput(v => ({ ...v, vi_dien_tu: Number(e.target.value) }))}
-                  className="border px-2 py-1 rounded w-24"
-                  placeholder="Ví điện tử"
-                />
-                <button
-                  onClick={handleBalanceSave}
-                  className="bg-green-500 text-white px-2 rounded mr-1"
-                >Lưu</button>
-                <button
-                  onClick={() => setEditingBalance(false)}
-                  className="bg-gray-300 px-2 rounded"
-                >Huỷ</button>
-              </div>
-            )}
-          </div>
-          <div className="text-sm">
-            <div className="font-medium text-gray-500">Tổng thu</div>
-            <div className="font-semibold text-blue-600">{totalThu.toLocaleString("vi-VN")}</div>
-          </div>
-          <div className="text-sm">
-            <div className="font-medium text-gray-500">Tổng chi</div>
-            <div className="font-semibold text-red-500">{totalChi.toLocaleString("vi-VN")}</div>
-          </div>
-          <div className="text-sm">
-            <div className="font-medium text-gray-500">Tồn quỹ</div>
-            <div className="font-semibold text-green-600">{tonQuy.toLocaleString("vi-VN")}</div>
-          </div>
-        </div>
-      </div>
-
-      {/* --- BỘ LỌC NẰM NGANG PHÍA TRÊN DANH SÁCH --- */}
-      <div className="flex flex-col md:flex-row gap-2 mb-3">
-        <div>
-          <div className="font-medium">Quỹ tiền</div>
-          <select
-            className="mt-1 w-full border rounded px-2 py-1 min-w-[140px]"
-            value={filter.source}
-            onChange={e => setFilter({ ...filter, source: e.target.value })}
-          >
-            <option value="Tất cả">Tất cả</option>
-            <option value="tien_mat">Tiền mặt</option>
-            <option value="the">Thẻ</option>
-            <option value="vi_dien_tu">Ví điện tử</option>
-          </select>
-        </div>
-        <div>
-          <FilterTime filter={filter} setFilter={setFilter} />
-        </div>
-        <div>
-          <div className="font-medium">Loại chứng từ</div>
-          <select className="mt-1 w-full border rounded px-2 py-1 min-w-[140px]"
-            value={filter.type}
-            onChange={e => setFilter({ ...filter, type: e.target.value })}
-          >
-            <option>Tất cả</option>
-            <option>Phiếu thu</option>
-            <option>Phiếu chi</option>
-          </select>
-        </div>
-        <div className="flex-1 flex items-end gap-2">
-          <input
-            className="border rounded px-2 py-1 w-full"
-            placeholder="🔍 Tìm mã phiếu, nội dung..."
-            value={filter.search}
-            onChange={e =>
-              setFilter({ ...filter, search: e.target.value })
-            }
-          />
-          <button
-            onClick={handleExportExcel}
-            className="bg-purple-700 hover:bg-purple-900 text-white font-semibold px-4 py-2 rounded shadow"
-          >
-            Xuất Excel
-          </button>
-        </div>
-      </div>
-
-      {/* --- DANH SÁCH --- */}
-      <div className="bg-white rounded shadow overflow-x-auto">
-        <table className="min-w-full table-auto text-sm">
-          <thead>
-            <tr className="bg-gray-100">
-              <th className="px-3 py-2 text-left">Mã phiếu</th>
-              <th className="px-3 py-2 text-left">Thời gian</th>
-              <th className="px-3 py-2 text-left">Loại thu chi</th>
-              <th className="px-3 py-2 text-left">Người nộp/nhận</th>
-              <th className="px-3 py-2 text-left">Nguồn</th>
-              <th className="px-3 py-2 text-right">Giá trị</th>
-              <th className="px-3 py-2 text-right"></th>
-            </tr>
-          </thead>
-          <tbody>
-            {data.map((i, idx) => (
-              <tr key={i._id || i.code || idx} className={idx % 2 ? "bg-gray-50" : ""}>
-                <td className="px-3 py-2">{i.code || i._id}</td>
-                <td className="px-3 py-2">{i.date ? format(new Date(i.date), "dd/MM/yyyy HH:mm") : ""}</td>
-                <td className="px-3 py-2">{i.content || i.type}</td>
-                <td className="px-3 py-2">{i.person || i.customer || i.supplier}</td>
-                <td className="px-3 py-2">
-                  {i.source === "tien_mat" ? "Tiền mặt" :
-                    i.source === "the" ? "Thẻ" :
-                      i.source === "vi_dien_tu" ? "Ví điện tử" : ""}
-                </td>
-                <td className="px-3 py-2 text-right font-semibold" style={{ color: i.amount < 0 ? "#ef4444" : "#22c55e" }}>
-                  {fmoney(i.amount)}
-                </td>
-                <td className="px-3 py-2 text-right">
-                  <button
-                    onClick={() => handleOpenModal(i.amount < 0 ? "chi" : "thu", i)}
-                    className="text-blue-500 hover:underline mr-1"
-                  >
-                    Sửa
-                  </button>
-                  <button
-                    className="text-red-500 hover:underline"
-                    onClick={async () => {
-                      if (window.confirm("Xoá giao dịch này?")) {
-                        await fetch(`/api/cashbook/${i._id}`, { method: "DELETE" });
-                        reloadData();
-                      }
-                    }}
-                  >
-                    Xoá
-                  </button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-
-      {/* Phân trang (dùng nếu cần) */}
-      <div className="flex justify-center mt-3">
-        <button className="mx-1 px-2 py-1 bg-gray-200 rounded">&lt;</button>
-        <button className="mx-1 px-2 py-1 bg-blue-500 text-white rounded">1</button>
-        <button className="mx-1 px-2 py-1 bg-gray-200 rounded">&gt;</button>
-      </div>
-
-      {/* Modal popup tạo/sửa phiếu */}
-      {showModal && (
-        <ModalCashbook
-          item={editItem}
-          onClose={handleCloseModal}
-          onSaved={reloadData}
-          modalType={modalType}
-        />
-      )}
-    </div>
-  );
-}
-
-// ModalCashbook giữ nguyên
-function ModalCashbook({ item, onClose, onSaved, modalType }) {
-  const isThu = modalType === "thu";
-  const [content, setContent] = useState(item?.content || "");
-  const [staff, setStaff] = useState(item?.staff || "VPhone24h");
-  const [personType, setPersonType] = useState(item?.personType || "Khác");
-  const [person, setPerson] = useState(item?.person || "");
-  const [source, setSource] = useState(item?.source || "tien_mat");
-
-  const [form, setForm] = useState({
-    code: item?.code || "",
-    date: item?.date
-      ? format(new Date(item.date), "yyyy-MM-dd'T'HH:mm")
-      : format(new Date(), "yyyy-MM-dd'T'HH:mm"),
-    amount: item?.amount
-      ? Math.abs(item.amount)
-      : 0,
-    note: item?.note || "",
-    isAccounting: item?.isAccounting ?? true,
-  });
+  const [transactions, setTransactions] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [summary, setSummary] = useState({ totalThu: 0, totalChi: 0, balance: 0 });
+  const [modal, setModal] = useState({ open: false, type: 'add', data: null });
+  
+  // State cho chi nhánh được chọn
+  const [selectedBranch, setSelectedBranch] = useState('');
+  const [branches, setBranches] = useState([]);
+  const [loadingBranches, setLoadingBranches] = useState(true);
+  
+  const [filters, setFilters] = useState({
+    fromDate: '',
+    toDate: '',
+    type: 'all',
+    source: 'all',
+    search: ''
+  });
 
-  useEffect(() => {
-    setForm(f => ({
-      ...f,
-      content,
-      staff,
-      personType,
-      person,
-    }));
-  }, [content, staff, personType, person]);
+  const [pagination, setPagination] = useState({
+    page: 1,
+    limit: 50,
+    total: 0
+  });
+  
+  const categories = {
+    thu: ['Doanh thu bán hàng', 'Thu tiền trả nợ', 'Thu khác'],
+    chi: ['Chi phí nhập hàng', 'Chi phí vận hành', 'Chi khác']
+  };
 
-  const handleChange = (key, value) =>
-    setForm((f) => ({ ...f, [key]: value }));
+  const [formData, setFormData] = useState({
+    type: 'thu',
+    content: '',
+    amount: '',
+    source: 'tien_mat',
+    branch: '', // Sẽ được set sau khi load chi nhánh
+    customer: '',
+    supplier: '',
+    note: '',
+    date: format(new Date(), 'yyyy-MM-dd')
+  });
 
-  const handleSave = async (print = false) => {
-    setLoading(true);
-    if (
-      !content ||
-      content === "--Chọn loại thu--" ||
-      content === "--Chọn loại chi--" ||
-      !form.amount ||
-      Number(form.amount) <= 0 ||
-      !person ||
-      !source
-    ) {
-      alert("Vui lòng chọn đầy đủ thông tin, nhập số tiền hợp lệ và chọn nguồn tiền!");
-      setLoading(false);
-      return;
-    }
+  // Load danh sách chi nhánh từ database
+  const loadBranches = async () => {
     try {
-      const body = {
-        code: form.code,
-        date: new Date(form.date),
-        type: modalType,
-        content: content,
-        amount: isThu ? Math.abs(Number(form.amount)) : -Math.abs(Number(form.amount)),
-        staff: staff,
-        personType: personType,
-        person: person,
-        note: form.note,
-        isAccounting: form.isAccounting,
-        source: source,
-      };
-      const url = item ? `/api/cashbook/${item._id}` : `/api/cashbook`;
-      const res = await fetch(url, {
-        method: item ? "PUT" : "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
-      const result = await res.json();
-      if (res.ok) {
-        alert(item ? "Cập nhật thành công!" : "Tạo phiếu thành công!");
-        onSaved && onSaved();
-        onClose();
+      setLoadingBranches(true);
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/branches`);
+      const data = await response.json();
+      
+      if (response.ok && data.length > 0) {
+        // Lấy tên chi nhánh từ API
+        const branchNames = data.map(branch => branch.name);
+        setBranches(branchNames);
+        
+        // Set chi nhánh đầu tiên làm mặc định
+        if (!selectedBranch) {
+          setSelectedBranch(branchNames[0]);
+        }
       } else {
-        alert(result.message || "Có lỗi xảy ra!");
+        // Fallback nếu không load được
+        const fallbackBranches = ['Chi nhánh 1', 'Chi nhánh 2', 'Chi nhánh 3'];
+        setBranches(fallbackBranches);
+        if (!selectedBranch) {
+          setSelectedBranch(fallbackBranches[0]);
+        }
       }
-    } catch (err) {
-      alert("Lỗi kết nối server");
+    } catch (error) {
+      console.error('Error loading branches:', error);
+      // Fallback nếu có lỗi
+      const fallbackBranches = ['Chi nhánh 1', 'Chi nhánh 2', 'Chi nhánh 3'];
+      setBranches(fallbackBranches);
+      if (!selectedBranch) {
+        setSelectedBranch(fallbackBranches[0]);
+      }
+    } finally {
+      setLoadingBranches(false);
+    }
+  };
+
+  const loadTransactions = async () => {
+    if (!selectedBranch) return; // Không load nếu chưa có chi nhánh
+    
+    setLoading(true);
+    try {
+      const params = new URLSearchParams({
+        page: pagination.page,
+        limit: pagination.limit,
+        branch: selectedBranch // Luôn lọc theo chi nhánh được chọn
+      });
+      
+      Object.keys(filters).forEach(key => {
+        if (filters[key] && filters[key] !== 'all' && filters[key] !== '') {
+          if (key === 'fromDate') params.append('from', filters[key]);
+          else if (key === 'toDate') params.append('to', filters[key]);
+          else params.append(key, filters[key]);
+        }
+      });
+
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/cashbook?${params}`);
+      const data = await response.json();
+      
+      if (response.ok) {
+        setTransactions(data.items || []);
+        setSummary(data.summary || { totalThu: 0, totalChi: 0, balance: 0 });
+        setPagination(prev => ({
+          ...prev,
+          total: data.total || 0
+        }));
+      } else {
+        console.error('Error response:', data);
+      }
+    } catch (error) {
+      console.error('Error loading transactions:', error);
     }
     setLoading(false);
   };
 
+  // Load chi nhánh khi component mount
+  useEffect(() => {
+    loadBranches();
+  }, []);
+
+  // Load transactions khi có selectedBranch và các filter thay đổi
+  useEffect(() => {
+    if (selectedBranch) {
+      loadTransactions();
+    }
+  }, [filters, pagination.page, selectedBranch]);
+
+  // Cập nhật formData.branch khi selectedBranch thay đổi
+  useEffect(() => {
+    if (selectedBranch) {
+      setFormData(prev => ({
+        ...prev,
+        branch: selectedBranch
+      }));
+    }
+  }, [selectedBranch]);
+
+  const handleFilterChange = (key, value) => {
+    setFilters(prev => ({ ...prev, [key]: value }));
+    setPagination(prev => ({ ...prev, page: 1 }));
+  };
+
+  const handleOpenModal = (type, data = null) => {
+    setModal({ open: true, type, data });
+    if (data) {
+      setFormData({
+        ...data,
+        date: data.date ? format(new Date(data.date), 'yyyy-MM-dd') : format(new Date(), 'yyyy-MM-dd'),
+        amount: data.amount?.toString() || ''
+      });
+    } else {
+      setFormData({
+        type: 'thu',
+        content: '',
+        amount: '',
+        source: 'tien_mat',
+        branch: selectedBranch, // Mặc định là chi nhánh đang được chọn
+        customer: '',
+        supplier: '',
+        note: '',
+        date: format(new Date(), 'yyyy-MM-dd')
+      });
+    }
+  };
+
+  const handleCloseModal = () => {
+    setModal({ open: false, type: 'add', data: null });
+  };
+
+  const handleSaveTransaction = async () => {
+    try {
+      if (!formData.content || !formData.amount || !formData.branch) {
+        alert('❌ Vui lòng điền đầy đủ thông tin bắt buộc');
+        return;
+      }
+
+      const url = modal.type === 'edit' 
+        ? `${import.meta.env.VITE_API_URL}/api/cashbook/${modal.data._id}`
+        : `${import.meta.env.VITE_API_URL}/api/cashbook`;
+      
+      const method = modal.type === 'edit' ? 'PUT' : 'POST';
+      
+      const response = await fetch(url, {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ...formData,
+          amount: Number(unformatNumberInput(formData.amount))
+        })
+      });
+      
+      const result = await response.json();
+      
+      if (response.ok) {
+        alert('✅ ' + result.message);
+        handleCloseModal();
+        loadTransactions();
+      } else {
+        alert('❌ ' + result.message);
+      }
+    } catch (error) {
+      console.error('Error saving transaction:', error);
+      alert('❌ Lỗi kết nối server');
+    }
+  };
+
+  const handleDeleteTransaction = async (id) => {
+    if (!window.confirm('Bạn có chắc muốn xóa giao dịch này?')) return;
+    
+    try {
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/cashbook/${id}`, {
+        method: 'DELETE'
+      });
+      
+      const result = await response.json();
+      
+      if (response.ok) {
+        alert('✅ ' + result.message);
+        loadTransactions();
+      } else {
+        alert('❌ ' + result.message);
+      }
+    } catch (error) {
+      console.error('Error deleting transaction:', error);
+      alert('❌ Lỗi kết nối server');
+    }
+  };
+
+  const handleExportExcel = async () => {
+    if (!selectedBranch) {
+      alert('❌ Vui lòng chọn chi nhánh trước khi xuất Excel');
+      return;
+    }
+    
+    try {
+      const params = new URLSearchParams();
+      params.append('branch', selectedBranch); // Luôn xuất cho chi nhánh đã chọn
+      
+      Object.keys(filters).forEach(key => {
+        if (filters[key] && filters[key] !== 'all' && filters[key] !== '') {
+          if (key === 'fromDate') params.append('from', filters[key]);
+          else if (key === 'toDate') params.append('to', filters[key]);
+          else params.append(key, filters[key]);
+        }
+      });
+
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/cashbook/export-excel?${params}`);
+      
+      if (response.ok) {
+        const blob = await response.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `soquy_${format(new Date(), 'yyyy-MM-dd')}.xlsx`;
+        a.click();
+        window.URL.revokeObjectURL(url);
+        alert('✅ Xuất Excel thành công!');
+      } else {
+        const error = await response.json();
+        alert('❌ ' + error.message);
+      }
+    } catch (error) {
+      console.error('Error exporting Excel:', error);
+      alert('❌ Lỗi xuất Excel');
+    }
+  };
+
   return (
-    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
-      <div className="bg-white rounded shadow-lg w-full max-w-3xl p-6">
-        <h2 className="text-lg font-bold mb-4">
-          {item
-            ? isThu
-              ? "Sửa phiếu thu"
-              : "Sửa phiếu chi"
-            : isThu
-            ? "Lập phiếu thu (tiền mặt)"
-            : "Lập phiếu chi (tiền mặt)"}
-        </h2>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {/* Cột 1 */}
-          <div>
-            <div className="mb-3">
-              <label className="font-medium">Mã phiếu</label>
-              <input
-                className="border rounded px-2 py-1 w-full"
-                placeholder="Mã phiếu tự động"
-                value={form.code}
-                disabled
-                onChange={e => handleChange("code", e.target.value)}
-              />
-            </div>
-            <div className="mb-3">
-              <label className="font-medium">Thời gian</label>
-              <input
-                className="border rounded px-2 py-1 w-full"
-                type="datetime-local"
-                value={form.date}
-                onChange={e => handleChange("date", e.target.value)}
-              />
-            </div>
-            <div className="mb-3">
-              <label className="font-medium">
-                {isThu ? "Loại thu" : "Loại chi"}
-              </label>
-              <EditableSelect
-                label={isThu ? "Loại thu" : "Loại chi"}
-                value={content}
-                setValue={setContent}
-                storageKey={isThu ? "loai-thu" : "loai-chi"}
-                placeholder={isThu ? "--Chọn loại thu--" : "--Chọn loại chi--"}
-              />
-            </div>
-            <div className="mb-3">
-              <label className="font-medium">Giá trị</label>
-              <input
-                className="border rounded px-2 py-1 w-full"
-                inputMode="numeric"
-                value={formatNumberInput(form.amount)}
-                onChange={e => {
-                  const raw = unformatNumberInput(e.target.value);
-                  handleChange("amount", raw);
-                }}
-                placeholder="Nhập số tiền..."
-              />
-            </div>
-            <div className="mb-3">
-              <label className="font-medium">
-                Nguồn tiền
-              </label>
-              <select
-                className="border rounded px-2 py-1 w-full"
-                value={source}
-                onChange={e => setSource(e.target.value)}
-              >
-                <option value="tien_mat">Tiền mặt</option>
-                <option value="the">Thẻ</option>
-                <option value="vi_dien_tu">Ví điện tử</option>
-              </select>
-            </div>
-            <div className="mb-3">
-              <label className="font-medium">
-                Nhân viên {isThu ? "thu" : "chi"}
-              </label>
-              <EditableSelect
-                label={`Nhân viên ${isThu ? "thu" : "chi"}`}
-                value={staff}
-                setValue={setStaff}
-                storageKey="nhan-vien-thu-chi"
-                placeholder="VPhone24h"
-              />
-            </div>
-          </div>
-          {/* Cột 2 */}
-          <div>
-            <div className="mb-3">
-              <label className="font-medium">
-                Đối tượng {isThu ? "nộp" : "nhận"}
-              </label>
-              <EditableSelect
-                label={`Đối tượng ${isThu ? "nộp" : "nhận"}`}
-                value={personType}
-                setValue={setPersonType}
-                storageKey="doi-tuong-thu-chi"
-                placeholder="Khác"
-              />
-            </div>
-            <div className="mb-3">
-              <label className="font-medium">
-                Tên người {isThu ? "nộp" : "nhận"}
-              </label>
-              <EditableSelect
-                label={`Tên người ${isThu ? "nộp" : "nhận"}`}
-                value={person}
-                setValue={setPerson}
-                storageKey="ten-nguoi-thu-chi"
-                placeholder=""
-              />
-            </div>
-            <div className="mb-3">
-              <label className="font-medium">Ghi chú</label>
-              <input
-                className="border rounded px-2 py-1 w-full"
-                placeholder="..."
-                value={form.note}
-                onChange={e => handleChange("note", e.target.value)}
-              />
-            </div>
-            <div className="mb-3 flex items-center">
-              <input
-                type="checkbox"
-                checked={form.isAccounting}
-                onChange={e => handleChange("isAccounting", e.target.checked)}
-                className="mr-2"
-              />
-              <span>Hạch toán vào kết quả hoạt động kinh doanh</span>
-              <span className="ml-2 text-gray-400 cursor-pointer" title="Khoản này sẽ tính vào tổng kết doanh thu, chi phí...">ⓘ</span>
-            </div>
-          </div>
-        </div>
-        {/* Nút */}
-        <div className="flex gap-4 mt-6 justify-end">
+    <div className="max-w-7xl mx-auto p-6 bg-white rounded-xl shadow mt-10">
+      {/* Nút logout */}
+      <div className="absolute top-4 right-4">
+        <LogoutButton />
+      </div>
+
+      {/* Menu điều hướng */}
+      <div className="flex justify-center space-x-2 mb-6">
+        <button
+          onClick={() => (window.location.href = "/nhap-hang")}
+          className="bg-blue-600 text-white px-3 py-1 rounded hover:bg-blue-700"
+        >
+          📥 Nhập hàng
+        </button>
+        <button
+          onClick={() => (window.location.href = "/xuat-hang")}
+          className="bg-green-600 text-white px-3 py-1 rounded hover:bg-green-700"
+        >
+          📤 Xuất hàng
+        </button>
+        <button
+          onClick={() => (window.location.href = "/ton-kho-so-luong")}
+          className="bg-yellow-600 text-white px-3 py-1 rounded hover:bg-yellow-700"
+        >
+          📦 Tồn kho
+        </button>
+        <button
+          onClick={() => (window.location.href = "/cong-no")}
+          className="bg-red-600 text-white px-3 py-1 rounded hover:bg-red-700"
+        >
+          💳 Công nợ
+        </button>
+        <button
+          onClick={() => (window.location.href = "/bao-cao")}
+          className="bg-purple-600 text-white px-3 py-1 rounded hover:bg-purple-700"
+        >
+          📋 Báo cáo
+        </button>
+      </div>
+
+      <div className="flex justify-between items-center mb-6">
+        <h1 className="text-3xl font-bold text-blue-700">💰 Sổ Quỹ</h1>
+        <div className="flex gap-2">
           <button
-            onClick={() => handleSave(false)}
-            disabled={loading}
-            className="bg-green-600 text-white px-6 py-2 rounded font-bold flex items-center"
+            className="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700"
+            onClick={() => handleOpenModal('add')}
           >
-            Lưu
+            ➕ Thêm giao dịch
           </button>
           <button
-            onClick={() => handleSave(true)}
-            disabled={loading}
-            className="bg-green-500 text-white px-6 py-2 rounded font-bold flex items-center"
+            className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700"
+            onClick={handleExportExcel}
           >
-            Lưu & In
-          </button>
-          <button
-            onClick={onClose}
-            className="bg-gray-400 text-white px-6 py-2 rounded font-bold flex items-center"
-          >
-            Bỏ qua
+            📊 Xuất Excel
           </button>
         </div>
       </div>
+
+      {/* ========= CHỌN CHI NHÁNH ========= */}
+      <div className="bg-gradient-to-r from-blue-100 to-purple-100 p-4 rounded-lg mb-6 border-l-4 border-blue-500">
+        <div className="flex items-center gap-4">
+          <span className="text-lg font-semibold text-blue-800">🏢 Chi nhánh hiện tại:</span>
+          {loadingBranches ? (
+            <div className="px-4 py-2 border-2 border-blue-300 rounded-lg text-lg font-semibold bg-gray-100 min-w-48">
+              ⏳ Đang tải chi nhánh...
+                </div>
+          ) : (
+            <select
+              className="px-4 py-2 border-2 border-blue-300 rounded-lg text-lg font-semibold bg-white shadow-sm min-w-48 focus:outline-none focus:border-blue-500"
+              value={selectedBranch}
+              onChange={(e) => {
+                setSelectedBranch(e.target.value);
+                setPagination(prev => ({ ...prev, page: 1 })); // Reset về trang 1
+              }}
+            >
+              {branches.map(branch => (
+                <option key={branch} value={branch}>
+                  {branch}
+                </option>
+              ))}
+            </select>
+          )}
+          <span className="text-sm text-gray-600 italic">
+            * Tất cả giao dịch chỉ hiển thị cho chi nhánh này
+          </span>
+          </div>
+          </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+        <div className="bg-green-100 p-4 rounded-lg border-l-4 border-green-500">
+          <h3 className="text-lg font-semibold text-green-800">💰 Tổng Thu ({selectedBranch})</h3>
+          <p className="text-2xl font-bold text-green-600">{formatMoney(summary.totalThu)}</p>
+          </div>
+        <div className="bg-red-100 p-4 rounded-lg border-l-4 border-red-500">
+          <h3 className="text-lg font-semibold text-red-800">💸 Tổng Chi ({selectedBranch})</h3>
+          <p className="text-2xl font-bold text-red-600">{formatMoney(summary.totalChi)}</p>
+          </div>
+        <div className={`p-4 rounded-lg border-l-4 ${summary.balance >= 0 ? 'bg-blue-100 border-blue-500' : 'bg-orange-100 border-orange-500'}`}>
+          <h3 className={`text-lg font-semibold ${summary.balance >= 0 ? 'text-blue-800' : 'text-orange-800'}`}>
+            📊 Số Dư ({selectedBranch})
+          </h3>
+          <p className={`text-2xl font-bold ${summary.balance >= 0 ? 'text-blue-600' : 'text-orange-600'}`}>
+            {formatMoney(summary.balance)}
+          </p>
+        </div>
+      </div>
+
+      <div className="bg-gray-50 p-4 rounded-lg mb-6">
+        <h3 className="font-semibold mb-3">🔍 Bộ lọc</h3>
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <div>
+            <label className="font-medium text-gray-700">Từ ngày</label>
+            <input
+              type="date"
+              className="mt-1 w-full border rounded px-2 py-1"
+              value={filters.fromDate}
+              onChange={e => handleFilterChange('fromDate', e.target.value)}
+            />
+          </div>
+          
+          <div>
+            <label className="font-medium text-gray-700">Đến ngày</label>
+            <input
+              type="date"
+              className="mt-1 w-full border rounded px-2 py-1"
+              value={filters.toDate}
+              onChange={e => handleFilterChange('toDate', e.target.value)}
+            />
+          </div>
+          
+          <div>
+            <label className="font-medium text-gray-700">Loại giao dịch</label>
+            <select
+              className="mt-1 w-full border rounded px-2 py-1"
+              value={filters.type}
+              onChange={e => handleFilterChange('type', e.target.value)}
+            >
+              <option value="all">Tất cả</option>
+              <option value="thu">Thu</option>
+              <option value="chi">Chi</option>
+            </select>
+          </div>
+
+        <div>
+            <label className="font-medium text-gray-700">Nguồn tiền</label>
+          <select
+              className="mt-1 w-full border rounded px-2 py-1"
+              value={filters.source}
+              onChange={e => handleFilterChange('source', e.target.value)}
+            >
+              <option value="all">Tất cả</option>
+            <option value="tien_mat">Tiền mặt</option>
+            <option value="the">Thẻ</option>
+              <option value="cong_no">Công nợ</option>
+          </select>
+        </div>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+        <div>
+            <label className="font-medium text-gray-700">Tìm kiếm</label>
+          <input
+              type="text"
+              className="mt-1 w-full border rounded px-2 py-1"
+              placeholder="Tìm theo nội dung, khách hàng, ghi chú..."
+              value={filters.search}
+              onChange={e => handleFilterChange('search', e.target.value)}
+            />
+          </div>
+
+          <div className="flex items-end">
+          <button
+              className="w-full bg-gray-500 text-white px-3 py-2 rounded hover:bg-gray-600"
+              onClick={() => {
+                setFilters({
+                  fromDate: '',
+                  toDate: '',
+                  type: 'all',
+                  source: 'all',
+                  search: ''
+                });
+              }}
+            >
+              🔄 Xóa lọc
+          </button>
+          </div>
+        </div>
+      </div>
+
+      <div className="overflow-x-auto">
+        <table className="w-full border-collapse border">
+          <thead>
+            <tr className="bg-gray-100">
+              <th className="border p-2 text-left">Mã phiếu</th>
+              <th className="border p-2 text-left">Ngày</th>
+              <th className="border p-2 text-left">Loại</th>
+              <th className="border p-2 text-left">Nội dung</th>
+              <th className="border p-2 text-right">Số tiền</th>
+              <th className="border p-2 text-left">Nguồn</th>
+              <th className="border p-2 text-left">Khách hàng/NCC</th>
+              <th className="border p-2 text-left">Chi nhánh</th>
+              <th className="border p-2 text-left">Ghi chú</th>
+              <th className="border p-2 text-center">Thao tác</th>
+            </tr>
+          </thead>
+          <tbody>
+            {loading ? (
+              <tr>
+                <td colSpan={10} className="text-center py-4">
+                  ⏳ Đang tải dữ liệu...
+                </td>
+              </tr>
+            ) : transactions.length === 0 ? (
+              <tr>
+                <td colSpan={10} className="text-center py-4 text-gray-500">
+                  Không có giao dịch nào
+                </td>
+              </tr>
+            ) : (
+              transactions.map((transaction, index) => (
+                <tr key={transaction._id} className={index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                  <td className="border p-2 text-sm">{transaction.receipt_code || transaction._id?.slice(-6)}</td>
+                  <td className="border p-2 text-sm">
+                    {transaction.date ? format(new Date(transaction.date), 'dd/MM/yyyy') : ''}
+                  </td>
+                  <td className="border p-2">
+                    <span className={`px-2 py-1 rounded text-white text-xs ${
+                      transaction.type === 'thu' ? 'bg-green-500' : 'bg-red-500'
+                    }`}>
+                      {transaction.type === 'thu' ? 'Thu' : 'Chi'}
+                    </span>
+                  </td>
+                  <td className="border p-2">{transaction.content}</td>
+                  <td className="border p-2 text-right font-semibold">
+                    {formatMoney(transaction.amount)}
+                  </td>
+                  <td className="border p-2 text-sm">
+                    {transaction.source === 'tien_mat' ? 'Tiền mặt' : 
+                     transaction.source === 'the' ? 'Thẻ' : 'Công nợ'}
+                  </td>
+                  <td className="border p-2 text-sm">
+                    {transaction.customer || transaction.supplier || '—'}
+                  </td>
+                  <td className="border p-2 text-sm">{transaction.branch || '—'}</td>
+                  <td className="border p-2 text-sm">{transaction.note || '—'}</td>
+                  <td className="border p-2 text-center">
+                    <div className="flex gap-1 justify-center">
+                      {transaction.editable !== false && (
+                        <>
+                  <button
+                            className="bg-blue-500 text-white px-2 py-1 rounded text-xs hover:bg-blue-600"
+                            onClick={() => handleOpenModal('edit', transaction)}
+                            title="Sửa"
+                  >
+                            ✏️
+                  </button>
+                  <button
+                            className="bg-red-500 text-white px-2 py-1 rounded text-xs hover:bg-red-600"
+                            onClick={() => handleDeleteTransaction(transaction._id)}
+                            title="Xóa"
+                          >
+                            🗑️
+                  </button>
+                        </>
+                      )}
+                      {transaction.is_auto && (
+                        <span className="text-xs text-gray-500" title="Giao dịch tự động">
+                          🤖
+                        </span>
+                      )}
+                    </div>
+                </td>
+              </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      {modal.open && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white p-6 rounded-lg w-[600px] max-w-90vw max-h-90vh overflow-y-auto">
+            <h3 className="text-xl font-bold mb-4">
+              {modal.type === 'edit' ? '✏️ Sửa giao dịch' : '➕ Thêm giao dịch mới'}
+            </h3>
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block font-medium mb-1">Loại giao dịch *</label>
+                <select
+                  className="w-full border rounded px-3 py-2"
+                  value={formData.type}
+                  onChange={e => setFormData(prev => ({ ...prev, type: e.target.value }))}
+                >
+                  <option value="thu">Thu</option>
+                  <option value="chi">Chi</option>
+                </select>
+      </div>
+
+          <div>
+                <label className="block font-medium mb-1">Ngày giao dịch *</label>
+              <input
+                  type="date"
+                  className="w-full border rounded px-3 py-2"
+                  value={formData.date}
+                  onChange={e => setFormData(prev => ({ ...prev, date: e.target.value }))}
+              />
+            </div>
+
+              <div>
+                <label className="block font-medium mb-1">Nội dung *</label>
+                <select
+                  className="w-full border rounded px-3 py-2"
+                  value={formData.content}
+                  onChange={e => setFormData(prev => ({ ...prev, content: e.target.value }))}
+                >
+                  <option value="">-- Chọn nội dung --</option>
+                  {categories[formData.type]?.map(cat => (
+                    <option key={cat} value={cat}>{cat}</option>
+                  ))}
+                </select>
+            </div>
+
+              <div>
+                <label className="block font-medium mb-1">Số tiền *</label>
+              <input
+                  type="text"
+                  className="w-full border rounded px-3 py-2"
+                  placeholder="0"
+                  value={formatNumberInput(formData.amount)}
+                  onChange={e => setFormData(prev => ({ ...prev, amount: unformatNumberInput(e.target.value) }))}
+              />
+            </div>
+
+              <div>
+                <label className="block font-medium mb-1">Nguồn tiền *</label>
+              <select
+                  className="w-full border rounded px-3 py-2"
+                  value={formData.source}
+                  onChange={e => setFormData(prev => ({ ...prev, source: e.target.value }))}
+              >
+                <option value="tien_mat">Tiền mặt</option>
+                <option value="the">Thẻ</option>
+                  <option value="cong_no">Công nợ</option>
+              </select>
+            </div>
+
+              <div>
+                <label className="block font-medium mb-1">Chi nhánh *</label>
+                <select
+                  className="w-full border rounded px-3 py-2"
+                  value={formData.branch}
+                  onChange={e => setFormData(prev => ({ ...prev, branch: e.target.value }))}
+                >
+                  <option value="">-- Chọn chi nhánh --</option>
+                  <option value="default">Mặc định</option>
+                  {branches.map(branch => (
+                    <option key={branch} value={branch}>{branch}</option>
+                  ))}
+                </select>
+            </div>
+
+          <div>
+                <label className="block font-medium mb-1">
+                  {formData.type === 'thu' ? 'Khách hàng' : 'Nhà cung cấp'}
+              </label>
+                <input
+                  type="text"
+                  className="w-full border rounded px-3 py-2"
+                  placeholder={formData.type === 'thu' ? 'Tên khách hàng' : 'Tên nhà cung cấp'}
+                  value={formData.type === 'thu' ? formData.customer : formData.supplier}
+                  onChange={e => setFormData(prev => ({ 
+                    ...prev, 
+                    [formData.type === 'thu' ? 'customer' : 'supplier']: e.target.value 
+                  }))}
+              />
+            </div>
+            </div>
+
+            <div className="mt-4">
+              <label className="block font-medium mb-1">Ghi chú</label>
+              <textarea
+                className="w-full border rounded px-3 py-2"
+                rows={3}
+                placeholder="Thêm ghi chú (không bắt buộc)"
+                value={formData.note}
+                onChange={e => setFormData(prev => ({ ...prev, note: e.target.value }))}
+              />
+            </div>
+
+            <div className="flex gap-3 mt-6">
+              <button
+                className="flex-1 bg-blue-600 text-white py-2 rounded hover:bg-blue-700"
+                onClick={handleSaveTransaction}
+              >
+                💾 {modal.type === 'edit' ? 'Cập nhật' : 'Lưu'}
+              </button>
+              <button
+                className="flex-1 bg-gray-500 text-white py-2 rounded hover:bg-gray-600"
+                onClick={handleCloseModal}
+              >
+                ❌ Hủy
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

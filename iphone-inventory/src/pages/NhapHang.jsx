@@ -437,19 +437,31 @@ function NhapHang() {
         </button>
         <button
           onClick={() => (window.location.href = "/xuat-hang")}
-          className="bg-blue-600 text-white px-3 py-1 rounded hover:bg-blue-700"
+          className="bg-green-600 text-white px-3 py-1 rounded hover:bg-green-700"
         >
           📤 Xuất hàng
         </button>
         <button
           onClick={() => (window.location.href = "/ton-kho-so-luong")}
-          className="bg-blue-600 text-white px-3 py-1 rounded hover:bg-blue-700"
+          className="bg-yellow-600 text-white px-3 py-1 rounded hover:bg-yellow-700"
         >
           📦 Tồn kho
         </button>
         <button
+          onClick={() => (window.location.href = "/so-quy")}
+          className="bg-orange-600 text-white px-3 py-1 rounded hover:bg-orange-700"
+        >
+          💰 Sổ quỹ
+        </button>
+        <button
+          onClick={() => (window.location.href = "/cong-no")}
+          className="bg-red-600 text-white px-3 py-1 rounded hover:bg-red-700"
+        >
+          💳 Công nợ
+        </button>
+        <button
           onClick={() => (window.location.href = "/bao-cao")}
-          className="bg-blue-600 text-white px-3 py-1 rounded hover:bg-blue-700"
+          className="bg-purple-600 text-white px-3 py-1 rounded hover:bg-purple-700"
         >
           📋 Báo cáo
         </button>
