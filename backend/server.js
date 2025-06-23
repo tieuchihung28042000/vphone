@@ -4,6 +4,7 @@ const cors = require('cors');
 require('dotenv').config();
 
 const Inventory = require('./models/Inventory');
+const Cashbook = require('./models/Cashbook'); // THÊM DÒNG NÀY
 const authRoutes = require('./routes/auth');
 const userRoutes = require('./routes/user');
 const reportRoutes = require('./routes/report');
@@ -11,6 +12,7 @@ const branchRoutes = require('./routes/branch');
 const categoryRoutes = require('./routes/category');
 const congNoRoutes = require('./routes/congno');
 const adminRoutes = require('./routes/admin');
+const cashbookRoutes = require('./routes/cashbook'); // THÊM DÒNG NÀY
 
 const app = express();
 
@@ -53,6 +55,7 @@ app.use('/api/user', userRoutes);
 app.use('/api/branches', branchRoutes);
 app.use('/api/categories', categoryRoutes);
 app.use('/api/cong-no', congNoRoutes);
+app.use('/api/cashbook', cashbookRoutes); // ROUTE SỔ QUỸ
 
 // API lấy danh sách nhập hàng
 app.get('/api/nhap-hang', async (req, res) => {
@@ -65,7 +68,7 @@ app.get('/api/nhap-hang', async (req, res) => {
   }
 });
 
-// API nhập hàng
+// API nhập hàng (tích hợp ghi sổ quỹ)
 app.post('/api/nhap-hang', async (req, res) => {
   try {
     const {
@@ -79,6 +82,7 @@ app.post('/api/nhap-hang', async (req, res) => {
       note,
       quantity,
       category,
+      source // Nguồn tiền: Tiền mặt/Thẻ/Công nợ (từ frontend)
     } = req.body;
 
     if (imei) {
@@ -100,6 +104,20 @@ app.post('/api/nhap-hang', async (req, res) => {
         category,
       });
       await newItem.save();
+
+      // --- Ghi SỔ QUỸ ---
+      await Cashbook.create({
+        type: 'chi',
+        amount: price_import * 1,
+        content: `Nhập hàng: ${product_name} (IMEI: ${imei})`,
+        note: note || '',
+        date: import_date || new Date(),
+        branch,
+        source: source || 'Tiền mặt',
+        supplier: supplier || '',
+        related_id: newItem._id,
+      });
+
       return res.status(201).json({
         message: '✅ Nhập hàng thành công!',
         item: newItem,
@@ -143,6 +161,20 @@ app.post('/api/nhap-hang', async (req, res) => {
         category,
       });
       await newItem.save();
+
+      // --- Ghi SỔ QUỸ ---
+      await Cashbook.create({
+        type: 'chi',
+        amount: price_import * Number(quantity || 1),
+        content: `Nhập phụ kiện: ${product_name}`,
+        note: note || '',
+        date: import_date || new Date(),
+        branch,
+        source: source || 'Tiền mặt',
+        supplier: supplier || '',
+        related_id: newItem._id,
+      });
+
       return res.status(201).json({
         message: '✅ Nhập phụ kiện thành công!',
         item: newItem,
@@ -196,7 +228,7 @@ app.delete('/api/nhap-hang/:id', async (req, res) => {
   }
 });
 
-// API xuất hàng
+// API xuất hàng (tích hợp ghi sổ quỹ)
 app.post('/api/xuat-hang', async (req, res) => {
   try {
     const {
@@ -210,6 +242,8 @@ app.post('/api/xuat-hang', async (req, res) => {
       product_name,
       sold_date,
       debt,
+      branch,
+      source // Nguồn tiền (frontend truyền lên)
     } = req.body;
 
     const item = await Inventory.findOne({ imei });
@@ -231,6 +265,7 @@ app.post('/api/xuat-hang', async (req, res) => {
     item.note = note || '';
     item.sku = sku || item.sku;
     item.product_name = product_name || item.product_name;
+    item.branch = branch || item.branch;
 
     if (debt !== undefined && debt !== null && debt !== "") {
       item.debt = Number(debt);
@@ -243,6 +278,34 @@ app.post('/api/xuat-hang', async (req, res) => {
     await item.save();
 
     const profit = (item.giaBan || 0) - (item.price_import || 0);
+
+    // --- Ghi SỔ QUỸ: THU TIỀN ---
+    await Cashbook.create({
+      type: 'thu',
+      amount: Number(item.da_tra),
+      content: `Bán hàng: ${item.product_name} (IMEI: ${item.imei})`,
+      note: note || '',
+      date: sold_date || new Date(),
+      branch: branch || '',
+      source: source || 'Tiền mặt',
+      customer: customer_name || '',
+      related_id: item._id
+    });
+
+    // Nếu có công nợ thì ghi sổ công nợ khách
+    if (item.debt && item.debt > 0) {
+      await Cashbook.create({
+        type: 'thu',
+        amount: Number(item.debt),
+        content: `Công nợ khách hàng khi bán: ${item.product_name} (IMEI: ${item.imei})`,
+        note: `Công nợ khách: ${customer_name}`,
+        date: sold_date || new Date(),
+        branch: branch || '',
+        source: 'Công nợ',
+        customer: customer_name || '',
+        related_id: item._id
+      });
+    }
 
     res.status(200).json({ message: '✅ Xuất hàng thành công!', item, profit });
   } catch (error) {
@@ -357,6 +420,46 @@ app.delete('/api/xuat-hang/:id', async (req, res) => {
     res.status(200).json({ message: '✅ Đã chuyển máy về tồn kho!', item });
   } catch (error) {
     res.status(500).json({ message: '❌ Lỗi khi xoá đơn xuất', error: error.message });
+  }
+});
+
+// === API TRẢ NỢ NHÀ CUNG CẤP (ghi chi vào sổ quỹ) ===
+app.post('/api/tra-no-ncc', async (req, res) => {
+  try {
+    const { supplier, amount, date, branch, source, note } = req.body;
+    await Cashbook.create({
+      type: 'chi',
+      amount: Number(amount),
+      content: `Trả nợ nhà cung cấp: ${supplier}`,
+      note: note || '',
+      date: date || new Date(),
+      branch: branch || '',
+      source: source || 'Tiền mặt',
+      supplier: supplier || ''
+    });
+    res.status(201).json({ message: '✅ Đã ghi nhận trả nợ nhà cung cấp!' });
+  } catch (error) {
+    res.status(500).json({ message: '❌ Lỗi khi ghi sổ trả nợ', error: error.message });
+  }
+});
+
+// === API THU NỢ KHÁCH HÀNG (ghi thu vào sổ quỹ) ===
+app.post('/api/thu-no-khach', async (req, res) => {
+  try {
+    const { customer, amount, date, branch, source, note } = req.body;
+    await Cashbook.create({
+      type: 'thu',
+      amount: Number(amount),
+      content: `Thu nợ khách: ${customer}`,
+      note: note || '',
+      date: date || new Date(),
+      branch: branch || '',
+      source: source || 'Tiền mặt',
+      customer: customer || ''
+    });
+    res.status(201).json({ message: '✅ Đã ghi nhận thu nợ khách hàng!' });
+  } catch (error) {
+    res.status(500).json({ message: '❌ Lỗi khi ghi sổ thu nợ', error: error.message });
   }
 });
 

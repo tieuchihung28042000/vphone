@@ -10,7 +10,10 @@ import BaoCao from "./BaoCao"; // Nếu BaoCao.jsx nằm ngoài thư mục pages
 import PrivateRoute from "./components/PrivateRoute";
 import CongNo from "./pages/CongNo";
 import NotAuthorized from "./pages/NotAuthorized";
-import DanhSachCanhBao from "./pages/DanhSachCanhBao"; // <- BỔ SUNG DÒNG NÀY
+import DanhSachCanhBao from "./pages/DanhSachCanhBao";
+
+// === THÊM DÒNG NÀY ===
+import Cashbook from "./pages/Cashbook"; // <--- Sổ quỹ
 
 function App() {
   return (
@@ -64,12 +67,21 @@ function App() {
         }
       />
 
-      {/* BỔ SUNG ROUTE DÀNH CHO DANH SÁCH CẦN NHẬP */}
       <Route
         path="/canh-bao-ton-kho"
         element={
           <PrivateRoute>
             <DanhSachCanhBao />
+          </PrivateRoute>
+        }
+      />
+
+      {/* ===== THÊM ROUTE SỔ QUỸ ===== */}
+      <Route
+        path="/so-quy"
+        element={
+          <PrivateRoute>
+            <Cashbook />
           </PrivateRoute>
         }
       />
