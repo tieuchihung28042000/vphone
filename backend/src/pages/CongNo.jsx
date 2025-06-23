@@ -11,10 +11,20 @@ function CongNo() {
   const [addNote, setAddNote] = useState("");           // Ghi chú cộng nợ
   const [historyModal, setHistoryModal] = useState({ open: false, history: [] });
   const [detailModal, setDetailModal] = useState({ open: false, orders: [] });
+  
+  // Thêm state cho tìm kiếm và sửa/xóa khách hàng
+  const [searchText, setSearchText] = useState("");
+  const [showAll, setShowAll] = useState(false);
+  const [editModal, setEditModal] = useState({ open: false, customer: null });
+  const [editForm, setEditForm] = useState({ name: "", phone: "" });
 
   // Lấy danh sách khách hàng còn nợ
   const fetchDebts = async () => {
-    const res = await fetch(`${import.meta.env.VITE_API_URL}/api/cong-no/cong-no-list`);
+    const params = new URLSearchParams();
+    if (searchText.trim()) params.append('search', searchText.trim());
+    if (showAll) params.append('show_all', 'true');
+    
+    const res = await fetch(`${import.meta.env.VITE_API_URL}/api/cong-no/cong-no-list?${params}`);
     const data = await res.json();
     setDebts(data.items || []);
   };
@@ -119,9 +129,61 @@ function CongNo() {
     setDetailModal({ open: true, orders: data.orders || [] });
   };
 
+  // Sửa thông tin khách hàng
+  const handleEditCustomer = (customer) => {
+    setEditForm({ name: customer.customer_name, phone: customer.customer_phone || "" });
+    setEditModal({ open: true, customer });
+  };
+
+  const handleSaveCustomer = async () => {
+    if (!editForm.name.trim()) return alert("Tên khách hàng không được để trống");
+    
+    const res = await fetch(`${import.meta.env.VITE_API_URL}/api/cong-no/update-customer`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        old_customer_name: editModal.customer.customer_name,
+        old_customer_phone: editModal.customer.customer_phone,
+        new_customer_name: editForm.name.trim(),
+        new_customer_phone: editForm.phone.trim()
+      })
+    });
+    
+    const data = await res.json();
+    if (res.ok) {
+      alert("✅ " + data.message);
+      setEditModal({ open: false, customer: null });
+      fetchDebts();
+    } else {
+      alert("❌ " + (data.message || "Lỗi cập nhật"));
+    }
+  };
+
+  // Xóa khách hàng khỏi công nợ
+  const handleDeleteCustomer = async (customer) => {
+    if (!window.confirm(`Bạn có chắc muốn xóa công nợ của khách hàng "${customer.customer_name}"?`)) return;
+    
+    const res = await fetch(`${import.meta.env.VITE_API_URL}/api/cong-no/delete-customer`, {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        customer_name: customer.customer_name,
+        customer_phone: customer.customer_phone
+      })
+    });
+    
+    const data = await res.json();
+    if (res.ok) {
+      alert("✅ " + data.message);
+      fetchDebts();
+    } else {
+      alert("❌ " + (data.message || "Lỗi xóa"));
+    }
+  };
+
   useEffect(() => {
     fetchDebts();
-  }, []);
+  }, [searchText, showAll]);
 
   return (
     <div className="max-w-5xl mx-auto p-6 bg-white rounded-xl shadow mt-10 relative">
@@ -140,6 +202,33 @@ function CongNo() {
         Công nợ khách hàng
       </h2>
 
+      {/* Bộ lọc và tìm kiếm */}
+      <div className="mb-4 p-4 bg-gray-100 rounded-lg">
+        <div className="flex flex-wrap gap-4 items-center">
+          <div className="flex-1 min-w-60">
+            <input
+              type="text"
+              placeholder="🔍 Tìm kiếm theo tên hoặc số điện thoại..."
+              value={searchText}
+              onChange={(e) => setSearchText(e.target.value)}
+              className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+          <div className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              id="showAll"
+              checked={showAll}
+              onChange={(e) => setShowAll(e.target.checked)}
+              className="w-4 h-4"
+            />
+            <label htmlFor="showAll" className="text-sm font-medium">
+              Hiển thị tất cả khách hàng (kể cả đã trả hết nợ)
+            </label>
+          </div>
+        </div>
+      </div>
+
       {/* Danh sách khách còn công nợ */}
       {!selectedCustomer && (
         <div className="mb-6">
@@ -154,6 +243,7 @@ function CongNo() {
                 <th className="border p-2">Thao tác</th>
                 <th className="border p-2">Lịch sử</th>
                 <th className="border p-2">Xem chi tiết</th>
+                <th className="border p-2">Sửa/Xóa</th>
               </tr>
             </thead>
             <tbody>
@@ -174,7 +264,10 @@ function CongNo() {
                   <td className="border p-2 text-center">
                     <button
                       className="bg-gray-300 text-black px-2 py-1 rounded"
-                      onClick={handleShowHistory}
+                      onClick={() => {
+                        setCustomerDebt(debt);
+                        handleShowHistory();
+                      }}
                     >
                       Xem
                     </button>
@@ -187,12 +280,28 @@ function CongNo() {
                       Xem chi tiết
                     </button>
                   </td>
+                  <td className="border p-2 text-center">
+                    <button
+                      className="bg-green-500 text-white px-2 py-1 rounded mr-1"
+                      onClick={() => handleEditCustomer(debt)}
+                      title="Sửa thông tin"
+                    >
+                      ✏️
+                    </button>
+                    <button
+                      className="bg-red-500 text-white px-2 py-1 rounded"
+                      onClick={() => handleDeleteCustomer(debt)}
+                      title="Xóa công nợ"
+                    >
+                      🗑️
+                    </button>
+                  </td>
                 </tr>
               ))}
               {debts.length === 0 && (
                 <tr>
-                  <td colSpan={7} className="text-center py-3 text-gray-500">
-                    Không có công nợ nào!
+                  <td colSpan={8} className="text-center py-3 text-gray-500">
+                    {searchText ? `Không tìm thấy khách hàng nào với từ khóa "${searchText}"` : "Không có công nợ nào!"}
                   </td>
                 </tr>
               )}
@@ -352,6 +461,51 @@ function CongNo() {
                 )}
               </tbody>
             </table>
+          </div>
+        </div>
+      )}
+
+      {/* Modal sửa thông tin khách hàng */}
+      {editModal.open && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white p-6 rounded-lg w-96 max-w-90vw">
+            <h3 className="text-lg font-bold mb-4">✏️ Sửa thông tin khách hàng</h3>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium mb-1">Tên khách hàng *</label>
+                <input
+                  type="text"
+                  value={editForm.name}
+                  onChange={(e) => setEditForm(prev => ({ ...prev, name: e.target.value }))}
+                  className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="Nhập tên khách hàng"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">Số điện thoại</label>
+                <input
+                  type="text"
+                  value={editForm.phone}
+                  onChange={(e) => setEditForm(prev => ({ ...prev, phone: e.target.value }))}
+                  className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="Nhập số điện thoại"
+                />
+              </div>
+            </div>
+            <div className="flex gap-3 mt-6">
+              <button
+                onClick={handleSaveCustomer}
+                className="flex-1 bg-blue-600 text-white py-2 rounded-md hover:bg-blue-700"
+              >
+                💾 Lưu
+              </button>
+              <button
+                onClick={() => setEditModal({ open: false, customer: null })}
+                className="flex-1 bg-gray-500 text-white py-2 rounded-md hover:bg-gray-600"
+              >
+                ❌ Hủy
+              </button>
+            </div>
           </div>
         </div>
       )}

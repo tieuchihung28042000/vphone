@@ -253,31 +253,26 @@ router.post('/xuat-hang', async (req, res) => {
         quantity: { $gte: quantity }
       });
       if (!acc) {
-        return res.status(400).json({ message: `❌ Không đủ phụ kiện trong kho` });
+        return res.status(400).json({ message: `❌ Không đủ phụ kiện trong kho (còn ${acc?.quantity || 0}, cần ${quantity})` });
       }
 
       let updateObj = {};
       let soldAccessory = null;
       if (acc.quantity > quantity) {
-        // Giảm số lượng
+        // Giảm số lượng, giữ trạng thái in_stock
         updateObj = { $inc: { quantity: -quantity } };
         soldAccessory = await Inventory.findByIdAndUpdate(acc._id, updateObj, { new: true });
-      } else {
-        // Hết sạch: chuyển trạng thái sold
+      } else if (acc.quantity === quantity) {
+        // Hết đúng: cập nhật quantity = 0 NHƯNG VẪN GIỮ status = 'in_stock'
         updateObj = {
           $set: {
-            status: 'sold',
-            sold_date: sold_date ? new Date(sold_date) : new Date(),
-            price_sell,
-            customer_name,
-            customer_phone,
-            warranty,
-            note,
-            debt: debt || 0,
-            branch
+            quantity: 0,
+            // KHÔNG thay đổi status, giữ in_stock để có thể trả hàng về sau
           }
         };
         soldAccessory = await Inventory.findByIdAndUpdate(acc._id, updateObj, { new: true });
+      } else {
+        return res.status(400).json({ message: `❌ Số lượng không hợp lệ` });
       }
 
       // === GHI LỊCH SỬ XUẤT PHỤ KIỆN ===
@@ -360,28 +355,49 @@ router.delete('/xuat-hang/:id', async (req, res) => {
       );
     } else {
       // ===== Nếu là xuất phụ kiện (không IMEI) thì hoàn lại số lượng =====
-      const filter = { sku: deleted.sku, status: "in_stock" };
+      // Tìm bản ghi phụ kiện cùng thông tin để cộng lại số lượng
+      const filter = { 
+        sku: deleted.sku, 
+        product_name: deleted.product_name,
+        price_import: deleted.price_import,
+        branch: deleted.branch,
+        category: deleted.category,
+        status: "in_stock" 
+      };
       let inventory = await Inventory.findOne(filter);
 
       if (inventory) {
-        // Nếu còn bản ghi thì cộng lại số lượng
-        inventory.quantity += deleted.quantity;
+        // Nếu có bản ghi cùng thông tin thì cộng lại số lượng
+        inventory.quantity = (inventory.quantity || 0) + deleted.quantity;
         await inventory.save();
       } else {
-        // Nếu không còn (đã bán hết hoặc bị xoá), thì tạo lại bản ghi mới với số lượng trả lại
-        await Inventory.create({
-          sku: deleted.sku,
-          product_name: deleted.product_name,
-          price_import: deleted.price_import || 0,
-          import_date: deleted.import_date || new Date(),
-          supplier: deleted.supplier || "",
-          branch: deleted.branch || "",
-          note: deleted.note || "",
-          quantity: deleted.quantity,
-          category: deleted.category || "",
-          tenSanPham: deleted.tenSanPham || "",
-          status: "in_stock"
+        // Nếu không tìm thấy bản ghi cùng thông tin, tìm bản ghi gần nhất cùng SKU
+        const nearestInventory = await Inventory.findOne({ 
+          sku: deleted.sku, 
+          status: "in_stock",
+          $or: [{ imei: null }, { imei: "" }]
         });
+        
+        if (nearestInventory) {
+          // Cộng vào bản ghi gần nhất
+          nearestInventory.quantity = (nearestInventory.quantity || 0) + deleted.quantity;
+          await nearestInventory.save();
+        } else {
+          // Tạo mới chỉ khi thực sự không có bản ghi nào
+          await Inventory.create({
+            sku: deleted.sku,
+            product_name: deleted.product_name,
+            price_import: deleted.price_import || 0,
+            import_date: deleted.import_date || new Date(),
+            supplier: deleted.supplier || "",
+            branch: deleted.branch || "",
+            note: deleted.note || "",
+            quantity: deleted.quantity,
+            category: deleted.category || "",
+            tenSanPham: deleted.tenSanPham || deleted.product_name || "",
+            status: "in_stock"
+          });
+        }
       }
     }
     // ===============================================================

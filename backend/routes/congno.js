@@ -5,11 +5,22 @@ const Inventory = require('../models/Inventory');
 // 1. Lấy danh sách khách hàng còn công nợ (Tổng hợp theo customer_name + customer_phone)
 router.get('/cong-no-list', async (req, res) => {
   try {
-    const items = await Inventory.find({
-  status: "sold",
-  customer_name: { $ne: null, $ne: "" }
-});
+    const { search = "", show_all = "false" } = req.query;
+    
+    let query = {
+      status: "sold",
+      customer_name: { $ne: null, $ne: "" }
+    };
 
+    // Thêm tìm kiếm theo tên hoặc sđt
+    if (search.trim()) {
+      query.$or = [
+        { customer_name: { $regex: search, $options: 'i' } },
+        { customer_phone: { $regex: search, $options: 'i' } }
+      ];
+    }
+
+    const items = await Inventory.find(query);
 
     // Gom nhóm theo customer_name + customer_phone
     const grouped = {};
@@ -50,7 +61,13 @@ router.get('/cong-no-list', async (req, res) => {
       );
     });
 
-    res.json({ items: Object.values(grouped) });
+    // Chỉ hiển thị khách còn nợ (trừ khi show_all=true)
+    let result = Object.values(grouped);
+    if (show_all !== "true") {
+      result = result.filter(customer => customer.total_debt > 0);
+    }
+
+    res.json({ items: result });
   } catch (err) {
     res.status(500).json({ message: '❌ Lỗi server khi lấy công nợ', error: err.message });
   }
@@ -116,6 +133,27 @@ router.put('/cong-no-pay-customer', async (req, res) => {
     });
 
     debt_history = debt_history.sort((a, b) => new Date(b.date) - new Date(a.date));
+
+    // Tự động ghi quỹ khi trả nợ
+    try {
+      await fetch(`${process.env.API_URL || 'http://localhost:5000'}/api/cashbook/auto-debt`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          customer: customer_name,
+          amount: Number(amount) - remain, // Số tiền thực tế đã trả
+          source: 'tien_mat', // Mặc định tiền mặt, có thể thêm param
+          branch: req.body.branch || 'default',
+          user: req.body.user || 'system',
+          debt_id: customer_name + '_' + (customer_phone || ''),
+          note: note || '',
+          debt_type: 'pay'
+        })
+      });
+    } catch (err) {
+      console.warn('Lỗi ghi quỹ tự động:', err.message);
+    }
+
     res.json({
       message: "Đã cập nhật công nợ!",
       total_debt,
@@ -159,6 +197,26 @@ router.put('/cong-no-add-customer', async (req, res) => {
       if (item.debt_history) debt_history = debt_history.concat(item.debt_history);
     });
     debt_history = debt_history.sort((a, b) => new Date(b.date) - new Date(a.date));
+
+    // Tự động ghi quỹ khi cộng nợ (nếu cần)
+    try {
+      await fetch(`${process.env.API_URL || 'http://localhost:5000'}/api/cashbook/auto-debt`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          customer: customer_name,
+          amount: Number(amount),
+          source: 'cong_no',
+          branch: req.body.branch || 'default', 
+          user: req.body.user || 'system',
+          debt_id: customer_name + '_' + (customer_phone || ''),
+          note: note || '',
+          debt_type: 'add'
+        })
+      });
+    } catch (err) {
+      console.warn('Lỗi ghi quỹ tự động:', err.message);
+    }
 
     res.json({
       message: "Đã cộng thêm nợ!",
@@ -232,6 +290,65 @@ router.get('/lich-su/:customer_name/:customer_phone', async (req, res) => {
     res.json({ lichSu });
   } catch (err) {
     res.status(500).json({ message: '❌ Lỗi server khi lấy lịch sử công nợ', error: err.message });
+  }
+});
+
+// 7. Sửa thông tin khách hàng (tên, sđt)
+router.put('/update-customer', async (req, res) => {
+  const { old_customer_name, old_customer_phone, new_customer_name, new_customer_phone } = req.body;
+  if (!old_customer_name || !new_customer_name) {
+    return res.status(400).json({ message: "Thiếu thông tin tên khách hàng" });
+  }
+  try {
+    const query = { customer_name: old_customer_name };
+    if (old_customer_phone) query.customer_phone = old_customer_phone;
+
+    const updateResult = await Inventory.updateMany(
+      query,
+      {
+        $set: {
+          customer_name: new_customer_name,
+          customer_phone: new_customer_phone || ""
+        }
+      }
+    );
+
+    res.json({ 
+      message: "✅ Đã cập nhật thông tin khách hàng!",
+      modified_count: updateResult.modifiedCount
+    });
+  } catch (err) {
+    res.status(500).json({ message: '❌ Lỗi server khi cập nhật thông tin khách hàng', error: err.message });
+  }
+});
+
+// 8. Xóa khách hàng khỏi công nợ (xóa tất cả debt và debt_history)
+router.delete('/delete-customer', async (req, res) => {
+  const { customer_name, customer_phone } = req.body;
+  if (!customer_name) return res.status(400).json({ message: "Thiếu tên khách hàng" });
+  try {
+    const query = { customer_name, status: "sold" };
+    if (customer_phone) query.customer_phone = customer_phone;
+
+    const updateResult = await Inventory.updateMany(
+      query,
+      {
+        $set: {
+          debt: 0,
+          da_tra: 0
+        },
+        $unset: {
+          debt_history: ""
+        }
+      }
+    );
+
+    res.json({ 
+      message: "✅ Đã xóa công nợ của khách hàng!",
+      modified_count: updateResult.modifiedCount
+    });
+  } catch (err) {
+    res.status(500).json({ message: '❌ Lỗi server khi xóa công nợ khách hàng', error: err.message });
   }
 });
 
