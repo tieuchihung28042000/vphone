@@ -7,12 +7,12 @@
 - `mongodb-data/vphone-backup/` - Database vphone (iPhone)
 
 ### 🐳 Docker Configurations
-- `docker-compose.test.yml` - Cho test.vphone.vn (ports: 27018, 4001, 8081, 8082)
-- `docker-compose.app.yml` - Cho app.vphone.vn (ports: 27019, 4002, 8083, 8084)
+- `docker-compose.test.yml` - Cho test.vphone.vn (MongoDB: 27018, Backend: 4001, Frontend: 8081)
+- `docker-compose.app.yml` - Cho app.vphone.vn (MongoDB: 27019, Backend: 4002, Frontend: 8083)
 
 ### 🌐 Nginx Configs
-- `nginx-test.conf` - Reverse proxy cho test.vphone.vn
-- `nginx-app.conf` - Reverse proxy cho app.vphone.vn
+- `nginx-production.conf` - Reverse proxy chính cho cả 2 domains
+- `setup-nginx.sh` - Script cài đặt nginx trên VPS
 
 ### 🚀 Deploy Scripts
 - `cleanup-pm2.sh` - Dọn dẹp PM2 và hệ thống cũ
@@ -31,9 +31,12 @@ scp -r vphone/ user@vps-ip:/home/user/
 cd /home/user/vphone
 ./full-deploy.sh
 
-# 3. Cấu hình DNS
-# test.vphone.vn → VPS-IP:8082
-# app.vphone.vn → VPS-IP:8084
+# 3. Cài đặt nginx
+./setup-nginx.sh
+
+# 4. Cấu hình DNS
+# test.vphone.vn → VPS-IP
+# app.vphone.vn → VPS-IP
 ```
 
 ### 🎯 Hoặc triển khai từng bước
@@ -46,6 +49,9 @@ cd /home/user/vphone
 
 # 3. Triển khai app.vphone.vn  
 ./deploy-app.sh
+
+# 4. Cài đặt nginx
+./setup-nginx.sh
 ```
 
 ## 📊 Thông Tin Admin

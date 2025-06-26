@@ -89,13 +89,21 @@ chmod +x deploy-app.sh
 ./deploy-app.sh
 ```
 
-### Bước 5: Cấu Hình DNS
+### Bước 5: Cài Đặt Nginx
 
-Trỏ DNS records:
-- `test.vphone.vn` → IP VPS:8082
-- `app.vphone.vn` → IP VPS:8084
+```bash
+# Cài đặt và cấu hình nginx
+chmod +x setup-nginx.sh
+./setup-nginx.sh
+```
 
-### Bước 6: Cấu Hình SSL (Tùy chọn)
+### Bước 6: Cấu Hình DNS
+
+Trỏ DNS records (chỉ cần trỏ về IP VPS, không cần port):
+- `test.vphone.vn` → IP VPS
+- `app.vphone.vn` → IP VPS
+
+### Bước 7: Cấu Hình SSL (Tùy chọn)
 
 ```bash
 # Cài đặt Certbot
@@ -122,10 +130,10 @@ docker-compose -f docker-compose.app.yml logs -f
 ### Health checks
 ```bash
 # Test health
-curl http://your-vps-ip:8082/health
+curl http://test.vphone.vn/health
 
-# App health
-curl http://your-vps-ip:8084/health
+# App health  
+curl http://app.vphone.vn/health
 ```
 
 ## 🔄 Quản Lý Hệ Thống
