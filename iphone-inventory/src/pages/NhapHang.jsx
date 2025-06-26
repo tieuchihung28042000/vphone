@@ -1,36 +1,46 @@
 import { useState, useEffect } from "react";
-import LogoutButton from "../components/LogoutButton";
+import Layout from "../components/Layout";
+import StatsCard from "../components/StatsCard";
+import FormCard from "../components/FormCard";
+import FilterCard from "../components/FilterCard";
+import DataTable from "../components/DataTable";
 import * as XLSX from "xlsx";
 import { saveAs } from "file-saver";
 
-// Hàm lấy ngày hôm nay dạng yyyy-mm-dd
+// Utility functions
 const getToday = () => {
   const d = new Date();
   return d.toISOString().slice(0, 10);
 };
 
-// ---- Định dạng số có dấu cách ----
 function formatNumber(val) {
   if (val === undefined || val === null || val === "") return "";
   return val.toString().replace(/\B(?=(\d{3})+(?!\d))/g, " ");
 }
+
+function formatCurrency(amount) {
+  if (!amount || amount === 0) return "0đ";
+  
+  if (amount >= 1000000000) {
+    return `${(amount / 1000000000).toFixed(1)}Tỷ`;
+  } else if (amount >= 1000000) {
+    return `${(amount / 1000000).toFixed(1)}Tr`;
+  } else if (amount >= 1000) {
+    return `${(amount / 1000).toFixed(0)}K`;
+  }
+  return `${formatNumber(amount)}đ`;
+}
+
 function parseNumber(val) {
   if (!val) return "";
   return val.toString().replace(/\s/g, "");
 }
 
 function NhapHang() {
-  // State quản lý branch/category
+  // State management
   const [branches, setBranches] = useState([]);
   const [categories, setCategories] = useState([]);
-  const [showBranchModal, setShowBranchModal] = useState(false);
-  const [showCategoryModal, setShowCategoryModal] = useState(false);
-  const [branchInput, setBranchInput] = useState('');
-  const [categoryInput, setCategoryInput] = useState('');
-  const [editBranchId, setEditBranchId] = useState(null);
-  const [editCategoryId, setEditCategoryId] = useState(null);
-
-  // Lấy mặc định branch/category từ localStorage
+  
   const getLocalBranch = () => localStorage.getItem('lastBranch') || "";
   const getLocalCategory = () => localStorage.getItem('lastCategory') || "";
 
@@ -45,45 +55,40 @@ function NhapHang() {
     note: "",
     tenSanPham: "",
     quantity: "",
-    category: getLocalCategory()
+    category: getLocalCategory(),
+    source: "tien_mat"
   });
 
   const [message, setMessage] = useState("");
   const [items, setItems] = useState([]);
   const [search, setSearch] = useState("");
   const [filterDate, setFilterDate] = useState("");
-  const [filterBranch, setFilterBranch] = useState("");
+  const [filterBranch, setFilterBranch] = useState("");  
   const [filterCategory, setFilterCategory] = useState("");
   const [filterSupplier, setFilterSupplier] = useState("");
   const [page, setPage] = useState(1);
-  const itemsPerPage = 20;
+  const itemsPerPage = 15;
   const [editingItemId, setEditingItemId] = useState(null);
 
-  const inputClass = "w-full border border-blue-300 p-2 rounded h-10 focus:outline-none focus:ring-2 focus:ring-blue-500";
+  // Stats calculation
+  const stats = {
+    totalItems: items.length,
+    totalValue: items.reduce((sum, item) => sum + (item.price_import * (item.quantity || 1)), 0),
+    soldItems: items.filter(item => item.status === 'sold').length,
+    inStock: items.filter(item => item.status !== 'sold').length
+  };
 
-  // Fetch đúng API nhập hàng, hiển thị mọi bản ghi nhập, không bị trừ số lượng
+  // API functions
   const fetchItems = async () => {
     try {
-      // Debug API URL
       const apiUrl = import.meta.env.VITE_API_URL || window.location.origin;
-      console.log('🔍 API URL:', apiUrl);
-      
       const res = await fetch(`${apiUrl}/api/nhap-hang`);
-      console.log('📡 API Response status:', res.status);
       
-      if (!res.ok) {
-        throw new Error(`API Error: ${res.status} - ${res.statusText}`);
-      }
+      if (!res.ok) throw new Error(`API Error: ${res.status}`);
       
       const data = await res.json();
-      console.log('📊 Data received:', data?.items?.length, 'items');
+      if (!data.items) return;
       
-      if (!data.items) {
-        console.error('❌ No items in response:', data);
-        return;
-      }
-      
-      // Sắp xếp mới nhất lên đầu (theo ngày nhập, nếu trùng ngày thì theo id)
       const sorted = data.items.sort((a, b) => {
         const dateA = a.import_date || '';
         const dateB = b.import_date || '';
@@ -93,25 +98,31 @@ function NhapHang() {
       });
       
       setItems(sorted);
-      console.log('✅ Items set:', sorted.length);
     } catch (err) {
-      console.error("❌ Lỗi khi tải dữ liệu nhập hàng:", err);
+      console.error("❌ Lỗi khi tải dữ liệu:", err);
     }
   };
 
-  const fetchBranches = () => {
-    const apiUrl = import.meta.env.VITE_API_URL || window.location.origin;
-    fetch(`${apiUrl}/api/branches`)
-      .then(res => res.json())
-      .then(data => setBranches(data))
-      .catch(err => console.error('❌ Lỗi fetch branches:', err));
+  const fetchBranches = async () => {
+    try {
+      const apiUrl = import.meta.env.VITE_API_URL || window.location.origin;
+      const res = await fetch(`${apiUrl}/api/branches`);
+      const data = await res.json();
+      setBranches(data);
+    } catch (err) {
+      console.error('❌ Lỗi fetch branches:', err);
+    }
   };
-  const fetchCategories = () => {
-    const apiUrl = import.meta.env.VITE_API_URL || window.location.origin;
-    fetch(`${apiUrl}/api/categories`)
-      .then(res => res.json())
-      .then(data => setCategories(data))
-      .catch(err => console.error('❌ Lỗi fetch categories:', err));
+
+  const fetchCategories = async () => {
+    try {
+      const apiUrl = import.meta.env.VITE_API_URL || window.location.origin;
+      const res = await fetch(`${apiUrl}/api/categories`);
+      const data = await res.json();
+      setCategories(data);
+    } catch (err) {
+      console.error('❌ Lỗi fetch categories:', err);
+    }
   };
 
   useEffect(() => {
@@ -124,12 +135,29 @@ function NhapHang() {
     const { name, value } = e.target;
     if (name === "branch") localStorage.setItem('lastBranch', value);
     if (name === "category") localStorage.setItem('lastCategory', value);
-    // Xử lý riêng cho price_import: luôn parse về số, giữ định dạng nhập
     if (name === "price_import") {
       setFormData((prev) => ({ ...prev, [name]: parseNumber(value) }));
     } else {
       setFormData((prev) => ({ ...prev, [name]: value }));
     }
+  };
+
+  const resetForm = () => {
+    setFormData({
+      imei: "",
+      product_name: "",
+      sku: "",
+      price_import: "",
+      import_date: getToday(),
+      supplier: "",
+      branch: formData.branch,
+      note: "",
+      tenSanPham: "",
+      quantity: "",
+      category: formData.category,
+      source: "tien_mat"
+    });
+    setEditingItemId(null);
   };
 
   const handleSubmit = async (e) => {
@@ -149,126 +177,71 @@ function NhapHang() {
       const data = await res.json();
       if (res.ok) {
         setMessage(`✅ ${data.message}`);
-        setFormData({
-          imei: "",
-          product_name: "",
-          sku: "",
-          price_import: "",
-          import_date: getToday(),
-          supplier: "",
-          branch: formData.branch,
-          note: "",
-          tenSanPham: "",
-          quantity: "",
-          category: formData.category
-        });
-        setEditingItemId(null);
+        resetForm();
         fetchItems();
+        setTimeout(() => setMessage(""), 3000);
       } else {
         setMessage(`❌ ${data.message}`);
+        setTimeout(() => setMessage(""), 3000);
       }
     } catch (err) {
       setMessage("❌ Lỗi kết nối tới server");
+      setTimeout(() => setMessage(""), 3000);
     }
   };
 
   const handleEdit = (item) => {
     setFormData({
-      imei: item.imei,
-      product_name: item.product_name || item.tenSanPham,
-      sku: item.sku,
-      price_import: item.price_import,
+      imei: item.imei || "",
+      product_name: item.product_name || item.tenSanPham || "",
+      sku: item.sku || "",
+      price_import: item.price_import || "",
       import_date: item.import_date?.slice(0, 10) || getToday(),
-      supplier: item.supplier,
-      branch: item.branch,
-      note: item.note,
-      tenSanPham: item.tenSanPham,
+      supplier: item.supplier || "",
+      branch: item.branch || "",
+      note: item.note || "",
+      tenSanPham: item.tenSanPham || item.product_name || "",
       quantity: item.quantity || "",
-      category: item.category || ""
+      category: item.category || "",
+      source: item.source || "tien_mat"
     });
     setEditingItemId(item._id);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   const handleDelete = async (id) => {
-    if (!window.confirm("Bạn có chắc chắn muốn xoá mục này không?")) return;
+    if (!confirm("Bạn có chắc muốn xóa sản phẩm này?")) return;
+    
     try {
-      const res = await fetch(`${import.meta.env.VITE_API_URL}/api/nhap-hang/${id}`, { method: "DELETE" });
+      const res = await fetch(`${import.meta.env.VITE_API_URL}/api/nhap-hang/${id}`, {
+        method: "DELETE"
+      });
       const data = await res.json();
+      
       if (res.ok) {
-        setMessage(`🗑️ ${data.message}`);
+        setMessage("✅ Đã xóa thành công");
         fetchItems();
+        setTimeout(() => setMessage(""), 3000);
       } else {
         setMessage(`❌ ${data.message}`);
+        setTimeout(() => setMessage(""), 3000);
       }
     } catch (err) {
-      setMessage("❌ Lỗi khi xoá mục");
+      setMessage("❌ Lỗi khi xóa");
+      setTimeout(() => setMessage(""), 3000);
     }
   };
 
-  const exportToExcel = () => {
-    const dataToExport = items.map((item) => ({
-      IMEI: item.imei,
-      Tên_sản_phẩm: item.product_name || item.tenSanPham,
-      SKU: item.sku,
-      Giá_nhập: item.price_import,
-      Ngày_nhập: item.import_date?.slice(0, 10),
-      Số_lượng: item.quantity,
-      Thư_mục: item.category,
-      Nhà_cung_cấp: item.supplier,
-      Chi_nhánh: item.branch,
-      Ghi_chú: item.note
-    }));
-    const worksheet = XLSX.utils.json_to_sheet(dataToExport);
-    const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, "NhapHang");
-    const excelBuffer = XLSX.write(workbook, { bookType: "xlsx", type: "array" });
-    const file = new Blob([excelBuffer], { type: "application/octet-stream" });
-    saveAs(file, "danh_sach_nhap_hang.xlsx");
+  // Clear filters function
+  const clearFilters = () => {
+    setSearch("");
+    setFilterDate("");
+    setFilterBranch("");
+    setFilterCategory("");
+    setFilterSupplier("");
   };
 
-  const importFromExcel = async (e) => {
-    const file = e.target.files[0];
-    const reader = new FileReader();
-    reader.onload = async (evt) => {
-      const wb = XLSX.read(evt.target.result, { type: "binary" });
-      const ws = wb.Sheets[wb.SheetNames[0]];
-      const data = XLSX.utils.sheet_to_json(ws);
-
-      const existImeis = new Set(items.map(i => i.imei));
-      let countAdded = 0, countSkip = 0;
-
-      for (const row of data) {
-        if (row.IMEI && existImeis.has(row.IMEI)) { countSkip++; continue; }
-        await fetch(`${import.meta.env.VITE_API_URL}/api/nhap-hang`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            imei: row.IMEI,
-            product_name: row.Tên_sản_phẩm,
-            sku: row.SKU,
-            price_import: row.Giá_nhập,
-            import_date: row.Ngày_nhập,
-            supplier: row.Nhà_cung_cấp,
-            branch: row.Chi_nhánh,
-            note: row.Ghi_chú,
-            quantity: row.Số_lượng,
-            category: row.Thư_mục,
-            tenSanPham: row.Tên_sản_phẩm
-          })
-        });
-        if (row.IMEI) existImeis.add(row.IMEI);
-        countAdded++;
-      }
-      fetchItems();
-      alert(`✅ Đã nhập từ Excel thành công! Đã thêm: ${countAdded} dòng, Bỏ qua trùng IMEI: ${countSkip} dòng`);
-    };
-    reader.readAsBinaryString(file);
-  };
-
-  // Danh sách nhà cung cấp (duy nhất)
-  const uniqueSuppliers = Array.from(new Set(items.map(i => i.supplier || ""))).filter(Boolean);
-
-  // Bộ lọc nâng cao: thêm lọc nhà cung cấp
+  // Filter and pagination
   const filteredItems = items.filter((item) => {
     const matchSearch =
       item.imei?.toLowerCase().includes(search.toLowerCase()) ||
@@ -284,484 +257,349 @@ function NhapHang() {
   const paginatedItems = filteredItems.slice((page - 1) * itemsPerPage, page * itemsPerPage);
   const totalPages = Math.ceil(filteredItems.length / itemsPerPage);
 
-  // Các hàm quản lý branch/category giữ nguyên như code cũ
-  const handleAddBranch = async () => {
-    if (!branchInput.trim()) return;
-    await fetch(`${import.meta.env.VITE_API_URL}/api/branches`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: branchInput.trim() })
-    });
-    setBranchInput('');
-    setShowBranchModal(false);
-    setEditBranchId(null);
-    fetchBranches();
-  };
-  const handleEditBranch = async () => {
-    if (!branchInput.trim() || !editBranchId) return;
-    await fetch(`${import.meta.env.VITE_API_URL}/api/branches/${editBranchId}`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: branchInput.trim() })
-    });
-    setBranchInput('');
-    setEditBranchId(null);
-    setShowBranchModal(false);
-    fetchBranches();
-  };
-  const handleDeleteBranch = async (id) => {
-    if (!window.confirm('Xoá chi nhánh này?')) return;
-    await fetch(`${import.meta.env.VITE_API_URL}/api/branches/${id}`, { method: "DELETE" });
-    fetchBranches();
-  };
-  const handleAddCategory = async () => {
-    if (!categoryInput.trim()) return;
-    await fetch(`${import.meta.env.VITE_API_URL}/api/categories`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: categoryInput.trim() })
-    });
-    setCategoryInput('');
-    setShowCategoryModal(false);
-    setEditCategoryId(null);
-    fetchCategories();
-  };
-  const handleEditCategory = async () => {
-    if (!categoryInput.trim() || !editCategoryId) return;
-    await fetch(`${import.meta.env.VITE_API_URL}/api/categories/${editCategoryId}`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: categoryInput.trim() })
-    });
-    setCategoryInput('');
-    setEditCategoryId(null);
-    setShowCategoryModal(false);
-    fetchCategories();
-  };
-  const handleDeleteCategory = async (id) => {
-    if (!window.confirm('Xoá thư mục này?')) return;
-    await fetch(`${import.meta.env.VITE_API_URL}/api/categories/${id}`, { method: "DELETE" });
-    fetchCategories();
-  };
+  // Table columns definition
+  const tableColumns = [
+    {
+      header: "IMEI",
+      key: "imei",
+      render: (item) => (
+        <div className="text-sm font-medium text-gray-900">
+          {item.imei || <span className="text-gray-400 italic">Không có</span>}
+        </div>
+      )
+    },
+    {
+      header: "Sản phẩm",
+      key: "product_name",
+      render: (item) => (
+        <div>
+          <div className="text-sm font-semibold text-gray-900">{item.product_name || item.tenSanPham}</div>
+          <div className="text-sm text-gray-500">{item.category} • {item.branch}</div>
+        </div>
+      )
+    },
+    {
+      header: "SKU",
+      key: "sku",
+      render: (item) => (
+        <div className="text-sm text-gray-900 font-mono">{item.sku}</div>
+      )
+    },
+    {
+      header: "Giá nhập",
+      key: "price_import",
+      render: (item) => (
+        <div className="text-sm font-bold text-green-600">
+          {formatCurrency(item.price_import)}
+        </div>
+      )
+    },
+    {
+      header: "Ngày nhập",
+      key: "import_date",
+      render: (item) => (
+        <div className="text-sm text-gray-500">
+          {item.import_date?.slice(0, 10)}
+        </div>
+      )
+    },
+    {
+      header: "Số lượng",
+      key: "quantity",
+      render: (item) => (
+        <div className="text-sm font-semibold text-gray-900">
+          {item.quantity || 1}
+        </div>
+      )
+    },
+    {
+      header: "Trạng thái",
+      key: "status",
+      render: (item) => (
+        item.status === 'sold' ? (
+          <span className="badge-danger">Đã bán</span>
+        ) : (
+          <span className="badge-success">Còn hàng</span>
+        )
+      )
+    },
+    {
+      header: "Thao tác",
+      key: "actions",
+      render: (item) => (
+        <div className="flex gap-2">
+          <button onClick={() => handleEdit(item)} className="btn-action-edit">
+            ✏️ Sửa
+          </button>
+          <button onClick={() => handleDelete(item._id)} className="btn-action-delete">
+            🗑️ Xóa
+          </button>
+        </div>
+      )
+    }
+  ];
 
   return (
-    <div className="max-w-5xl mx-auto p-6 bg-blue-50 rounded-xl shadow mt-10 relative">
-      {/* Modal branch */}
-      {/* ... Modal code giữ nguyên ... */}
-      {showBranchModal && (
-        <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-20 z-50">
-          <div className="bg-white p-6 rounded shadow-md min-w-[300px]">
-            <h3 className="mb-2 font-bold text-blue-700">{editBranchId ? 'Sửa chi nhánh' : 'Thêm chi nhánh'}</h3>
+    <Layout 
+      activeTab="nhap-hang"
+      title="📥 Nhập Hàng"
+      subtitle="Quản lý nhập hàng và theo dõi tồn kho"
+    >
+      {/* Stats Dashboard */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        <StatsCard
+          title="Tổng sản phẩm"
+          value={stats.totalItems.toLocaleString()}
+          icon="📦"
+          color="blue"
+          subtitle="Tất cả sản phẩm nhập"
+        />
+        <StatsCard
+          title="Giá trị nhập"
+          value={formatCurrency(stats.totalValue)}
+          icon="💰"
+          color="green"
+          subtitle="Tổng tiền đã nhập"
+        />
+        <StatsCard
+          title="Đã bán"
+          value={stats.soldItems.toLocaleString()}
+          icon="✅"
+          color="purple"
+          subtitle="Sản phẩm đã xuất"
+        />
+        <StatsCard
+          title="Tồn kho"
+          value={stats.inStock.toLocaleString()}
+          icon="📋"
+          color="orange"
+          subtitle="Còn lại trong kho"
+        />
+      </div>
+
+      {/* Form Card */}
+      <FormCard
+        title={editingItemId ? '✏️ Chỉnh sửa sản phẩm' : '➕ Thêm sản phẩm mới'}
+        subtitle="Điền thông tin chi tiết sản phẩm"
+        onReset={resetForm}
+        showReset={!!editingItemId}
+        resetLabel="Hủy chỉnh sửa"
+        message={message}
+      >
+        <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          <div>
+            <label className="block text-sm font-semibold text-gray-700 mb-3">IMEI</label>
             <input
-              type="text"
-              className="border border-blue-300 p-2 rounded w-full mb-4 focus:outline-none focus:ring-2 focus:ring-blue-500"
-              value={branchInput}
-              onChange={e => setBranchInput(e.target.value)}
+              name="imei"
+              placeholder="Nhập mã IMEI"
+              value={formData.imei}
+              onChange={handleChange}
+              className="form-input"
             />
-            <div className="flex gap-2 justify-end">
-              <button
-                onClick={() => setShowBranchModal(false)}
-                className="px-3 py-1 bg-gray-200 rounded hover:bg-gray-300"
-              >
-                Huỷ
-              </button>
-              {editBranchId ? (
-                <button
-                  onClick={handleEditBranch}
-                  className="px-3 py-1 bg-blue-600 text-white rounded hover:bg-blue-700"
-                >
-                  Lưu
-                </button>
-              ) : (
-                <button
-                  onClick={handleAddBranch}
-                  className="px-3 py-1 bg-green-600 text-white rounded hover:bg-green-700"
-                >
-                  Thêm
-                </button>
-              )}
-            </div>
           </div>
-        </div>
-      )}
-
-      {/* Modal category giữ nguyên ... */}
-      {showCategoryModal && (
-        <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-20 z-50">
-          <div className="bg-white p-6 rounded shadow-md min-w-[300px]">
-            <h3 className="mb-2 font-bold text-blue-700">{editCategoryId ? 'Sửa thư mục' : 'Thêm thư mục'}</h3>
+          
+          <div>
+            <label className="block text-sm font-semibold text-gray-700 mb-3">Tên sản phẩm *</label>
             <input
-              type="text"
-              className="border border-blue-300 p-2 rounded w-full mb-4 focus:outline-none focus:ring-2 focus:ring-blue-500"
-              value={categoryInput}
-              onChange={e => setCategoryInput(e.target.value)}
+              name="product_name"
+              placeholder="Nhập tên sản phẩm"
+              value={formData.product_name}
+              onChange={handleChange}
+              className="form-input"
+              required
             />
-            <div className="flex gap-2 justify-end">
-              <button
-                onClick={() => setShowCategoryModal(false)}
-                className="px-3 py-1 bg-gray-200 rounded hover:bg-gray-300"
-              >
-                Huỷ
-              </button>
-              {editCategoryId ? (
-                <button
-                  onClick={handleEditCategory}
-                  className="px-3 py-1 bg-blue-600 text-white rounded hover:bg-blue-700"
-                >
-                  Lưu
-                </button>
-              ) : (
-                <button
-                  onClick={handleAddCategory}
-                  className="px-3 py-1 bg-green-600 text-white rounded hover:bg-green-700"
-                >
-                  Thêm
-                </button>
-              )}
-            </div>
           </div>
-        </div>
-      )}
 
-      <div className="absolute top-4 right-4">
-        <LogoutButton />
-      </div>
-
-      {/* ... Các nút menu giữ nguyên ... */}
-      <div className="flex justify-center space-x-2 mb-6">
-        <button
-          onClick={() => (window.location.href = "/nhap-hang")}
-          className="bg-blue-600 text-white px-3 py-1 rounded hover:bg-blue-700"
-        >
-          📥 Nhập hàng
-        </button>
-        <button
-          onClick={() => (window.location.href = "/xuat-hang")}
-          className="bg-green-600 text-white px-3 py-1 rounded hover:bg-green-700"
-        >
-          📤 Xuất hàng
-        </button>
-        <button
-          onClick={() => (window.location.href = "/ton-kho-so-luong")}
-          className="bg-yellow-600 text-white px-3 py-1 rounded hover:bg-yellow-700"
-        >
-          📦 Tồn kho
-        </button>
-        <button
-          onClick={() => (window.location.href = "/so-quy")}
-          className="bg-orange-600 text-white px-3 py-1 rounded hover:bg-orange-700"
-        >
-          💰 Sổ quỹ
-        </button>
-        <button
-          onClick={() => (window.location.href = "/cong-no")}
-          className="bg-red-600 text-white px-3 py-1 rounded hover:bg-red-700"
-        >
-          💳 Công nợ
-        </button>
-        <button
-          onClick={() => (window.location.href = "/bao-cao")}
-          className="bg-purple-600 text-white px-3 py-1 rounded hover:bg-purple-700"
-        >
-          📋 Báo cáo
-        </button>
-      </div>
-
-      <h2 className="text-2xl font-bold mb-6 text-center text-blue-700">Nhập hàng iPhone</h2>
-
-      {/* Ô tìm kiếm */}
-   
-
-      {/* Xuất/nhập Excel */}
-      <div className="flex justify-between mb-4 gap-4">
-        <label className="flex items-center bg-blue-600 text-white px-4 py-2 rounded cursor-pointer hover:bg-blue-700">
-          📤 Nhập từ Excel
-          <input type="file" accept=".xlsx,.xls" onChange={importFromExcel} hidden />
-        </label>
-        <button
-          onClick={exportToExcel}
-          className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700"
-        >
-          ⬇️ Xuất Excel
-        </button>
-      </div>
-
-      {/* Form nhập hàng */}
-      <form onSubmit={handleSubmit} className="grid grid-cols-1 gap-4">
-        <input
-          name="imei"
-          placeholder="IMEI"
-          value={formData.imei}
-          onChange={handleChange}
-          className={inputClass}
-        />
-        <input
-          name="product_name"
-          placeholder="Tên sản phẩm"
-          value={formData.product_name}
-          onChange={handleChange}
-          className={inputClass}
-          required
-        />
-        <input
-          name="sku"
-          placeholder="SKU"
-          value={formData.sku}
-          onChange={handleChange}
-          className={inputClass}
-          required
-        />
-        {/* Giá nhập: nhập và hiển thị có dấu cách 3 số */}
-        <input
-          name="price_import"
-          type="text"
-          placeholder="Giá nhập"
-          value={formatNumber(formData.price_import)}
-          onChange={handleChange}
-          className={inputClass}
-          required
-        />
-        <input
-          name="import_date"
-          type="date"
-          placeholder="Ngày nhập"
-          value={formData.import_date}
-          onChange={handleChange}
-          className={inputClass}
-          required
-        />
-        <input
-          name="supplier"
-          placeholder="Nhà cung cấp"
-          value={formData.supplier}
-          onChange={handleChange}
-          className={inputClass}
-        />
-        {/* Chi nhánh: dropdown + nút quản lý */}
-        <div className="flex gap-2 items-center">
-          <select name="branch" value={formData.branch} onChange={handleChange} className={inputClass} required>
-            <option value="">Chọn chi nhánh</option>
-            {branches.map(b => (
-              <option key={b._id} value={b.name}>{b.name}</option>
-            ))}
-          </select>
-          <button
-            type="button"
-            className="text-green-600 text-xl"
-            title="Thêm"
-            onClick={() => {
-              setShowBranchModal(true);
-              setEditBranchId(null);
-              setBranchInput('');
-            }}
-          >➕</button>
-          <button
-            type="button"
-            className="text-yellow-600 text-xl"
-            title="Sửa"
-            onClick={() => {
-              if (!formData.branch) return;
-              const br = branches.find(b => b.name === formData.branch);
-              setEditBranchId(br?._id);
-              setBranchInput(formData.branch);
-              setShowBranchModal(true);
-            }}
-          >✏️</button>
-          <button
-            type="button"
-            className="text-red-600 text-xl"
-            title="Xoá"
-            onClick={() => {
-              const br = branches.find(b => b.name === formData.branch);
-              if (br) handleDeleteBranch(br._id);
-            }}
-          >🗑️</button>
-        </div>
-        <input
-          name="note"
-          placeholder="Ghi chú"
-          value={formData.note}
-          onChange={handleChange}
-          className={inputClass}
-        />
-        <input
-          name="quantity"
-          type="number"
-          placeholder="Số lượng"
-          value={formData.quantity}
-          onChange={handleChange}
-          className={inputClass}
-          required
-        />
-        {/* Thư mục: dropdown + nút quản lý */}
-        <div className="flex gap-2 items-center">
-          <select name="category" value={formData.category} onChange={handleChange} className={inputClass} required>
-            <option value="">Chọn thư mục</option>
-            {categories.map(c => (
-              <option key={c._id} value={c.name}>{c.name}</option>
-            ))}
-          </select>
-          <button
-            type="button"
-            className="text-green-600 text-xl"
-            title="Thêm"
-            onClick={() => { setShowCategoryModal(true); setEditCategoryId(null); setCategoryInput(''); }}
-          >➕</button>
-          <button
-            type="button"
-            className="text-yellow-600 text-xl"
-            title="Sửa"
-            onClick={() => {
-              if (!formData.category) return;
-              const cat = categories.find(c => c.name === formData.category);
-              setEditCategoryId(cat?._id);
-              setCategoryInput(formData.category);
-              setShowCategoryModal(true);
-            }}
-          >✏️</button>
-          <button
-            type="button"
-            className="text-red-600 text-xl"
-            title="Xoá"
-            onClick={() => {
-              const cat = categories.find(c => c.name === formData.category);
-              if (cat) handleDeleteCategory(cat._id);
-            }}
-          >🗑️</button>
-        </div>
-        <button type="submit" className="w-full bg-blue-600 text-white py-2 rounded hover:bg-blue-700 font-semibold">
-          {editingItemId ? "Cập nhật" : "Nhập hàng"}
-        </button>
-      </form>
-
-      {message && <p className="mt-4 text-center font-semibold text-green-600">{message}</p>}
-
-      <div className="mt-10">
-           <input
-        type="text"
-        placeholder="🔍 Tìm kiếm IMEI, Tên, SKU..."
-        value={search}
-        onChange={(e) => setSearch(e.target.value)}
-        className="border border-blue-300 px-4 py-2 rounded w-full mb-4 focus:outline-none focus:ring-2 focus:ring-blue-500"
-      />
-
-      {/* Bộ lọc nâng cao */}
-      <div className="flex flex-wrap gap-2 md:gap-4 mb-4 items-center">
-        <input
-          type="date"
-          value={filterDate}
-          onChange={(e) => setFilterDate(e.target.value)}
-          className="border border-blue-300 p-2 rounded w-36 md:w-40 focus:outline-none focus:ring-2 focus:ring-blue-500"
-          placeholder="Ngày nhập"
-        />
-        <select
-          value={filterBranch}
-          onChange={(e) => setFilterBranch(e.target.value)}
-          className="border border-blue-300 p-2 rounded w-32 md:w-40 focus:outline-none focus:ring-2 focus:ring-blue-500"
-        >
-          <option value="">Chi nhánh</option>
-          {branches.map((b) => (
-            <option key={b._id} value={b.name}>
-              {b.name}
-            </option>
-          ))}
-        </select>
-        <select
-          value={filterCategory}
-          onChange={(e) => setFilterCategory(e.target.value)}
-          className="border border-blue-300 p-2 rounded w-32 md:w-40 focus:outline-none focus:ring-2 focus:ring-blue-500"
-        >
-          <option value="">Thư mục</option>
-          {categories.map((c) => (
-            <option key={c._id} value={c.name}>
-              {c.name}
-            </option>
-          ))}
-        </select>
-        <select
-          value={filterSupplier}
-          onChange={e => setFilterSupplier(e.target.value)}
-          className="border border-blue-300 p-2 rounded w-32 md:w-40 focus:outline-none focus:ring-2 focus:ring-blue-500"
-        >
-          <option value="">Nhà cung cấp</option>
-          {uniqueSuppliers.map((s, idx) => (
-            <option key={idx} value={s}>{s}</option>
-          ))}
-        </select>
-      </div>
-
-        <table className="w-full border text-sm">
-          <thead>
-            <tr className="bg-blue-100">
-              <th className="border border-blue-300 p-2">IMEI</th>
-              <th className="border border-blue-300 p-2">Tên sản phẩm</th>
-              <th className="border border-blue-300 p-2">SKU</th>
-              <th className="border border-blue-300 p-2 text-center">Giá nhập</th>
-              <th className="border border-blue-300 p-2">Ngày nhập</th>
-              <th className="border border-blue-300 p-2">Số lượng</th>
-              <th className="border border-blue-300 p-2 text-green-800">Số lượng còn lại</th>
-              <th className="border border-blue-300 p-2">Thư mục</th>
-              <th className="border border-blue-300 p-2">Nhà cung cấp</th>
-              <th className="border border-blue-300 p-2">Chi nhánh</th>
-              <th className="border border-blue-300 p-2">Ghi chú</th>
-              <th className="border border-blue-300 p-2 text-center">Thao tác</th>
-            </tr>
-          </thead>
-          <tbody>
-            {paginatedItems.map((item) => (
-              <tr key={item._id}>
-                <td className="border border-blue-300 p-2">{item.imei}</td>
-                <td className="border border-blue-300 p-2">{item.product_name || item.tenSanPham}</td>
-                <td className="border border-blue-300 p-2">{item.sku}</td>
-                {/* Hiển thị giá nhập có dấu cách 3 số */}
-                <td className="border border-blue-300 p-2 text-center">{formatNumber(item.price_import)}đ</td>
-                <td className="border border-blue-300 p-2">{item.import_date?.slice(0, 10)}</td>
-                <td className="border border-blue-300 p-2">{item.quantity}</td>
-                {/* Số lượng còn lại */}
-                <td className="border border-blue-300 p-2 text-green-700 font-semibold">
-                  {item.imei
-                    ? (item.status === 'sold'
-                        ? <span className="text-red-600 font-bold">Đã bán</span>
-                        : 1)
-                    : (item.quantity ?? 1)
-                  }
-                </td>
-                <td className="border border-blue-300 p-2">{item.category}</td>
-                <td className="border border-blue-300 p-2">{item.supplier}</td>
-                <td className="border border-blue-300 p-2">{item.branch}</td>
-                <td className="border border-blue-300 p-2">{item.note}</td>
-                <td className="border border-blue-300 p-2 text-center space-x-1">
-                  <button onClick={() => handleEdit(item)} className="bg-yellow-400 text-white px-2 py-1 rounded hover:bg-yellow-500">✏️</button>
-                  <button onClick={() => handleDelete(item._id)} className="bg-red-600 text-white px-2 py-1 rounded hover:bg-red-700">🗑️</button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-        {/* Thông tin tổng hợp */}
-        <div className="font-semibold mt-4 text-right text-blue-700 space-y-1">
-          <div>Tổng số sản phẩm: {filteredItems.length} sản phẩm</div>
-          <div>Đã bán: {filteredItems.filter(item => item.status === 'sold').length} sản phẩm</div>
-          <div>Còn lại: {filteredItems.filter(item => item.status !== 'sold').length} sản phẩm</div>
-          <div>Tổng tiền nhập hàng (chưa bán):{" "}
-          {formatNumber(
-              filteredItems
-                .filter(item => item.status !== 'sold') // Chỉ tính sản phẩm chưa bán
-                .reduce((sum, item) =>
-              sum + (Number(item.price_import || 0) * Number(item.quantity || 1)), 0
-            )
-          )}đ
+          <div>
+            <label className="block text-sm font-semibold text-gray-700 mb-3">SKU *</label>
+            <input
+              name="sku"
+              placeholder="Mã SKU sản phẩm"
+              value={formData.sku}
+              onChange={handleChange}
+              className="form-input"
+              required
+            />
           </div>
-        </div>
-        <div className="flex justify-center space-x-2 mt-4">
-          {Array.from({ length: totalPages }, (_, i) => (
-            <button key={i + 1} onClick={() => setPage(i + 1)} className={`px-3 py-1 rounded ${page === i + 1 ? "bg-blue-600 text-white" : "bg-gray-200"}`}>
-              {i + 1}
+
+          <div>
+            <label className="block text-sm font-semibold text-gray-700 mb-3">Giá nhập *</label>
+            <input
+              name="price_import"
+              type="text"
+              placeholder="0"
+              value={formatNumber(formData.price_import)}
+              onChange={handleChange}
+              className="form-input"
+              required
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-semibold text-gray-700 mb-3">Ngày nhập *</label>
+            <input
+              name="import_date"
+              type="date"
+              value={formData.import_date}
+              onChange={handleChange}
+              className="form-input"
+              required
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-semibold text-gray-700 mb-3">Nhà cung cấp</label>
+            <input
+              name="supplier"
+              placeholder="Tên nhà cung cấp"
+              value={formData.supplier}
+              onChange={handleChange}
+              className="form-input"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-semibold text-gray-700 mb-3">Chi nhánh *</label>
+            <select 
+              name="branch" 
+              value={formData.branch} 
+              onChange={handleChange} 
+              className="form-input"
+              required
+            >
+              <option value="">Chọn chi nhánh</option>
+              {branches.map((b) => (
+                <option key={b._id} value={b.name}>{b.name}</option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-sm font-semibold text-gray-700 mb-3">Thư mục *</label>
+            <select 
+              name="category" 
+              value={formData.category} 
+              onChange={handleChange} 
+              className="form-input"
+              required
+            >
+              <option value="">Chọn thư mục</option>
+              {categories.map((c) => (
+                <option key={c._id} value={c.name}>{c.name}</option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-sm font-semibold text-gray-700 mb-3">Số lượng *</label>
+            <input
+              name="quantity"
+              type="number"
+              placeholder="Số lượng"
+              value={formData.quantity}
+              onChange={handleChange}
+              className="form-input"
+              required
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-semibold text-gray-700 mb-3">Nguồn tiền *</label>
+            <select 
+              name="source" 
+              value={formData.source} 
+              onChange={handleChange} 
+              className="form-input"
+              required
+            >
+              <option value="tien_mat">💵 Tiền mặt</option>
+              <option value="the">💳 Thẻ</option>
+              <option value="vi_dien_tu">📱 Ví điện tử</option>
+              <option value="cong_no">📝 Công nợ (nhà cung cấp)</option>
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-sm font-semibold text-gray-700 mb-3">Ghi chú</label>
+            <input
+              name="note"
+              placeholder="Ghi chú thêm"
+              value={formData.note}
+              onChange={handleChange}
+              className="form-input"
+            />
+          </div>
+
+          <div className="md:col-span-2 lg:col-span-3">
+            <button 
+              type="submit" 
+              className="w-full btn-gradient text-white py-4 px-8 rounded-2xl font-bold text-lg transition-all duration-300"
+            >
+              {editingItemId ? "🔄 Cập nhật sản phẩm" : "➕ Thêm sản phẩm mới"}
             </button>
-          ))}
+          </div>
+        </form>
+      </FormCard>
+
+      {/* Filters */}
+      <FilterCard onClearFilters={clearFilters}>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-4">
+          <div className="lg:col-span-2">
+            <input
+              type="text"
+              placeholder="🔍 Tìm IMEI, tên, SKU..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="form-input"
+            />
+          </div>
+          <div>
+            <input
+              type="date"
+              value={filterDate}
+              onChange={(e) => setFilterDate(e.target.value)}
+              className="form-input"
+            />
+          </div>
+          <div>
+            <select
+              value={filterBranch}
+              onChange={(e) => setFilterBranch(e.target.value)}
+              className="form-input"
+            >
+              <option value="">Tất cả chi nhánh</option>
+              {branches.map((b) => (
+                <option key={b._id} value={b.name}>{b.name}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <select
+              value={filterCategory}
+              onChange={(e) => setFilterCategory(e.target.value)}
+              className="form-input"
+            >
+              <option value="">Tất cả thư mục</option>
+              {categories.map((c) => (
+                <option key={c._id} value={c.name}>{c.name}</option>
+              ))}
+            </select>
+          </div>
         </div>
-      </div>
-    </div>
+      </FilterCard>
+
+      {/* Data Table */}
+      <DataTable
+        title="📋 Danh sách sản phẩm đã nhập"
+        data={paginatedItems.map(item => ({ ...item, id: item._id }))}
+        columns={tableColumns}
+        currentPage={page}
+        totalPages={totalPages}
+        itemsPerPage={itemsPerPage}
+        totalItems={filteredItems.length}
+        onPageChange={setPage}
+      />
+    </Layout>
   );
 }
 

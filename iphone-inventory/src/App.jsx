@@ -9,6 +9,7 @@ import TonKhoSoLuong from "./pages/TonKhoSoLuong";
 import BaoCao from "./BaoCao"; // Nếu BaoCao.jsx nằm ngoài thư mục pages
 import PrivateRoute from "./components/PrivateRoute";
 import CongNo from "./pages/CongNo";
+import QuanLyUser from "./pages/QuanLyUser";
 import NotAuthorized from "./pages/NotAuthorized";
 import DanhSachCanhBao from "./pages/DanhSachCanhBao";
 
@@ -82,6 +83,16 @@ function App() {
         element={
           <PrivateRoute>
             <Cashbook />
+          </PrivateRoute>
+        }
+      />
+
+      {/* Quản lý User */}
+      <Route
+        path="/quan-ly-user"
+        element={
+          <PrivateRoute>
+            <QuanLyUser />
           </PrivateRoute>
         }
       />

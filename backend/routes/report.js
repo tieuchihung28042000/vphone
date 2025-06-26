@@ -18,8 +18,12 @@ router.get('/bao-cao-loi-nhuan', async (req, res) => {
     };
     if (branch && branch !== 'all') query.branch = branch;
 
-    // LẤY TỪ ExportHistory, KHÔNG PHẢI Inventory!
-    const soldItems = await ExportHistory.find(query);
+    // LẤY TỪ Inventory với status = 'sold', KHÔNG PHẢI ExportHistory!
+    const soldItems = await Inventory.find({ 
+      status: 'sold',
+      sold_date: query.sold_date,
+      ...(query.branch ? { branch: query.branch } : {})
+    });
 
     const totalDevicesSold = soldItems.length;
     const totalRevenue = soldItems.reduce(

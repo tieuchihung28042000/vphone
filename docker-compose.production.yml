@@ -1,0 +1,139 @@
+version: '3.8'
+
+services:
+  # MongoDB Database - Single instance for both environments
+  mongodb:
+    image: mongo:7.0
+    container_name: vphone-mongodb-prod
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodb_data_prod:/data/db
+      - mongodb_config_prod:/data/configdb
+      - ./mongodb-data/init-mongo.js:/docker-entrypoint-initdb.d/init-mongo.js:ro
+      - ./mongodb-data/test-backup:/backup/test:ro
+      - ./mongodb-data/vphone-backup:/backup/vphone:ro
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: vphone_admin
+      MONGO_INITDB_ROOT_PASSWORD: vphone_secure_password_2024
+      MONGO_INITDB_DATABASE: admin
+    networks:
+      - vphone-network
+    command: --wiredTigerCacheSizeGB 0.5
+
+  # Backend API for test.vphone.vn (TEST Environment)
+  backend-test:
+    build: 
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: vphone-backend-test
+    restart: unless-stopped
+    ports:
+      - "4001:4000"
+    environment:
+      NODE_ENV: production
+      MONGODB_URI: mongodb://vphone_admin:vphone_secure_password_2024@mongodb:27017/test?authSource=admin
+      JWT_SECRET: ${JWT_SECRET:-mh2!#F8m@kd%$a7LzQxT9^v!w}
+      EMAIL_HOST: smtp.gmail.com
+      EMAIL_PORT: 587
+      EMAIL_USER: ${EMAIL_USER:-vphone24h3@gmail.com}
+      EMAIL_PASS: ${EMAIL_PASS:-ftxhkismjvdqzawp}
+      DOMAIN: test.vphone.vn
+    depends_on:
+      - mongodb
+    networks:
+      - vphone-network
+    volumes:
+      - ./backend:/app
+      - /app/node_modules
+
+  # Backend API for app.vphone.vn (PRODUCTION Environment)
+  backend-prod:
+    build: 
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: vphone-backend-prod
+    restart: unless-stopped
+    ports:
+      - "4000:4000"
+    environment:
+      NODE_ENV: production
+      MONGODB_URI: mongodb://vphone_admin:vphone_secure_password_2024@mongodb:27017/vphone?authSource=admin
+      JWT_SECRET: ${JWT_SECRET:-mh2!#F8m@kd%$a7LzQxT9^v!w}
+      EMAIL_HOST: smtp.gmail.com
+      EMAIL_PORT: 587
+      EMAIL_USER: ${EMAIL_USER:-vphone24h3@gmail.com}
+      EMAIL_PASS: ${EMAIL_PASS:-ftxhkismjvdqzawp}
+      DOMAIN: app.vphone.vn
+    depends_on:
+      - mongodb
+    networks:
+      - vphone-network
+    volumes:
+      - ./backend:/app
+      - /app/node_modules
+
+  # Frontend for test.vphone.vn
+  frontend-test:
+    build: 
+      context: ./iphone-inventory
+      dockerfile: Dockerfile
+    container_name: vphone-frontend-test
+    restart: unless-stopped
+    ports:
+      - "8081:80"
+    environment:
+      VITE_API_URL: https://test.vphone.vn:4001
+    depends_on:
+      - backend-test
+    networks:
+      - vphone-network
+
+  # Frontend for app.vphone.vn
+  frontend-prod:
+    build: 
+      context: ./iphone-inventory
+      dockerfile: Dockerfile
+    container_name: vphone-frontend-prod
+    restart: unless-stopped
+    ports:
+      - "8080:80"
+    environment:
+      VITE_API_URL: https://app.vphone.vn:4000
+    depends_on:
+      - backend-prod
+    networks:
+      - vphone-network
+
+  # Nginx Reverse Proxy
+  nginx:
+    image: nginx:alpine
+    container_name: vphone-nginx-prod
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx-production-multi.conf:/etc/nginx/conf.d/default.conf
+      - ./ssl:/etc/nginx/ssl:ro
+    depends_on:
+      - frontend-test
+      - frontend-prod
+      - backend-test
+      - backend-prod
+    networks:
+      - vphone-network
+
+networks:
+  vphone-network:
+    driver: bridge
+    name: vphone-network-prod
+
+volumes:
+  mongodb_data_prod:
+    driver: local
+    name: vphone-mongodb-data-prod
+  mongodb_config_prod:
+    driver: local
+    name: vphone-mongodb-config-prod 

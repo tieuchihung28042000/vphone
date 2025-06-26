@@ -1,0 +1,88 @@
+version: '3.8'
+
+services:
+  # MongoDB Database cho test.vphone.vn
+  mongodb-test:
+    image: mongo:7.0
+    container_name: vphone-test-mongodb
+    restart: unless-stopped
+    ports:
+      - "27018:27017"  # Port khác để tránh conflict
+    volumes:
+      - mongodb_test_data:/data/db
+      - mongodb_test_config:/data/configdb
+      - ./mongodb-data/test-backup:/docker-entrypoint-initdb.d/backup:ro
+      - ./scripts/restore-test.sh:/docker-entrypoint-initdb.d/restore.sh:ro
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: vphone_test_admin
+      MONGO_INITDB_ROOT_PASSWORD: vphone_test_secure_2024
+      MONGO_INITDB_DATABASE: test
+    networks:
+      - vphone-test-network
+    command: --wiredTigerCacheSizeGB 0.25
+
+  # Backend API cho test.vphone.vn
+  backend-test:
+    build: 
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: vphone-test-backend
+    restart: unless-stopped
+    ports:
+      - "4001:4000"  # Port khác
+    environment:
+      NODE_ENV: production
+      MONGODB_URI: mongodb://vphone_test_admin:vphone_test_secure_2024@mongodb-test:27017/test?authSource=admin
+      JWT_SECRET: ${JWT_SECRET:-mh2!#F8m@kd%$a7LzQxT9^test!w}
+      EMAIL_HOST: smtp.gmail.com
+      EMAIL_PORT: 587
+      EMAIL_USER: ${EMAIL_USER:-vphone24h3@gmail.com}
+      EMAIL_PASS: ${EMAIL_PASS:-ftxhkismjvdqzawp}
+    depends_on:
+      - mongodb-test
+    networks:
+      - vphone-test-network
+    volumes:
+      - ./backend:/app
+      - /app/node_modules
+
+  # Frontend Web App cho test.vphone.vn
+  frontend-test:
+    build: 
+      context: ./iphone-inventory
+      dockerfile: Dockerfile
+    container_name: vphone-test-frontend
+    restart: unless-stopped
+    ports:
+      - "8081:80"  # Port khác
+    environment:
+      VITE_API_URL: https://test.vphone.vn/api
+    depends_on:
+      - backend-test
+    networks:
+      - vphone-test-network
+
+  # Nginx Reverse Proxy cho test.vphone.vn
+  nginx-test:
+    image: nginx:alpine
+    container_name: vphone-test-nginx
+    restart: unless-stopped
+    ports:
+      - "8082:80"  # Port khác
+    volumes:
+      - ./nginx-test.conf:/etc/nginx/conf.d/default.conf
+    depends_on:
+      - frontend-test
+      - backend-test
+    networks:
+      - vphone-test-network
+
+networks:
+  vphone-test-network:
+    driver: bridge
+
+volumes:
+  mongodb_test_data:
+    driver: local
+  mongodb_test_config:
+    driver: local 

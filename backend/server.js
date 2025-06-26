@@ -21,6 +21,8 @@ const allowedOrigins = [
   'http://localhost:5174',
   'http://localhost:5175',
   'http://localhost:3000',
+  'http://localhost:8080',
+  'http://localhost:80',
   'https://chinhthuc-jade.vercel.app',
   'http://app.vphone.vn',
   'https://app.vphone.vn',
@@ -373,7 +375,28 @@ app.get('/api/canh-bao-ton-kho', async (req, res) => {
 // API danh sách xuất hàng
 app.get('/api/xuat-hang-list', async (req, res) => {
   try {
-    const items = await Inventory.find({ status: 'sold' }).sort({ sold_date: -1 });
+    const rawItems = await Inventory.find({ status: 'sold' }).sort({ sold_date: -1 });
+    
+    // Transform data để match với frontend expectation
+    const items = rawItems.map(item => ({
+      _id: item._id,
+      sale_date: item.sold_date || item.createdAt,
+      sale_price: item.price_sell || item.price,
+      buyer_name: item.customer_name || '',
+      buyer_phone: item.customer_phone || '',
+      branch: item.branch || '',
+      note: item.note || '',
+      source: item.source || 'tien_mat',
+      item: {
+        _id: item._id,
+        product_name: item.product_name || item.tenSanPham,
+        tenSanPham: item.tenSanPham || item.product_name,
+        imei: item.imei || '',
+        sku: item.sku || '',
+        category: item.category || '',
+      }
+    }));
+    
     res.status(200).json({ items });
   } catch (error) {
     res.status(500).json({ message: '❌ Lỗi lấy danh sách xuất hàng', error: error.message });

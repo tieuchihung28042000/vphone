@@ -1,10 +1,16 @@
 import { useEffect, useState } from "react";
 import * as XLSX from "xlsx";
 import { useNavigate } from "react-router-dom";
-import LogoutButton from "../components/LogoutButton";
+import Layout from "../components/Layout";
+import StatsCard from "../components/StatsCard";
+import FilterCard from "../components/FilterCard";
+import DataTable from "../components/DataTable";
 
-// Nếu bạn cần hàm formatNumber, bật dòng này
-// function formatNumber(num) { return num ? num.toLocaleString('vi-VN') : '0'; }
+// Utility functions
+function formatNumber(val) {
+  if (val === undefined || val === null || val === "") return "";
+  return val.toString().replace(/\B(?=(\d{3})+(?!\d))/g, " ");
+}
 
 function TonKhoSoLuong() {
   const [data, setData] = useState([]);
@@ -12,8 +18,8 @@ function TonKhoSoLuong() {
   const [search, setSearch] = useState("");
   const [branchFilter, setBranchFilter] = useState("all");
   const [monthFilter, setMonthFilter] = useState("");
-  const [categoryFilter, setCategoryFilter] = useState("all"); // Thêm state lọc category
-  const [categories, setCategories] = useState([]);            // Thêm state list category
+  const [categoryFilter, setCategoryFilter] = useState("all");
+  const [categories, setCategories] = useState([]);
   const [selectedSKU, setSelectedSKU] = useState(null);
   const [imeiList, setImeiList] = useState([]);
   const [showLowStockOnly, setShowLowStockOnly] = useState(false);
@@ -24,27 +30,31 @@ function TonKhoSoLuong() {
     fetch(`${import.meta.env.VITE_API_URL}/api/ton-kho`)
       .then((res) => res.json())
       .then((res) => {
-        // Debug xem có dữ liệu không
         console.log("API trả về:", res.items);
 
         const grouped = {};
 
         res.items.forEach((item) => {
-          // SỬA: dùng import_date thay vì ngayNhap
           const importDate = item.import_date ? new Date(item.import_date) : null;
           const importMonth =
             importDate && !isNaN(importDate)
               ? `${importDate.getFullYear()}-${String(importDate.getMonth() + 1).padStart(2, "0")}`
               : "Không rõ";
 
-          const key = (item.sku || "unk") + (item.branch || "") + importMonth;
+          // Sử dụng product_name khi SKU rỗng để tránh gom nhóm sai
+          const uniqueKey = item.sku && item.sku.trim() 
+            ? item.sku 
+            : item.product_name || item.tenSanPham || `product_${item._id}`;
+          
+          const key = uniqueKey + "|" + (item.branch || "") + "|" + importMonth;
+          
           if (!grouped[key]) {
             grouped[key] = {
               sku: item.sku || "Không rõ",
               tenSanPham: item.tenSanPham || item.product_name || "Không rõ",
               branch: (item.branch || "Mặc định").trim(),
               importMonth,
-              category: item.category || "Không rõ", // Có category ở đây
+              category: item.category || "Không rõ",
               totalImport: 0,
               totalSold: 0,
               totalRemain: 0,
@@ -73,13 +83,13 @@ function TonKhoSoLuong() {
 
         setData(result);
 
-        // --- Lấy danh sách chi nhánh tự động từ dữ liệu ---
+        // Get unique branches
         const allBranches = Array.from(
           new Set(result.map(row => (row.branch || "Mặc định").trim()))
         );
         setBranches(allBranches);
 
-        // --- Lấy danh sách category tự động từ dữ liệu ---
+        // Get unique categories
         const allCategories = Array.from(
           new Set(result.map(row => (row.category || "Không rõ").trim()))
         );
@@ -99,9 +109,22 @@ function TonKhoSoLuong() {
     const matchBranch = branchFilter === "all" || row.branch === branchFilter;
     const matchMonth = monthFilter === "" || row.importMonth === monthFilter;
     const matchLowStock = !showLowStockOnly || row.totalRemain < 2;
-    const matchCategory = categoryFilter === "all" || row.category === categoryFilter; // Bổ sung lọc category
+    const matchCategory = categoryFilter === "all" || row.category === categoryFilter;
     return matchSearch && matchBranch && matchMonth && matchLowStock && matchCategory;
   });
+
+  // Stats calculation
+  const totalProducts = filteredData.length;
+  const totalStock = filteredData.reduce((sum, item) => sum + item.totalRemain, 0);
+  const lowStockItems = filteredData.filter(item => item.totalRemain < 2).length;
+  const outOfStockItems = filteredData.filter(item => item.totalRemain === 0).length;
+
+  const stats = {
+    totalProducts,
+    totalStock,
+    lowStockItems,
+    outOfStockItems
+  };
 
   const exportToExcel = () => {
     const worksheet = XLSX.utils.json_to_sheet(filteredData);
@@ -115,161 +138,265 @@ function TonKhoSoLuong() {
     setImeiList(row.imeis);
   };
 
+  // Clear filters function
+  const clearFilters = () => {
+    setSearch("");
+    setBranchFilter("all");
+    setMonthFilter("");
+    setCategoryFilter("all");
+    setShowLowStockOnly(false);
+  };
+
+  // Table columns definition
+  const tableColumns = [
+    {
+      header: "Sản phẩm",
+      key: "product",
+      render: (row) => (
+        <div>
+          <div className="text-sm font-semibold text-gray-900">{row.tenSanPham}</div>
+          <div className="text-sm text-gray-500">SKU: {row.sku}</div>
+        </div>
+      )
+    },
+    {
+      header: "Chi nhánh",
+      key: "branch",
+      render: (row) => (
+        <span className="badge-blue text-xs">{row.branch}</span>
+      )
+    },
+    {
+      header: "Danh mục",
+      key: "category",
+      render: (row) => (
+        <span className="badge-purple text-xs">{row.category}</span>
+      )
+    },
+    {
+      header: "Tháng nhập",
+      key: "importMonth",
+      render: (row) => (
+        <div className="text-sm text-gray-600">{row.importMonth}</div>
+      )
+    },
+    {
+      header: "Tổng nhập",
+      key: "totalImport",
+      render: (row) => (
+        <div className="text-sm font-semibold text-blue-600">{formatNumber(row.totalImport)}</div>
+      )
+    },
+    {
+      header: "Đã bán",
+      key: "totalSold",
+      render: (row) => (
+        <div className="text-sm font-semibold text-green-600">{formatNumber(row.totalSold)}</div>
+      )
+    },
+    {
+      header: "Tồn kho",
+      key: "totalRemain",
+      render: (row) => {
+        let colorClass = "text-green-600";
+        let icon = "✅";
+        
+        if (row.totalRemain === 0) {
+          colorClass = "text-red-600";
+          icon = "❌";
+        } else if (row.totalRemain < 2) {
+          colorClass = "text-orange-600";
+          icon = "⚠️";
+        }
+
   return (
-    <div className="max-w-6xl mx-auto mt-10 bg-white shadow rounded-xl p-6 relative">
-      <div className="absolute top-4 right-4">
-        <LogoutButton />
+          <div className={`text-sm font-bold ${colorClass}`}>
+            {icon} {formatNumber(row.totalRemain)}
+      </div>
+        );
+      }
+    },
+    {
+      header: "Thao tác",
+      key: "actions",
+      render: (row) => (
+        <div className="flex gap-2">
+          {row.imeis.length > 0 && (
+        <button
+              onClick={() => handleShowIMEI(row)}
+              className="btn-action-edit text-xs"
+        >
+              📱 IMEI ({row.imeis.length})
+        </button>
+          )}
+        </div>
+      )
+    }
+  ];
+
+  if (loading) {
+    return (
+      <Layout 
+        activeTab="ton-kho"
+        title="📦 Tồn Kho"
+        subtitle="Theo dõi số lượng tồn kho"
+      >
+        <div className="flex items-center justify-center py-20">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-purple-600 mx-auto mb-4"></div>
+            <p className="text-gray-600">Đang tải dữ liệu tồn kho...</p>
+          </div>
+        </div>
+      </Layout>
+    );
+  }
+
+  return (
+    <Layout 
+      activeTab="ton-kho"
+      title="📦 Tồn Kho"
+      subtitle="Theo dõi số lượng tồn kho"
+    >
+      {/* Stats Dashboard */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        <StatsCard
+          title="Tổng sản phẩm"
+          value={stats.totalProducts.toString()}
+          icon="📦"
+          color="blue"
+          subtitle="Loại sản phẩm"
+        />
+        <StatsCard
+          title="Tổng tồn kho"
+          value={formatNumber(stats.totalStock)}
+          icon="📊"
+          color="green"
+          subtitle="Số lượng còn lại"
+        />
+        <StatsCard
+          title="Sắp hết hàng"
+          value={stats.lowStockItems.toString()}
+          icon="⚠️"
+          color="orange"
+          subtitle="Dưới 2 sản phẩm"
+        />
+        <StatsCard
+          title="Hết hàng"
+          value={stats.outOfStockItems.toString()}
+          icon="❌"
+          color="red"
+          subtitle="Cần nhập thêm"
+        />
       </div>
 
-      {/* ✅ Menu điều hướng */}
-      <div className="flex justify-center space-x-2 mb-6">
-        <button
-          onClick={() => navigate("/nhap-hang")}
-          className="bg-blue-600 text-white px-3 py-1 rounded hover:bg-blue-700"
-        >
-          📥 Nhập hàng
-        </button>
-        <button
-          onClick={() => navigate("/xuat-hang")}
-          className="bg-green-600 text-white px-3 py-1 rounded hover:bg-green-700"
-        >
-          📤 Xuất hàng
-        </button>
-        <button
-          onClick={() => navigate("/so-quy")}
-          className="bg-orange-600 text-white px-3 py-1 rounded hover:bg-orange-700"
-        >
-          💰 Sổ quỹ
-        </button>
-        <button
-          onClick={() => navigate("/cong-no")}
-          className="bg-red-600 text-white px-3 py-1 rounded hover:bg-red-700"
-        >
-          💳 Công nợ
-        </button>
-        <button
-          onClick={() => navigate("/bao-cao")}
-          className="bg-purple-600 text-white px-3 py-1 rounded hover:bg-purple-700"
-        >
-          📋 Báo cáo
-        </button>
-      </div>
-
-      <h2 className="text-2xl font-bold text-center text-green-600 mb-6">
-        📦 Tồn kho theo số lượng
-      </h2>
-
-      <div className="mb-4 flex flex-col md:flex-row gap-2 justify-between items-center">
+      {/* Filters */}
+      <FilterCard onClearFilters={clearFilters}>
+        <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-4">
+          <div>
         <input
           type="text"
-          placeholder="Tìm theo tên hoặc SKU..."
-          className="border rounded px-4 py-2 w-full md:w-1/3"
+              placeholder="🔍 Tìm tên hoặc SKU..."
+              className="form-input"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
+          </div>
+          <div>
         <select
-          className="border rounded px-4 py-2"
+              className="form-input"
           value={branchFilter}
           onChange={(e) => setBranchFilter(e.target.value)}
         >
-          <option value="all">Tất cả chi nhánh</option>
+              <option value="all">🏢 Tất cả chi nhánh</option>
           {branches.map(branch => (
             <option key={branch} value={branch}>{branch}</option>
           ))}
         </select>
-        {/* Thêm dropdown lọc thư mục/category */}
+          </div>
+          <div>
         <select
-          className="border rounded px-4 py-2"
+              className="form-input"
           value={categoryFilter}
           onChange={e => setCategoryFilter(e.target.value)}
         >
-          <option value="all">Tất cả thư mục</option>
+              <option value="all">📁 Tất cả danh mục</option>
           {categories.map(cat => (
             <option key={cat} value={cat}>{cat}</option>
           ))}
         </select>
+          </div>
+          <div>
         <input
           type="month"
-          className="border rounded px-4 py-2"
+              className="form-input"
           value={monthFilter}
           onChange={(e) => setMonthFilter(e.target.value)}
         />
-        <button
-          onClick={exportToExcel}
-          className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700"
-        >
-          📅 Xuất Excel
-        </button>
-        <label className="flex items-center gap-2">
+          </div>
+          <div>
+            <label className="flex items-center space-x-2">
           <input
             type="checkbox"
             checked={showLowStockOnly}
-            onChange={() => setShowLowStockOnly(!showLowStockOnly)}
+                onChange={(e) => setShowLowStockOnly(e.target.checked)}
+                className="w-4 h-4 text-orange-600 rounded focus:ring-orange-500"
           />
-          <span className="text-sm">⚠️ Chỉ hiện hàng còn dưới 2</span>
+              <span className="text-sm font-medium text-gray-700">Chỉ hàng sắp hết</span>
         </label>
       </div>
+          <div>
+            <button
+              onClick={exportToExcel}
+              className="w-full bg-green-600 hover:bg-green-700 text-white py-2 px-4 rounded-xl transition-all font-medium text-sm"
+            >
+              📊 Xuất Excel
+            </button>
+          </div>
+        </div>
+      </FilterCard>
 
-      {loading ? (
-        <p className="text-center">Đang tải dữ liệu...</p>
-      ) : filteredData.length === 0 ? (
-        <p className="text-center text-gray-500">Không có dữ liệu tồn kho phù hợp.</p>
-      ) : (
-        <table className="w-full border text-sm">
-          <thead>
-            <tr className="bg-gray-100 text-left">
-              <th className="border p-2">Mã hàng (SKU)</th>
-              <th className="border p-2">Tên sản phẩm</th>
-              <th className="border p-2 text-center">Thư mục</th>
-              <th className="border p-2 text-center">Tổng nhập</th>
-              <th className="border p-2 text-center">Tổng xuất</th>
-              <th className="border p-2 text-center">Còn lại</th>
-              <th className="border p-2 text-center">Chi nhánh</th>
-              <th className="border p-2 text-center">Tháng nhập</th>
-            </tr>
-          </thead>
-          <tbody>
-            {filteredData.map((row, idx) => (
-              <tr
-                key={idx}
-                className={`hover:bg-gray-50 cursor-pointer ${
-                  row.totalRemain < 3 ? "bg-yellow-100" : ""
-                }`}
-                onClick={() => handleShowIMEI(row)}
+      {/* Data Table */}
+      <DataTable
+        title="📋 Báo cáo tồn kho chi tiết"
+        data={filteredData.map((item, index) => ({ ...item, id: index }))}
+        columns={tableColumns}
+        currentPage={1}
+        totalPages={1}
+        itemsPerPage={filteredData.length}
+        totalItems={filteredData.length}
+      />
+
+      {/* IMEI Modal */}
+      {selectedSKU && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-2xl p-8 max-w-2xl w-full mx-4 max-h-[80vh] overflow-y-auto">
+            <h3 className="text-xl font-bold text-gray-900 mb-6">📱 Danh sách IMEI - SKU: {selectedSKU}</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {imeiList.length === 0 ? (
+                <p className="text-gray-500 text-center py-8 col-span-2">Không có IMEI nào</p>
+              ) : (
+                imeiList.map((imei, index) => (
+                  <div key={index} className="bg-gray-50 p-4 rounded-xl">
+                    <div className="font-mono text-sm font-semibold text-gray-900">{imei}</div>
+                  </div>
+                ))
+              )}
+            </div>
+            <div className="mt-6 flex justify-end">
+              <button
+                onClick={() => {
+                  setSelectedSKU(null);
+                  setImeiList([]);
+                }}
+                className="bg-gray-500 hover:bg-gray-600 text-white px-6 py-3 rounded-xl transition-all"
               >
-                <td className="border p-2 text-blue-700 underline">{row.sku}</td>
-                <td className="border p-2">{row.tenSanPham}</td>
-                <td className="border p-2 text-center">{row.category}</td>
-                <td className="border p-2 text-center">{row.totalImport}</td>
-                <td className="border p-2 text-center">{row.totalSold}</td>
-                <td
-                  className={`border p-2 text-center font-semibold ${
-                    row.totalRemain < 1 ? "text-red-600" : "text-green-700"
-                  }`}
-                >
-                  {row.totalRemain}
-                </td>
-                <td className="border p-2 text-center">{row.branch}</td>
-                <td className="border p-2 text-center">{row.importMonth}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
-
-      {selectedSKU && imeiList.length > 0 && (
-        <div className="mt-6">
-          <h3 className="text-lg font-bold mb-2 text-blue-600">
-            IMEI còn trong kho của SKU: {selectedSKU}
-          </h3>
-          <ul className="list-disc pl-6">
-            {imeiList.map((imei, idx) => (
-              <li key={idx}>{imei}</li>
-            ))}
-          </ul>
+                ❌ Đóng
+              </button>
+            </div>
+          </div>
         </div>
       )}
-    </div>
+    </Layout>
   );
 }
 

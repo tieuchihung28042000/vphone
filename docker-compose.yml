@@ -1,0 +1,86 @@
+version: '3.8'
+
+services:
+  # MongoDB Database
+  mongodb:
+    image: mongo:7.0
+    container_name: vphone-mongodb
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodb_data:/data/db
+      - mongodb_config:/data/configdb
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: vphone_admin
+      MONGO_INITDB_ROOT_PASSWORD: vphone_secure_password_2024
+      MONGO_INITDB_DATABASE: test
+    networks:
+      - vphone-network
+    command: --wiredTigerCacheSizeGB 0.25
+
+  # Backend API
+  backend:
+    build: 
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: vphone-backend
+    restart: unless-stopped
+    ports:
+      - "4000:4000"
+    environment:
+      NODE_ENV: production
+      MONGODB_URI: mongodb://vphone_admin:vphone_secure_password_2024@mongodb:27017/vphone?authSource=admin
+      JWT_SECRET: ${JWT_SECRET:-mh2!#F8m@kd%$a7LzQxT9^v!w}
+      EMAIL_HOST: smtp.gmail.com
+      EMAIL_PORT: 587
+      EMAIL_USER: ${EMAIL_USER:-vphone24h3@gmail.com}
+      EMAIL_PASS: ${EMAIL_PASS:-ftxhkismjvdqzawp}
+    depends_on:
+      - mongodb
+    networks:
+      - vphone-network
+    volumes:
+      - ./backend:/app
+      - /app/node_modules
+
+  # Frontend Web App
+  frontend:
+    build: 
+      context: ./iphone-inventory
+      dockerfile: Dockerfile
+    container_name: vphone-frontend
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    environment:
+      VITE_API_URL: http://localhost:8080
+    depends_on:
+      - backend
+    networks:
+      - vphone-network
+
+  # Nginx Reverse Proxy (Optional - for production)
+  nginx:
+    image: nginx:alpine
+    container_name: vphone-nginx
+    restart: unless-stopped
+    ports:
+      - "8080:80"
+    volumes:
+      - ./nginx-production.conf:/etc/nginx/conf.d/default.conf
+    depends_on:
+      - frontend
+      - backend
+    networks:
+      - vphone-network
+
+networks:
+  vphone-network:
+    driver: bridge
+
+volumes:
+  mongodb_data:
+    driver: local
+  mongodb_config:
+    driver: local 

@@ -8,7 +8,7 @@ export default defineConfig({
     port: 5174,
     open: true,
     proxy: {
-      '/api': 'http://localhost:4000', // Thêm dòng này!
+      '/api': 'http://localhost:4000',
     },
   },
   build: {

@@ -1,541 +1,596 @@
 import { useState, useEffect } from "react";
-import LogoutButton from "../components/LogoutButton";
+import Layout from "../components/Layout";
+import StatsCard from "../components/StatsCard";
+import FormCard from "../components/FormCard";
+import FilterCard from "../components/FilterCard";
+import DataTable from "../components/DataTable";
 
-// Hàm format số có dấu cách
-function formatNumberInput(val) {
-  // Xóa ký tự không phải số
-  let num = val.replace(/\D/g, "");
-  // Format dấu cách mỗi 3 số
-  return num.replace(/\B(?=(\d{3})+(?!\d))/g, " ");
+// Utility functions
+const getToday = () => {
+  const d = new Date();
+  return d.toISOString().slice(0, 10);
+};
+
+function formatNumber(val) {
+  if (val === undefined || val === null || val === "") return "";
+  return val.toString().replace(/\B(?=(\d{3})+(?!\d))/g, " ");
 }
-// Hàm xóa format
-function unformatNumberInput(val) {
-  return val.replace(/\D/g, "");
+
+function formatCurrency(amount) {
+  if (!amount || amount === 0) return "0đ";
+  
+  if (amount >= 1000000000) {
+    return `${(amount / 1000000000).toFixed(1)}Tỷ`;
+  } else if (amount >= 1000000) {
+    return `${(amount / 1000000).toFixed(1)}Tr`;
+  } else if (amount >= 1000) {
+    return `${(amount / 1000).toFixed(0)}K`;
+  }
+  return `${formatNumber(amount)}đ`;
+}
+
+function parseNumber(val) {
+  if (!val) return "";
+  return val.toString().replace(/\s/g, "");
 }
 
 function XuatHang() {
+  const [branches, setBranches] = useState([]);
+  const [categories, setCategories] = useState([]);
+  const [availableItems, setAvailableItems] = useState([]);
+  
+  const getLocalBranch = () => localStorage.getItem('lastBranch') || "";
+
   const [formData, setFormData] = useState({
-    imei: "",
-    sold_date: "",
-    sku: "",
-    product_name: "",
-    quantity: "",
-    price_sell: "",
-    customer_name: "",
-    customer_phone: "",
-    warranty: "",
+    item_id: "",
+    sale_price: "",
+    sale_date: getToday(),
+    buyer_name: "",
+    buyer_phone: "",
+    branch: getLocalBranch(),
     note: "",
-    debt: "",
+    source: "tien_mat"
   });
 
   const [message, setMessage] = useState("");
-  const [profit, setProfit] = useState(null);
-  const [sales, setSales] = useState([]);
-  const [editingId, setEditingId] = useState(null);
-
-  // GỢI Ý SẢN PHẨM THEO TÊN (auto suggest)
-  const [suggestList, setSuggestList] = useState([]);
-  const [showSuggest, setShowSuggest] = useState(false);
-  const [selectImeis, setSelectImeis] = useState([]);
-
-  // --- Thêm cho filter/tìm kiếm ---
-  const [searchText, setSearchText] = useState("");
+  const [soldItems, setSoldItems] = useState([]);
+  const [search, setSearch] = useState("");
   const [filterDate, setFilterDate] = useState("");
+  const [filterBranch, setFilterBranch] = useState("");
+  const [filterCategory, setFilterCategory] = useState("");
+  const [filterBuyer, setFilterBuyer] = useState("");
+  const [page, setPage] = useState(1);
+  const itemsPerPage = 15;
+  const [editingItemId, setEditingItemId] = useState(null);
 
-  // Lấy danh sách đơn xuất
-  const fetchSales = async () => {
+  // Stats calculation
+  const stats = {
+    totalSold: soldItems.length,
+    totalRevenue: soldItems.reduce((sum, item) => sum + (parseFloat(item.sale_price) || 0), 0),
+    todaySales: soldItems.filter(item => item.sale_date?.slice(0, 10) === getToday()).length,
+    availableStock: availableItems.length
+  };
+
+  // API functions
+  const fetchAvailableItems = async () => {
     try {
-      const today = new Date();
-      const from = "2020-01-01";
-      const to = today.toISOString().slice(0, 10);
-      const res = await fetch(
-        `${import.meta.env.VITE_API_URL}/api/bao-cao-don-hang-chi-tiet?from=${from}&to=${to}`
-      );
+      const apiUrl = import.meta.env.VITE_API_URL || window.location.origin;
+      const res = await fetch(`${apiUrl}/api/nhap-hang`);
+      
+      if (!res.ok) throw new Error(`API Error: ${res.status}`);
+      
       const data = await res.json();
-      setSales(Array.isArray(data.orders) ? data.orders : []);
+      if (!data.items) return;
+      
+      const available = data.items.filter(item => item.status !== 'sold');
+      setAvailableItems(available);
     } catch (err) {
-      setSales([]);
+      console.error("❌ Lỗi khi tải sản phẩm khả dụng:", err);
     }
   };
 
-  // Lấy tồn kho để gợi ý
-  const fetchSuggestList = async (query) => {
-    if (!query || query.length < 2) return setSuggestList([]);
-    const res = await fetch(`${import.meta.env.VITE_API_URL}/api/ton-kho`);
-    const data = await res.json();
-    const lowerQuery = query.trim().toLowerCase();
-    const filtered = (data.items || []).filter(
-      item =>
-        (item.product_name || item.tenSanPham || "")
-          .toLowerCase()
-          .includes(lowerQuery) ||
-        (item.sku || "").toLowerCase().includes(lowerQuery)
-    );
-    // Gom nhóm: Nếu có IMEI thì nhóm như cũ, nếu không có IMEI thì cộng dồn số lượng (phụ kiện)
-    const group = {};
-    filtered.forEach(item => {
-      const key = (item.product_name || item.tenSanPham || "Không rõ") + "_" + (item.sku || "Không rõ");
-      if (!group[key]) {
-        group[key] = {
-          name: item.product_name || item.tenSanPham || "Không rõ",
-          sku: item.sku || "",
-          imeis: [],
-          soLuong: 0,
-          isAccessory: !item.imei
-        };
-      }
-      if (item.imei) {
-        group[key].imeis.push(item.imei);
-      } else {
-        group[key].soLuong += Number(item.so_luong || item.quantity || 1);
-      }
-    });
-    setSuggestList(Object.values(group));
-    setShowSuggest(true);
+  const fetchSoldItems = async () => {
+    try {
+      const apiUrl = import.meta.env.VITE_API_URL || window.location.origin;
+      const res = await fetch(`${apiUrl}/api/xuat-hang-list`);
+      
+      if (!res.ok) throw new Error(`API Error: ${res.status}`);
+      
+      const data = await res.json();
+      if (!data.items) return;
+      
+      const sorted = data.items.sort((a, b) => {
+        const dateA = a.sale_date || '';
+        const dateB = b.sale_date || '';
+        if (dateA > dateB) return -1;
+        if (dateA < dateB) return 1;
+        return b._id.localeCompare(a._id);
+      });
+      
+      setSoldItems(sorted);
+    } catch (err) {
+      console.error("❌ Lỗi khi tải dữ liệu đã bán:", err);
+    }
+  };
+
+  const fetchBranches = async () => {
+    try {
+      const apiUrl = import.meta.env.VITE_API_URL || window.location.origin;
+      const res = await fetch(`${apiUrl}/api/branches`);
+      const data = await res.json();
+      setBranches(data);
+    } catch (err) {
+      console.error('❌ Lỗi fetch branches:', err);
+    }
+  };
+
+  const fetchCategories = async () => {
+    try {
+      const apiUrl = import.meta.env.VITE_API_URL || window.location.origin;
+      const res = await fetch(`${apiUrl}/api/categories`);
+      const data = await res.json();
+      setCategories(data);
+    } catch (err) {
+      console.error('❌ Lỗi fetch categories:', err);
+    }
   };
 
   useEffect(() => {
-    fetchSales();
+    fetchAvailableItems();
+    fetchSoldItems();
+    fetchBranches();
+    fetchCategories();
   }, []);
 
-  // Khi nhập IMEI sẽ tự động fill tên máy & SKU nếu tìm thấy
-  const handleImeiChange = async (e) => {
-    const imei = e.target.value;
-    setFormData((prev) => ({
-      ...prev,
-      imei,
-      quantity: 1, // iPhone luôn chỉ 1 máy/lần
-    }));
-    if (imei.length >= 8) {
-      const res = await fetch(`${import.meta.env.VITE_API_URL}/api/ton-kho`);
-      const data = await res.json();
-      const found = (data.items || []).find(item => item.imei === imei);
-      if (found) {
-        setFormData((prev) => ({
-          ...prev,
-          product_name: found.product_name || found.tenSanPham || "",
-          sku: found.sku || "",
-          quantity: 1,
-        }));
-      }
-    }
-  };
-
-  // Khi nhập tên sản phẩm -> gợi ý (suggest)
-  const handleProductNameChange = async (e) => {
-    const value = e.target.value;
-    setFormData(prev => ({ ...prev, product_name: value }));
-    fetchSuggestList(value);
-  };
-
-  // Khi chọn 1 gợi ý tên sản phẩm
-  const handleSelectSuggest = (item) => {
-    setFormData(prev => ({
-      ...prev,
-      product_name: item.name,
-      sku: item.sku,
-      imei: item.isAccessory ? "" : (item.imeis.length === 1 ? item.imeis[0] : ""),
-      quantity: "" // ĐỂ TRỐNG khi là phụ kiện
-    }));
-    setShowSuggest(false);
-    setSelectImeis(item.isAccessory ? [] : (item.imeis.length > 1 ? item.imeis : []));
-  };
-
-  // Nếu nhiều IMEI thì chọn tiếp
-  const handleSelectImei = (imei) => {
-    setFormData(prev => ({
-      ...prev,
-      imei,
-      quantity: 1
-    }));
-    setSelectImeis([]);
-  };
-
-  // Sửa lại handleChange để format cho price_sell và debt
   const handleChange = (e) => {
-    const { name, value, type } = e.target;
-
-    if (name === "price_sell" || name === "debt") {
-      setFormData((prev) => ({
-        ...prev,
-        [name]: formatNumberInput(value),
-      }));
-    } else if (name === "quantity") {
-      setFormData((prev) => ({
-        ...prev,
-        [name]: value.replace(/\D/g, ""),
-      }));
+    const { name, value } = e.target;
+    if (name === "branch") localStorage.setItem('lastBranch', value);
+    if (name === "sale_price") {
+      setFormData((prev) => ({ ...prev, [name]: parseNumber(value) }));
     } else {
-      setFormData((prev) => ({
-        ...prev,
-        [name]: type === "number" ? Number(value) : value,
-      }));
+      setFormData((prev) => ({ ...prev, [name]: value }));
     }
   };
 
-  // Nộp hoặc cập nhật đơn xuất
+  const resetForm = () => {
+    setFormData({
+      item_id: "",
+      sale_price: "",
+      sale_date: getToday(),
+      buyer_name: "",
+      buyer_phone: "",
+      branch: formData.branch,
+      note: "",
+      source: "tien_mat"
+    });
+    setEditingItemId(null);
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
-    setProfit(null);
-
-    // Chuyển giá và công nợ về số trước khi gửi
-    const cleanForm = {
-      ...formData,
-      price_sell: formData.price_sell ? Number(unformatNumberInput(formData.price_sell)) : "",
-      debt: formData.debt ? Number(unformatNumberInput(formData.debt)) : "",
-      quantity: formData.quantity ? Number(formData.quantity) : "",
-    };
-
     try {
-      let url = `${import.meta.env.VITE_API_URL}/api/xuat-hang`;
-      let method = "POST";
-      if (editingId) {
-        url = `${import.meta.env.VITE_API_URL}/api/xuat-hang/${editingId}`;
-        method = "PUT";
-      }
+      const method = editingItemId ? "PUT" : "POST";
+      const url = editingItemId
+        ? `${import.meta.env.VITE_API_URL}/api/xuat-hang/${editingItemId}`
+        : `${import.meta.env.VITE_API_URL}/api/xuat-hang`;
+
       const res = await fetch(url, {
         method,
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(cleanForm),
+        body: JSON.stringify(formData)
       });
 
       const data = await res.json();
-
       if (res.ok) {
-        setMessage("✅ " + (data.message || "Thành công!"));
-        setProfit(data.profit || null);
-        setFormData({
-          imei: "",
-          sold_date: "",
-          sku: "",
-          product_name: "",
-          quantity: "",
-          price_sell: "",
-          customer_name: "",
-          customer_phone: "",
-          warranty: "",
-          note: "",
-          debt: "",
-        });
-        setEditingId(null);
-        setSelectImeis([]);
-        fetchSales();
+        setMessage(`✅ ${data.message}`);
+        resetForm();
+        fetchSoldItems();
+        fetchAvailableItems();
+        setTimeout(() => setMessage(""), 3000);
       } else {
-        setMessage("❌ " + (data.message || "Cập nhật thất bại"));
+        setMessage(`❌ ${data.message}`);
+        setTimeout(() => setMessage(""), 3000);
       }
     } catch (err) {
       setMessage("❌ Lỗi kết nối tới server");
+      setTimeout(() => setMessage(""), 3000);
     }
   };
 
-  // ... Sửa đơn xuất và các hàm khác giữ nguyên ...
-
-  const inputClass = "w-full border p-2 rounded h-10";
-
-  // --- Phần lọc/tìm kiếm/sắp xếp ---
-  const filteredSales = sales
-    .filter(item => {
-      const text = (item.imei || "") + " " + (item.product_name || "") + " " + (item.sku || "") + " " + (item.customer_phone || "");
-      const searchOK = searchText === "" || text.toLowerCase().includes(searchText.toLowerCase());
-      const dateOK = filterDate === "" || (item.sold_date && item.sold_date.slice(0, 10) === filterDate);
-      return searchOK && dateOK;
-    })
-    .sort((a, b) => {
-      // Sắp xếp mới nhất lên trên
-      const dateA = new Date(a.sold_date || "");
-      const dateB = new Date(b.sold_date || "");
-      return dateB - dateA;
+  const handleEdit = (item) => {
+    setFormData({
+      item_id: item.item_id || "",
+      sale_price: item.sale_price || "",
+      sale_date: item.sale_date?.slice(0, 10) || getToday(),
+      buyer_name: item.buyer_name || "",
+      buyer_phone: item.buyer_phone || "",
+      branch: item.branch || "",
+      note: item.note || "",
+      source: item.source || "tien_mat"
     });
-// Sửa đơn xuất (fill form để edit)
-const handleEdit = (item) => {
-  setFormData({
-    imei: item.imei || "",
-    sold_date: item.sold_date ? item.sold_date.slice(0, 10) : "",
-    sku: item.sku || "",
-    product_name: item.product_name || "",
-    quantity: item.quantity || "",
-    price_sell: item.price_sell || "",
-    customer_name: item.customer_name || "",
-    customer_phone: item.customer_phone || "",
-    warranty: item.warranty || "",
-    note: item.note || "",
-    debt: item.debt || "",
-  });
-  setEditingId(item._id);
-  setMessage("");
-  setProfit(item.profit || null);
-  window.scrollTo({ top: 0, behavior: "smooth" });
-};
+    setEditingItemId(item._id);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
 
-// Xoá đơn xuất
-const handleDelete = async (id) => {
-  if (!window.confirm("Bạn chắc chắn xoá đơn xuất này?")) return;
-  await fetch(`${import.meta.env.VITE_API_URL}/api/xuat-hang/${id}`, { method: "DELETE" });
-  fetchSales();
-};
+  const handleDelete = async (id) => {
+    if (!confirm("Bạn có chắc muốn xóa giao dịch này?")) return;
+    
+    try {
+      const res = await fetch(`${import.meta.env.VITE_API_URL}/api/xuat-hang/${id}`, {
+        method: "DELETE"
+      });
+      const data = await res.json();
+      
+      if (res.ok) {
+        setMessage("✅ Đã xóa thành công");
+        fetchSoldItems();
+        fetchAvailableItems();
+        setTimeout(() => setMessage(""), 3000);
+      } else {
+        setMessage(`❌ ${data.message}`);
+        setTimeout(() => setMessage(""), 3000);
+      }
+    } catch (err) {
+      setMessage("❌ Lỗi khi xóa");
+      setTimeout(() => setMessage(""), 3000);
+    }
+  };
+
+  // Clear filters function
+  const clearFilters = () => {
+    setSearch("");
+    setFilterDate("");
+    setFilterBranch("");
+    setFilterCategory("");
+    setFilterBuyer("");
+  };
+
+  // Filter and pagination
+  const filteredItems = soldItems.filter((item) => {
+    const matchSearch =
+      item.item?.imei?.toLowerCase().includes(search.toLowerCase()) ||
+      item.item?.product_name?.toLowerCase().includes(search.toLowerCase()) ||
+      item.item?.sku?.toLowerCase().includes(search.toLowerCase()) ||
+      item.buyer_name?.toLowerCase().includes(search.toLowerCase());
+    const matchDate = filterDate ? item.sale_date?.slice(0, 10) === filterDate : true;
+    const matchBranch = filterBranch ? item.branch === filterBranch : true;
+    const matchCategory = filterCategory ? item.item?.category === filterCategory : true;
+    const matchBuyer = filterBuyer ? item.buyer_name?.toLowerCase().includes(filterBuyer.toLowerCase()) : true;
+    return matchSearch && matchDate && matchBranch && matchCategory && matchBuyer;
+  });
+
+  const paginatedItems = filteredItems.slice((page - 1) * itemsPerPage, page * itemsPerPage);
+  const totalPages = Math.ceil(filteredItems.length / itemsPerPage);
+
+  // Table columns definition
+  const tableColumns = [
+    {
+      header: "Sản phẩm",
+      key: "item",
+      render: (item) => (
+        <div>
+          <div className="text-sm font-semibold text-gray-900">
+            {item.item?.product_name || item.item?.tenSanPham}
+          </div>
+          <div className="text-sm text-gray-500">
+            IMEI: {item.item?.imei || 'N/A'} • SKU: {item.item?.sku}
+          </div>
+          <div className="text-xs text-gray-400">
+            {item.item?.category} • {item.branch}
+          </div>
+        </div>
+      )
+    },
+    {
+      header: "Giá bán",
+      key: "sale_price",
+      render: (item) => (
+        <div className="text-sm font-bold text-green-600">
+          {formatCurrency(item.sale_price)}
+        </div>
+      )
+    },
+    {
+      header: "Ngày bán",
+      key: "sale_date",
+      render: (item) => (
+        <div className="text-sm text-gray-500">
+          {item.sale_date?.slice(0, 10)}
+        </div>
+      )
+    },
+    {
+      header: "Khách hàng",
+      key: "buyer",
+      render: (item) => (
+        <div>
+          <div className="text-sm font-medium text-gray-900">
+            {item.buyer_name || <span className="text-gray-400 italic">Chưa có</span>}
+          </div>
+          <div className="text-sm text-gray-500">
+            {item.buyer_phone || <span className="text-gray-400 italic">Chưa có SĐT</span>}
+          </div>
+        </div>
+      )
+    },
+    {
+      header: "Nguồn tiền",
+      key: "source",
+      render: (item) => {
+        const sourceMap = {
+          'tien_mat': { label: 'Tiền mặt', color: 'green', icon: '💵' },
+          'the': { label: 'Thẻ', color: 'blue', icon: '💳' },
+          'vi_dien_tu': { label: 'Ví điện tử', color: 'purple', icon: '📱' },
+          'cong_no': { label: 'Công nợ', color: 'orange', icon: '📝' }
+        };
+        const source = sourceMap[item.source] || sourceMap.tien_mat;
+        return (
+          <span className={`badge-${source.color}`}>
+            {source.icon} {source.label}
+          </span>
+        );
+      }
+    },
+    {
+      header: "Ghi chú",
+      key: "note",
+      render: (item) => (
+        <div className="text-sm text-gray-500 max-w-xs truncate">
+          {item.note || <span className="text-gray-400 italic">Không có</span>}
+        </div>
+      )
+    },
+    {
+      header: "Thao tác",
+      key: "actions",
+      render: (item) => (
+        <div className="flex gap-2">
+          <button onClick={() => handleEdit(item)} className="btn-action-edit">
+            ✏️ Sửa
+          </button>
+          <button onClick={() => handleDelete(item._id)} className="btn-action-delete">
+            🗑️ Xóa
+          </button>
+        </div>
+      )
+    }
+  ];
 
   return (
-    <div className="max-w-xl mx-auto p-6 bg-white rounded-xl shadow mt-10 relative">
-      {/* Đăng xuất */}
-      <div className="absolute top-4 right-4">
-        <LogoutButton />
+    <Layout 
+      activeTab="xuat-hang"
+      title="📤 Xuất Hàng"
+      subtitle="Quản lý bán hàng và theo dõi doanh thu"
+    >
+      {/* Stats Dashboard */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        <StatsCard
+          title="Tổng đã bán"
+          value={stats.totalSold.toLocaleString()}
+          icon="✅"
+          color="green"
+          subtitle="Sản phẩm đã xuất"
+        />
+        <StatsCard
+          title="Doanh thu"
+          value={formatCurrency(stats.totalRevenue)}
+          icon="💰"
+          color="blue"
+          subtitle="Tổng tiền thu được"
+        />
+        <StatsCard
+          title="Bán hôm nay"
+          value={stats.todaySales.toLocaleString()}
+          icon="📊"
+          color="purple"
+          subtitle="Sản phẩm bán hôm nay"
+        />
+        <StatsCard
+          title="Còn tồn kho"
+          value={stats.availableStock.toLocaleString()}
+          icon="📦"
+          color="orange"
+          subtitle="Sản phẩm còn lại"
+        />
       </div>
 
-      {/* 🚀 Menu điều hướng nhanh */}
-      <div className="flex justify-center space-x-2 mb-6">
-        <button onClick={() => (window.location.href = "/nhap-hang")} className="bg-blue-600 text-white px-3 py-1 rounded hover:bg-blue-700">📥 Nhập hàng</button>
-        <button onClick={() => (window.location.href = "/xuat-hang")} className="bg-green-600 text-white px-3 py-1 rounded hover:bg-green-700">📤 Xuất hàng</button>
-        <button onClick={() => (window.location.href = "/ton-kho-so-luong")} className="bg-yellow-600 text-white px-3 py-1 rounded hover:bg-yellow-700">📦 Tồn kho</button>
-        <button onClick={() => (window.location.href = "/so-quy")} className="bg-orange-600 text-white px-3 py-1 rounded hover:bg-orange-700">💰 Sổ quỹ</button>
-        <button onClick={() => (window.location.href = "/cong-no")} className="bg-red-600 text-white px-3 py-1 rounded hover:bg-red-700">💳 Công nợ</button>
-        <button onClick={() => (window.location.href = "/bao-cao")} className="bg-purple-600 text-white px-3 py-1 rounded hover:bg-purple-700">📋 Báo cáo</button>
-      </div>
-
-      <h2 className="text-2xl font-bold mb-6 text-center text-red-600">
-        Xuất hàng iPhone
-      </h2>
-
-      <form onSubmit={handleSubmit} className="grid grid-cols-1 gap-4 relative">
-        <input
-          type="text"
-          name="imei"
-          placeholder="IMEI cần bán"
-          value={formData.imei}
-          onChange={handleImeiChange}
-          className={inputClass}
-        />
-        <input
-          type="date"
-          name="sold_date"
-          value={formData.sold_date}
-          onChange={handleChange}
-          className={inputClass}
-        />
-        <input
-          type="text"
-          name="sku"
-          placeholder="SKU sản phẩm"
-          value={formData.sku}
-          onChange={handleChange}
-          className={inputClass}
-        />
-
-        {/* TÊN SẢN PHẨM */}
-        <div className="relative">
-          <input
-            type="text"
-            name="product_name"
-            placeholder="Tên sản phẩm"
-            value={formData.product_name}
-            onChange={handleProductNameChange}
-            className={inputClass}
-            autoComplete="off"
-          />
-          {/* GỢI Ý SẢN PHẨM */}
-          {showSuggest && suggestList.length > 0 && (
-            <div className="absolute z-20 left-0 right-0 bg-white border rounded shadow max-h-60 overflow-y-auto">
-              {suggestList.map((item, idx) => (
-                <div
-                  key={item.sku + idx}
-                  className="px-3 py-2 hover:bg-blue-50 cursor-pointer flex flex-col"
-                  onClick={() => handleSelectSuggest(item)}
-                >
-                  <span className="font-medium text-blue-600">{item.name}</span>
-                  <span className="text-xs text-gray-500">
-                    SKU: {item.sku} | SL còn: {item.isAccessory ? item.soLuong : item.imeis.length}
-                    {item.isAccessory ? "" : (
-                      <> | IMEI: {item.imeis.slice(0, 5).join(", ")}{item.imeis.length > 5 ? "..." : ""}</>
-                    )}
-                  </span>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-
-        {/* SỐ LƯỢNG - Chỉ hiện nếu KHÔNG có IMEI */}
-        {!formData.imei && (
-          <div>
-            <label className="block text-gray-600 text-sm font-medium mb-1">Số lượng</label>
-            <input
-              type="number"
-              name="quantity"
-              placeholder="Nhập số lượng phụ kiện cần bán"
-              value={formData.quantity}
+      {/* Form Card */}
+      <FormCard
+        title={editingItemId ? '✏️ Chỉnh sửa giao dịch' : '➕ Thêm giao dịch bán hàng'}
+        subtitle="Chọn sản phẩm và điền thông tin khách hàng"
+        onReset={resetForm}
+        showReset={!!editingItemId}
+        resetLabel="Hủy chỉnh sửa"
+        message={message}
+      >
+        <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          <div className="lg:col-span-2">
+            <label className="block text-sm font-semibold text-gray-700 mb-3">Chọn sản phẩm *</label>
+            <select
+              name="item_id"
+              value={formData.item_id}
               onChange={handleChange}
-              className={inputClass}
-              min={1}
-            />
-            <span className="text-xs text-gray-500 ml-1">
-              Chỉ nhập số lượng khi bán phụ kiện (không điền IMEI)
-            </span>
-          </div>
-        )}
-
-        {/* Nếu nhiều IMEI cho 1 sản phẩm, chọn IMEI */}
-        {selectImeis.length > 1 && (
-          <div className="bg-blue-50 border rounded px-3 py-2">
-            <div className="mb-1 font-medium">Chọn IMEI:</div>
-            <div className="flex flex-wrap gap-2">
-              {selectImeis.map((im, idx) => (
-                <button
-                  type="button"
-                  className={`px-2 py-1 border rounded ${formData.imei === im ? "bg-blue-600 text-white" : "bg-white"}`}
-                  key={im + idx}
-                  onClick={() => handleSelectImei(im)}
-                >
-                  {im}
-                </button>
+              className="form-input"
+              required
+            >
+              <option value="">-- Chọn sản phẩm để bán --</option>
+              {availableItems.map((item) => (
+                <option key={item._id} value={item._id}>
+                  {item.product_name || item.tenSanPham} - {item.imei} - {formatNumber(item.price_import)}đ
+                </option>
               ))}
-            </div>
+            </select>
           </div>
-        )}
 
-        {/* GIÁ BÁN (tự có dấu cách) */}
-        <input
-          type="text"
-          name="price_sell"
-          placeholder="Giá bán"
-          value={formData.price_sell}
-          onChange={handleChange}
-          className={inputClass}
-          required
-        />
-        <input
-          type="text"
-          name="customer_name"
-          placeholder="Tên khách hàng"
-          value={formData.customer_name}
-          onChange={handleChange}
-          className={inputClass}
-        />
-        <input
-          type="text"
-          name="customer_phone"
-          placeholder="SĐT khách hàng"
-          value={formData.customer_phone}
-          onChange={handleChange}
-          className={inputClass}
-        />
-        <input
-          type="text"
-          name="warranty"
-          placeholder="Bảo hành (VD: 6 tháng)"
-          value={formData.warranty}
-          onChange={handleChange}
-          className={inputClass}
-        />
-        <input
-          type="text"
-          name="note"
-          placeholder="Ghi chú"
-          value={formData.note}
-          onChange={handleChange}
-          className={inputClass}
-        />
-        {/* Công nợ (tự có dấu cách) */}
-        <input
-          type="text"
-          name="debt"
-          placeholder="Công nợ (nếu có)"
-          value={formData.debt}
-          onChange={handleChange}
-          className={inputClass}
-        />
+          <div>
+            <label className="block text-sm font-semibold text-gray-700 mb-3">Giá bán *</label>
+            <input
+              name="sale_price"
+              type="text"
+              placeholder="0"
+              value={formatNumber(formData.sale_price)}
+              onChange={handleChange}
+              className="form-input"
+              required
+            />
+          </div>
 
-        <button
-          type="submit"
-          className="w-full bg-red-600 text-white py-2 rounded hover:bg-red-700 font-semibold"
-        >
-          {editingId ? "Cập nhật" : "Xuất hàng"}
-        </button>
-      </form>
+          <div>
+            <label className="block text-sm font-semibold text-gray-700 mb-3">Ngày bán *</label>
+            <input
+              name="sale_date"
+              type="date"
+              value={formData.sale_date}
+              onChange={handleChange}
+              className="form-input"
+              required
+            />
+          </div>
 
-      {message && (
-        <p className="mt-4 text-center font-semibold text-blue-600">{message}</p>
-      )}
+          <div>
+            <label className="block text-sm font-semibold text-gray-700 mb-3">Tên khách hàng</label>
+            <input
+              name="buyer_name"
+              placeholder="Họ tên khách hàng"
+              value={formData.buyer_name}
+              onChange={handleChange}
+              className="form-input"
+            />
+          </div>
 
-      {profit !== null && (
-        <p className="mt-2 text-center text-green-600 font-semibold">
-          💰 Lợi nhuận: {Number(profit).toLocaleString()}đ
-        </p>
-      )}
+          <div>
+            <label className="block text-sm font-semibold text-gray-700 mb-3">Số điện thoại</label>
+            <input
+              name="buyer_phone"
+              placeholder="Số điện thoại"
+              value={formData.buyer_phone}
+              onChange={handleChange}
+              className="form-input"
+            />
+          </div>
 
-      {/* THANH TÌM KIẾM & LỌC NGÀY */}
-      <div className="flex gap-3 mb-4 mt-10">
-        <input
-          type="text"
-          placeholder="🔎 Tìm kiếm IMEI, tên, SKU, SĐT KH..."
-          value={searchText}
-          onChange={e => setSearchText(e.target.value)}
-          className="border rounded px-3 py-2 flex-1"
-        />
-        <input
-          type="date"
-          value={filterDate}
-          onChange={e => setFilterDate(e.target.value)}
-          className="border rounded px-3 py-2"
-        />
-        {filterDate && (
-          <button
-            type="button"
-            onClick={() => setFilterDate("")}
-            className="ml-1 text-xs text-red-500 underline"
-          >Xoá lọc ngày</button>
-        )}
-      </div>
+          <div>
+            <label className="block text-sm font-semibold text-gray-700 mb-3">Chi nhánh *</label>
+            <select 
+              name="branch" 
+              value={formData.branch} 
+              onChange={handleChange} 
+              className="form-input"
+              required
+            >
+              <option value="">Chọn chi nhánh</option>
+              {branches.map((b) => (
+                <option key={b._id} value={b.name}>{b.name}</option>
+              ))}
+            </select>
+          </div>
 
-      {/* DANH SÁCH ĐƠN XUẤT */}
-      <div>
-        <h3 className="text-lg font-bold mb-2">Danh sách đơn xuất hàng</h3>
-        <table className="w-full border text-sm">
-          <thead>
-            <tr className="bg-gray-100">
-              <th className="border p-2">IMEI</th>
-              <th className="border p-2">SKU</th>
-              <th className="border p-2">Tên sản phẩm</th>
-              <th className="border p-2">Số lượng</th>
-              <th className="border p-2 text-center">Giá bán</th>
-              <th className="border p-2">Ngày bán</th>
-              <th className="border p-2">Khách hàng</th>
-              <th className="border p-2">SĐT KH</th>
-              <th className="border p-2">Bảo hành</th>
-              <th className="border p-2">Ghi chú</th>
-              <th className="border p-2">Công nợ</th>
-              <th className="border p-2 text-center">Thao tác</th>
-            </tr>
-          </thead>
-          <tbody>
-            {filteredSales.map((item) => (
-              <tr key={item._id}>
-                <td className="border p-2">{item.imei || ""}</td>
-                <td className="border p-2">{item.sku || ""}</td>
-                <td className="border p-2">{item.product_name || ""}</td>
-                <td className="border p-2 text-center">{item.quantity || 1}</td>
-                <td className="border p-2 text-center">{item.price_sell ? Number(item.price_sell).toLocaleString() : ""}đ</td>
-                <td className="border p-2">{item.sold_date ? item.sold_date.slice(0, 10) : ""}</td>
-                <td className="border p-2">{item.customer_name || ""}</td>
-                <td className="border p-2">{item.customer_phone || ""}</td>
-                <td className="border p-2">{item.warranty || ""}</td>
-                <td className="border p-2">{item.note || ""}</td>
-                <td className="border p-2 text-center">{item.debt ? Number(item.debt).toLocaleString() : ""}</td>
-                <td className="border p-2 text-center space-x-1">
-                  <button onClick={() => handleEdit(item)} className="bg-yellow-400 text-white px-2 py-1 rounded">✏️</button>
-                  <button onClick={() => handleDelete(item._id)} className="bg-red-600 text-white px-2 py-1 rounded">🗑️</button>
-                </td>
-              </tr>
-            ))}
-            {filteredSales.length === 0 && (
-              <tr>
-                <td colSpan="12" className="text-center py-4 text-gray-500">
-                  Không có đơn xuất nào.
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
-    </div>
+          <div>
+            <label className="block text-sm font-semibold text-gray-700 mb-3">Nguồn tiền *</label>
+            <select 
+              name="source" 
+              value={formData.source} 
+              onChange={handleChange} 
+              className="form-input"
+              required
+            >
+              <option value="tien_mat">💵 Tiền mặt</option>
+              <option value="the">💳 Thẻ</option>
+              <option value="vi_dien_tu">📱 Ví điện tử</option>
+              <option value="cong_no">📝 Công nợ</option>
+            </select>
+          </div>
+
+          <div className="lg:col-span-2">
+            <label className="block text-sm font-semibold text-gray-700 mb-3">Ghi chú</label>
+            <input
+              name="note"
+              placeholder="Ghi chú thêm về giao dịch"
+              value={formData.note}
+              onChange={handleChange}
+              className="form-input"
+            />
+          </div>
+
+          <div className="md:col-span-2 lg:col-span-3">
+            <button 
+              type="submit" 
+              className="w-full btn-gradient text-white py-4 px-8 rounded-2xl font-bold text-lg transition-all duration-300"
+            >
+              {editingItemId ? "🔄 Cập nhật giao dịch" : "💰 Thực hiện bán hàng"}
+            </button>
+          </div>
+        </form>
+      </FormCard>
+
+      {/* Filters */}
+      <FilterCard onClearFilters={clearFilters}>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+          <div>
+            <input
+              type="text"
+              placeholder="🔍 Tìm sản phẩm, khách hàng..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="form-input"
+            />
+          </div>
+          <div>
+            <input
+              type="date"
+              value={filterDate}
+              onChange={(e) => setFilterDate(e.target.value)}
+              className="form-input"
+            />
+          </div>
+          <div>
+            <select
+              value={filterBranch}
+              onChange={(e) => setFilterBranch(e.target.value)}
+              className="form-input"
+            >
+              <option value="">Tất cả chi nhánh</option>
+              {branches.map((b) => (
+                <option key={b._id} value={b.name}>{b.name}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <select
+              value={filterCategory}
+              onChange={(e) => setFilterCategory(e.target.value)}
+              className="form-input"
+            >
+              <option value="">Tất cả thư mục</option>
+              {categories.map((c) => (
+                <option key={c._id} value={c.name}>{c.name}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <input
+              type="text"
+              placeholder="Tên khách hàng"
+              value={filterBuyer}
+              onChange={(e) => setFilterBuyer(e.target.value)}
+              className="form-input"
+            />
+          </div>
+        </div>
+      </FilterCard>
+
+      {/* Data Table */}
+      <DataTable
+        title="💰 Lịch sử giao dịch bán hàng"
+        data={paginatedItems.map(item => ({ ...item, id: item._id }))}
+        columns={tableColumns}
+        currentPage={page}
+        totalPages={totalPages}
+        itemsPerPage={itemsPerPage}
+        totalItems={filteredItems.length}
+        onPageChange={setPage}
+      />
+    </Layout>
   );
 }
 

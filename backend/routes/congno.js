@@ -36,8 +36,8 @@ router.get('/cong-no-list', async (req, res) => {
           product_list: []
         };
       }
-      grouped[key].total_debt += item.debt || 0;
-      grouped[key].total_paid += item.da_tra || 0;
+      grouped[key].total_debt += item.debt || 0; // debt = số còn nợ
+      grouped[key].total_paid += item.da_tra || 0; // da_tra = số đã trả
 
       // Gom lịch sử trả nợ/cộng nợ
       if (item.debt_history && Array.isArray(item.debt_history)) {
@@ -64,7 +64,7 @@ router.get('/cong-no-list', async (req, res) => {
     // Chỉ hiển thị khách còn nợ (trừ khi show_all=true)
     let result = Object.values(grouped);
     if (show_all !== "true") {
-      result = result.filter(customer => customer.total_debt > 0);
+      result = result.filter(customer => customer.total_debt > 0); // debt đã là số còn nợ
     }
 
     res.json({ items: result });

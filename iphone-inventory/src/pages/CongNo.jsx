@@ -1,24 +1,59 @@
 import { useEffect, useState } from "react";
-import LogoutButton from "../components/LogoutButton";
+import Layout from "../components/Layout";
+import StatsCard from "../components/StatsCard";
+import FormCard from "../components/FormCard";
+import FilterCard from "../components/FilterCard";
+import DataTable from "../components/DataTable";
+
+// Utility functions
+function formatNumber(val) {
+  if (val === undefined || val === null || val === "") return "";
+  return val.toString().replace(/\B(?=(\d{3})+(?!\d))/g, " ");
+}
+
+function formatCurrency(amount) {
+  if (!amount || amount === 0) return "0đ";
+  
+  if (amount >= 1000000000) {
+    return `${(amount / 1000000000).toFixed(1)}Tỷ`;
+  } else if (amount >= 1000000) {
+    return `${(amount / 1000000).toFixed(1)}Tr`;
+  } else if (amount >= 1000) {
+    return `${(amount / 1000).toFixed(0)}K`;
+  }
+  return `${formatNumber(amount)}đ`;
+}
 
 function CongNo() {
   const [debts, setDebts] = useState([]);
   const [selectedCustomer, setSelectedCustomer] = useState(null);
   const [customerDebt, setCustomerDebt] = useState({ total_debt: 0, total_paid: 0, debt_history: [] });
   const [payAmount, setPayAmount] = useState("");
-  const [payNote, setPayNote] = useState("");           // Ghi chú trả nợ
+  const [payNote, setPayNote] = useState("");
   const [addAmount, setAddAmount] = useState("");
-  const [addNote, setAddNote] = useState("");           // Ghi chú cộng nợ
+  const [addNote, setAddNote] = useState("");
   const [historyModal, setHistoryModal] = useState({ open: false, history: [] });
   const [detailModal, setDetailModal] = useState({ open: false, orders: [] });
   
-  // Thêm state cho tìm kiếm và sửa/xóa khách hàng
+  // Filter states
   const [searchText, setSearchText] = useState("");
   const [showAll, setShowAll] = useState(false);
   const [editModal, setEditModal] = useState({ open: false, customer: null });
   const [editForm, setEditForm] = useState({ name: "", phone: "" });
 
-  // Lấy danh sách khách hàng còn nợ
+  // Stats calculation - debt đã là số còn nợ
+  const totalDebt = debts.reduce((sum, debt) => sum + debt.total_debt, 0);
+  const totalCustomers = debts.length;
+  const largestDebt = Math.max(...debts.map(debt => debt.total_debt), 0);
+
+  const stats = {
+    totalDebt,
+    totalCustomers,
+    largestDebt,
+    averageDebt: totalCustomers > 0 ? totalDebt / totalCustomers : 0
+  };
+
+  // API functions
   const fetchDebts = async () => {
     const params = new URLSearchParams();
     if (searchText.trim()) params.append('search', searchText.trim());
@@ -29,7 +64,6 @@ function CongNo() {
     setDebts(data.items || []);
   };
 
-  // Chọn khách hàng để thao tác tổng (truyền cả object khách)
   const handleSelectCustomer = (customer) => {
     setSelectedCustomer(customer);
     setCustomerDebt({
@@ -37,11 +71,12 @@ function CongNo() {
       total_paid: customer.total_paid || 0,
       debt_history: customer.debt_history || []
     });
-    setPayAmount(""); setPayNote("");
-    setAddAmount(""); setAddNote("");
+    setPayAmount(""); 
+    setPayNote("");
+    setAddAmount(""); 
+    setAddNote("");
   };
 
-  // Trừ nợ tổng cho khách (có ghi chú)
   const handlePayDebt = async () => {
     if (!payAmount || isNaN(payAmount)) return alert("Nhập số tiền muốn trả");
     const res = await fetch(`${import.meta.env.VITE_API_URL}/api/cong-no/cong-no-pay-customer`, {
@@ -57,11 +92,10 @@ function CongNo() {
     const data = await res.json();
     if (res.ok) {
       alert("✅ Đã cập nhật công nợ!");
-      setPayAmount(""); setPayNote("");
-      await fetchDebts(); // Cập nhật lại debts từ backend
-      // Sau khi fetch xong, tìm đúng khách vừa update để set lại customerDebt mới nhất
+      setPayAmount(""); 
+      setPayNote("");
+      await fetchDebts();
       setTimeout(() => {
-        // Đảm bảo lấy đúng bản mới nhất vừa fetch
         const updated = debts.find(d =>
           d.customer_name === selectedCustomer.customer_name &&
           d.customer_phone === selectedCustomer.customer_phone
@@ -73,13 +107,12 @@ function CongNo() {
             debt_history: updated.debt_history || []
           });
         }
-      }, 200); // nhỏ delay nhẹ để state debts cập nhật
+      }, 200);
     } else {
       alert("❌ " + (data.message || "Cập nhật công nợ thất bại!"));
     }
   };
 
-  // Cộng thêm nợ tổng cho khách (có ghi chú)
   const handleAddDebt = async () => {
     if (!addAmount || isNaN(addAmount)) return alert("Nhập số tiền muốn cộng nợ");
     const res = await fetch(`${import.meta.env.VITE_API_URL}/api/cong-no/cong-no-add-customer`, {
@@ -95,7 +128,8 @@ function CongNo() {
     const data = await res.json();
     if (res.ok) {
       alert("✅ Đã cộng thêm nợ!");
-      setAddAmount(""); setAddNote("");
+      setAddAmount(""); 
+      setAddNote("");
       await fetchDebts();
       setTimeout(() => {
         const updated = debts.find(d =>
@@ -115,12 +149,10 @@ function CongNo() {
     }
   };
 
-  // Lịch sử trả/cộng nợ: lấy từ state customerDebt (đã được cập nhật mới nhất ở trên)
   const handleShowHistory = () => {
     setHistoryModal({ open: true, history: customerDebt.debt_history || [] });
   };
 
-  // Xem chi tiết sản phẩm khách đã mua
   const handleShowDetail = async (customer) => {
     const res = await fetch(
       `${import.meta.env.VITE_API_URL}/api/cong-no/cong-no-orders?customer_name=${encodeURIComponent(customer.customer_name)}&customer_phone=${encodeURIComponent(customer.customer_phone || "")}`
@@ -129,7 +161,6 @@ function CongNo() {
     setDetailModal({ open: true, orders: data.orders || [] });
   };
 
-  // Sửa thông tin khách hàng
   const handleEditCustomer = (customer) => {
     setEditForm({ name: customer.customer_name, phone: customer.customer_phone || "" });
     setEditModal({ open: true, customer });
@@ -159,7 +190,6 @@ function CongNo() {
     }
   };
 
-  // Xóa khách hàng khỏi công nợ
   const handleDeleteCustomer = async (customer) => {
     if (!window.confirm(`Bạn có chắc muốn xóa công nợ của khách hàng "${customer.customer_name}"?`)) return;
     
@@ -185,359 +215,386 @@ function CongNo() {
     fetchDebts();
   }, [searchText, showAll]);
 
+  // Clear filters function
+  const clearFilters = () => {
+    setSearchText("");
+    setShowAll(false);
+  };
+
+  // Table columns definition
+  const tableColumns = [
+    {
+      header: "Khách hàng",
+      key: "customer",
+      render: (customer) => (
+        <div>
+          <div className="text-sm font-semibold text-gray-900">{customer.customer_name}</div>
+          <div className="text-sm text-gray-500">{customer.customer_phone || 'Chưa có SĐT'}</div>
+        </div>
+      )
+    },
+    {
+      header: "Tổng nợ",
+      key: "total_debt",
+      render: (customer) => (
+        <div className="text-sm font-bold text-red-600">
+          {formatCurrency(customer.total_debt)}
+        </div>
+      )
+    },
+    {
+      header: "Đã trả",
+      key: "total_paid",
+      render: (customer) => (
+        <div className="text-sm font-bold text-green-600">
+          {formatCurrency(customer.total_paid)}
+        </div>
+      )
+    },
+    {
+      header: "Còn nợ",
+      key: "remaining",
+      render: (customer) => {
+        // Logic: total_debt là số còn nợ, không cần trừ total_paid
+        const remaining = customer.total_debt; // debt đã là số còn nợ
   return (
-    <div className="max-w-5xl mx-auto p-6 bg-white rounded-xl shadow mt-10 relative">
-      {/* Nút logout */}
-      <div className="absolute top-4 right-4">
-        <LogoutButton />
+          <div className={`text-sm font-bold ${remaining > 0 ? 'text-orange-600' : 'text-green-600'}`}>
+            {formatCurrency(remaining)}
       </div>
-
-      {/* Menu điều hướng */}
-      <div className="flex justify-center space-x-2 mb-6">
+        );
+      }
+    },
+    {
+      header: "Trạng thái",
+      key: "status",
+      render: (customer) => {
+        const remaining = customer.total_debt; // debt đã là số còn nợ
+        if (remaining <= 0) {
+          return <span className="badge-success">✅ Đã thanh toán</span>;
+        } else if (customer.total_paid > 0) {
+          return <span className="badge-yellow">⚠️ Đã trả một phần</span>;
+        } else {
+          return <span className="badge-danger">❌ Chưa trả</span>;
+        }
+      }
+    },
+    {
+      header: "Thao tác",
+      key: "actions",
+      render: (customer) => (
+        <div className="flex gap-2 flex-wrap">
         <button
-          onClick={() => (window.location.href = "/nhap-hang")}
-          className="bg-blue-600 text-white px-3 py-1 rounded hover:bg-blue-700"
+            onClick={() => handleSelectCustomer(customer)} 
+            className="btn-action-edit text-xs"
         >
-          📥 Nhập hàng
+            💰 Quản lý
         </button>
         <button
-          onClick={() => (window.location.href = "/xuat-hang")}
-          className="bg-green-600 text-white px-3 py-1 rounded hover:bg-green-700"
+            onClick={() => handleShowDetail(customer)} 
+            className="btn-action-edit text-xs"
         >
-          📤 Xuất hàng
+            📋 Chi tiết
         </button>
         <button
-          onClick={() => (window.location.href = "/ton-kho-so-luong")}
-          className="bg-yellow-600 text-white px-3 py-1 rounded hover:bg-yellow-700"
+            onClick={() => handleEditCustomer(customer)} 
+            className="btn-action-edit text-xs"
         >
-          📦 Tồn kho
+            ✏️ Sửa
         </button>
         <button
-          onClick={() => (window.location.href = "/so-quy")}
-          className="bg-orange-600 text-white px-3 py-1 rounded hover:bg-orange-700"
+            onClick={() => handleDeleteCustomer(customer)} 
+            className="btn-action-delete text-xs"
         >
-          💰 Sổ quỹ
-        </button>
-        <button
-          onClick={() => (window.location.href = "/bao-cao")}
-          className="bg-purple-600 text-white px-3 py-1 rounded hover:bg-purple-700"
-        >
-          📋 Báo cáo
+            🗑️ Xóa
         </button>
       </div>
+      )
+    }
+  ];
 
-      <h2 className="text-2xl font-bold mb-4 text-center text-purple-700">
-        Công nợ khách hàng
-      </h2>
-
-      {/* Bộ lọc và tìm kiếm */}
-      <div className="mb-4 p-4 bg-gray-100 rounded-lg">
-        <div className="flex flex-wrap gap-4 items-center">
-          <div className="flex-1 min-w-60">
-            <input
-              type="text"
-              placeholder="🔍 Tìm kiếm theo tên hoặc số điện thoại..."
-              value={searchText}
-              onChange={(e) => setSearchText(e.target.value)}
-              className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+  return (
+    <Layout 
+      activeTab="cong-no"
+      title="💳 Công Nợ"
+      subtitle="Quản lý công nợ khách hàng"
+    >
+      {/* Stats Dashboard */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        <StatsCard
+          title="Tổng công nợ"
+          value={formatCurrency(stats.totalDebt)}
+          icon="💳"
+          color="red"
+          subtitle="Tổng tiền chưa thu"
             />
-          </div>
-          <div className="flex items-center gap-2">
-            <input
-              type="checkbox"
-              id="showAll"
-              checked={showAll}
-              onChange={(e) => setShowAll(e.target.checked)}
-              className="w-4 h-4"
+        <StatsCard
+          title="Số khách hàng"
+          value={stats.totalCustomers.toString()}
+          icon="👥"
+          color="blue"
+          subtitle="Khách hàng có nợ"
+        />
+        <StatsCard
+          title="Nợ lớn nhất"
+          value={formatCurrency(stats.largestDebt)}
+          icon="⚠️"
+          color="orange"
+          subtitle="Khách nợ nhiều nhất"
             />
-            <label htmlFor="showAll" className="text-sm font-medium">
-              Hiển thị tất cả khách hàng (kể cả đã trả hết nợ)
-            </label>
-          </div>
-        </div>
+        <StatsCard
+          title="Nợ trung bình"
+          value={formatCurrency(stats.averageDebt)}
+          icon="📊"
+          color="purple"
+          subtitle="Trung bình mỗi khách"
+        />
       </div>
 
-      {/* Danh sách khách còn công nợ */}
-      {!selectedCustomer && (
-        <div className="mb-6">
-          <h3 className="font-semibold mb-2">Danh sách khách còn công nợ:</h3>
-          <table className="w-full border text-sm">
-            <thead>
-              <tr className="bg-gray-100">
-                <th className="border p-2">Khách hàng</th>
-                <th className="border p-2">SĐT</th>
-                <th className="border p-2">Đã trả</th>
-                <th className="border p-2">Còn nợ</th>
-                <th className="border p-2">Thao tác</th>
-                <th className="border p-2">Lịch sử</th>
-                <th className="border p-2">Xem chi tiết</th>
-                <th className="border p-2">Sửa/Xóa</th>
-              </tr>
-            </thead>
-            <tbody>
-              {debts.map((debt, i) => (
-                <tr key={i}>
-                  <td className="border p-2">{debt.customer_name}</td>
-                  <td className="border p-2">{debt.customer_phone || "—"}</td>
-                  <td className="border p-2 text-right text-green-700">{Number(debt.total_paid).toLocaleString()}đ</td>
-                  <td className="border p-2 text-right text-red-600 font-bold">{Number(debt.total_debt).toLocaleString()}đ</td>
-                  <td className="border p-2 text-center">
-                    <button
-                      className="bg-blue-600 text-white px-2 py-1 rounded"
-                      onClick={() => handleSelectCustomer(debt)}
-                    >
-                      Cộng/Trừ nợ
-                    </button>
-                  </td>
-                  <td className="border p-2 text-center">
-                    <button
-                      className="bg-gray-300 text-black px-2 py-1 rounded"
-                      onClick={() => {
-                        setCustomerDebt(debt);
-                        handleShowHistory();
-                      }}
-                    >
-                      Xem
-                    </button>
-                  </td>
-                  <td className="border p-2 text-center">
-                    <button
-                      className="bg-yellow-400 text-black px-2 py-1 rounded"
-                      onClick={() => handleShowDetail(debt)}
-                    >
-                      Xem chi tiết
-                    </button>
-                  </td>
-                  <td className="border p-2 text-center">
-                    <button
-                      className="bg-green-500 text-white px-2 py-1 rounded mr-1"
-                      onClick={() => handleEditCustomer(debt)}
-                      title="Sửa thông tin"
-                    >
-                      ✏️
-                    </button>
-                    <button
-                      className="bg-red-500 text-white px-2 py-1 rounded"
-                      onClick={() => handleDeleteCustomer(debt)}
-                      title="Xóa công nợ"
-                    >
-                      🗑️
-                    </button>
-                  </td>
-                </tr>
-              ))}
-              {debts.length === 0 && (
-                <tr>
-                  <td colSpan={8} className="text-center py-3 text-gray-500">
-                    {searchText ? `Không tìm thấy khách hàng nào với từ khóa "${searchText}"` : "Không có công nợ nào!"}
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      {/* Thao tác tổng cho từng khách hàng */}
+      {/* Customer Management Form */}
       {selectedCustomer && (
-        <div className="mb-6">
-          <div className="flex justify-between items-center mb-2">
+        <FormCard
+          title={`💰 Quản lý công nợ: ${selectedCustomer.customer_name}`}
+          subtitle={`SĐT: ${selectedCustomer.customer_phone || 'Chưa có'} • Còn nợ: ${formatCurrency(customerDebt.total_debt)}`}
+          onReset={() => setSelectedCustomer(null)}
+          showReset={true}
+          resetLabel="Đóng"
+        >
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+            {/* Pay Debt Form */}
+            <div className="space-y-4">
+              <h4 className="text-lg font-semibold text-green-600">💸 Trả nợ</h4>
             <div>
-              <h3 className="font-semibold">
-                Công nợ của: <span className="text-blue-700">{selectedCustomer.customer_name}</span>
-                {selectedCustomer.customer_phone && (
-                  <span className="ml-4 text-gray-700">
-                    | SĐT: <b className="text-green-700">{selectedCustomer.customer_phone}</b>
-                  </span>
-                )}
-              </h3>
-              <div className="mt-2">
-                <span className="mr-6">Đã trả: <b className="text-green-700">{Number(customerDebt.total_paid).toLocaleString()}đ</b></span>
-                <span>Còn nợ: <b className="text-red-600">{Number(customerDebt.total_debt).toLocaleString()}đ</b></span>
-              </div>
-            </div>
-            <button
-              className="bg-gray-200 hover:bg-gray-300 text-gray-700 px-3 py-1 rounded ml-3"
-              onClick={() => {
-                setSelectedCustomer(null);
-                setCustomerDebt({ total_debt: 0, total_paid: 0, debt_history: [] });
-              }}
-            >
-              ← Quay lại danh sách nợ
-            </button>
-          </div>
-          {/* Giao diện cộng/trừ nợ tổng */}
-          <div className="flex gap-8 mt-3">
-            <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">Số tiền trả</label>
               <input
                 type="number"
-                min="0"
-                placeholder="Trả nợ"
-                className="border rounded px-2 py-1 w-24 mr-2"
+                  placeholder="Nhập số tiền"
                 value={payAmount}
-                onChange={e => setPayAmount(e.target.value)}
+                  onChange={(e) => setPayAmount(e.target.value)}
+                  className="form-input"
               />
+              </div>
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">Ghi chú</label>
               <input
                 type="text"
                 placeholder="Ghi chú trả nợ"
-                className="border rounded px-2 py-1 w-40 mr-2"
                 value={payNote}
-                onChange={e => setPayNote(e.target.value)}
+                  onChange={(e) => setPayNote(e.target.value)}
+                  className="form-input"
               />
+              </div>
               <button
-                className="bg-green-600 text-white px-3 py-1 rounded"
                 onClick={handlePayDebt}
+                className="w-full bg-green-600 hover:bg-green-700 text-white py-3 rounded-xl transition-all font-medium"
               >
-                Trừ nợ
+                ✅ Xác nhận trả nợ
               </button>
             </div>
+
+            {/* Add Debt Form */}
+            <div className="space-y-4">
+              <h4 className="text-lg font-semibold text-orange-600">📈 Cộng nợ</h4>
             <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">Số tiền cộng</label>
               <input
                 type="number"
-                min="0"
-                placeholder="Cộng nợ"
-                className="border rounded px-2 py-1 w-24 mr-2"
+                  placeholder="Nhập số tiền"
                 value={addAmount}
-                onChange={e => setAddAmount(e.target.value)}
+                  onChange={(e) => setAddAmount(e.target.value)}
+                  className="form-input"
               />
+              </div>
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">Ghi chú</label>
               <input
                 type="text"
                 placeholder="Ghi chú cộng nợ"
-                className="border rounded px-2 py-1 w-40 mr-2"
                 value={addNote}
-                onChange={e => setAddNote(e.target.value)}
+                  onChange={(e) => setAddNote(e.target.value)}
+                  className="form-input"
               />
+              </div>
               <button
-                className="bg-red-500 text-white px-3 py-1 rounded"
                 onClick={handleAddDebt}
+                className="w-full bg-orange-600 hover:bg-orange-700 text-white py-3 rounded-xl transition-all font-medium"
               >
-                + Nợ
+                ➕ Cộng thêm nợ
               </button>
             </div>
-            <div>
+          </div>
+
+          <div className="mt-6 pt-6 border-t border-gray-200">
               <button
-                className="bg-gray-300 text-black px-3 py-1 rounded"
                 onClick={handleShowHistory}
+              className="bg-purple-600 hover:bg-purple-700 text-white px-6 py-3 rounded-xl transition-all font-medium"
               >
-                Xem lịch sử
+              📈 Xem lịch sử giao dịch
+              </button>
+            </div>
+        </FormCard>
+      )}
+
+      {/* Filters */}
+      <FilterCard onClearFilters={clearFilters}>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div>
+            <input
+              type="text"
+              placeholder="🔍 Tìm tên, SĐT khách hàng..."
+              value={searchText}
+              onChange={(e) => setSearchText(e.target.value)}
+              className="form-input"
+            />
+          </div>
+          <div>
+            <label className="flex items-center space-x-2">
+              <input
+                type="checkbox"
+                checked={showAll}
+                onChange={(e) => setShowAll(e.target.checked)}
+                className="w-4 h-4 text-purple-600 rounded focus:ring-purple-500"
+              />
+              <span className="text-sm font-medium text-gray-700">Hiển thị cả khách đã trả hết nợ</span>
+            </label>
+          </div>
+        </div>
+      </FilterCard>
+
+      {/* Data Table */}
+      <DataTable
+        title="📋 Danh sách công nợ khách hàng"
+        data={debts.map(item => ({ ...item, id: item._id || `${item.customer_name}-${item.customer_phone}` }))}
+        columns={tableColumns}
+        currentPage={1}
+        totalPages={1}
+        itemsPerPage={debts.length}
+        totalItems={debts.length}
+      />
+
+      {/* History Modal */}
+      {historyModal.open && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-2xl p-8 max-w-4xl w-full mx-4 max-h-[80vh] overflow-y-auto">
+            <h3 className="text-xl font-bold text-gray-900 mb-6">📈 Lịch sử giao dịch</h3>
+            <div className="space-y-3">
+              {historyModal.history.length === 0 ? (
+                <p className="text-gray-500 text-center py-8">Chưa có giao dịch nào</p>
+              ) : (
+                historyModal.history.map((item, index) => (
+                  <div key={index} className="bg-gray-50 p-4 rounded-xl">
+                    <div className="flex justify-between items-start">
+                      <div>
+                        <div className={`font-semibold ${item.type === 'pay' ? 'text-green-600' : 'text-orange-600'}`}>
+                          {item.type === 'pay' ? '💸 Trả nợ' : '📈 Cộng nợ'}: {formatNumber(item.amount)}đ
+                        </div>
+                        <div className="text-sm text-gray-600 mt-1">{item.note || 'Không có ghi chú'}</div>
+                      </div>
+                      <div className="text-sm text-gray-500">
+                        {new Date(item.date).toLocaleString('vi-VN')}
+                      </div>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+            <div className="mt-6 flex justify-end">
+              <button
+                onClick={() => setHistoryModal({ open: false, history: [] })}
+                className="bg-gray-500 hover:bg-gray-600 text-white px-6 py-3 rounded-xl transition-all"
+              >
+                ❌ Đóng
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* Modal lịch sử trả/cộng nợ */}
-      {historyModal.open && (
-        <div className="fixed z-50 inset-0 bg-black bg-opacity-30 flex items-center justify-center">
-          <div className="bg-white rounded-lg p-6 w-[400px] max-h-[80vh] overflow-y-auto relative">
-            <button
-              className="absolute top-2 right-2 text-lg"
-              onClick={() => setHistoryModal({ open: false, history: [] })}
-            >✖</button>
-            <h3 className="text-lg font-bold mb-3">Lịch sử trả/cộng nợ</h3>
-            <ul className="space-y-2">
-              {historyModal.history && historyModal.history.length > 0 ? (
-                historyModal.history.map((item, idx) => (
-                  <li key={idx} className={`p-2 rounded ${item.type === "add" ? "bg-red-100" : "bg-green-100"}`}>
-                    <b>{item.type === "add" ? "Cộng nợ" : "Trả nợ"}:</b> {Number(item.amount).toLocaleString()}đ
-                    <span className="ml-2 text-xs text-gray-500">{item.date ? (item.date.slice(0, 10) + " " + item.date.slice(11, 19)) : ""}</span>
-                    {item.note && <div className="text-xs text-gray-700 italic mt-1">📝 {item.note}</div>}
-                  </li>
-                ))
-              ) : (
-                <li className="text-gray-500 text-sm">Chưa có lịch sử trả/cộng nợ.</li>
-              )}
-            </ul>
-          </div>
-        </div>
-      )}
-
-      {/* Modal chi tiết sản phẩm khách đã mua */}
+      {/* Detail Modal */}
       {detailModal.open && (
-        <div className="fixed z-50 inset-0 bg-black bg-opacity-30 flex items-center justify-center">
-          <div className="bg-white rounded-lg p-6 w-[600px] max-h-[80vh] overflow-y-auto relative">
-            <button
-              className="absolute top-2 right-2 text-lg"
-              onClick={() => setDetailModal({ open: false, orders: [] })}
-            >✖</button>
-            <h3 className="text-lg font-bold mb-3">Danh sách sản phẩm khách đã mua</h3>
-            <table className="w-full border text-sm mb-2">
-              <thead>
-                <tr className="bg-gray-100">
-                  <th className="border p-2">IMEI</th>
-                  <th className="border p-2">Sản phẩm</th>
-                  <th className="border p-2">Giá bán</th>
-                  <th className="border p-2">Ngày bán</th>
-                </tr>
-              </thead>
-              <tbody>
-                {detailModal.orders.length === 0 ? (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-2xl p-8 max-w-6xl w-full mx-4 max-h-[80vh] overflow-y-auto">
+            <h3 className="text-xl font-bold text-gray-900 mb-6">📋 Chi tiết sản phẩm đã mua</h3>
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead className="bg-gray-50">
                   <tr>
-                    <td colSpan={4} className="text-center py-3 text-gray-500">
-                      Không có sản phẩm nào!
-                    </td>
+                    <th className="px-4 py-3 text-left text-xs font-bold text-gray-600 uppercase">Sản phẩm</th>
+                    <th className="px-4 py-3 text-left text-xs font-bold text-gray-600 uppercase">Số lượng</th>
+                    <th className="px-4 py-3 text-left text-xs font-bold text-gray-600 uppercase">Giá bán</th>
+                    <th className="px-4 py-3 text-left text-xs font-bold text-gray-600 uppercase">Công nợ</th>
+                    <th className="px-4 py-3 text-left text-xs font-bold text-gray-600 uppercase">Ngày bán</th>
                   </tr>
-                ) : (
-                  detailModal.orders.map((order, idx) => (
-                    <tr key={idx}>
-                      <td className="border p-2">{order.imei}</td>
-                      <td className="border p-2">{order.product_name}</td>
-                      <td className="border p-2 text-right">{Number(order.price_sell).toLocaleString()}đ</td>
-                      <td className="border p-2">{order.sold_date?.slice(0,10)}</td>
+                </thead>
+                <tbody>
+                  {detailModal.orders.map((order, index) => (
+                    <tr key={index} className="border-b border-gray-200">
+                      <td className="px-4 py-3">{order.product_name}</td>
+                      <td className="px-4 py-3">{order.quantity || 1}</td>
+                                          <td className="px-4 py-3">{formatCurrency(order.price_sell)}</td>
+                    <td className="px-4 py-3">{formatCurrency(order.debt)}</td>
+                      <td className="px-4 py-3">{order.sold_date ? new Date(order.sold_date).toLocaleDateString('vi-VN') : ''}</td>
                     </tr>
-                  ))
-                )}
+                  ))}
               </tbody>
             </table>
+            </div>
+            <div className="mt-6 flex justify-end">
+              <button
+                onClick={() => setDetailModal({ open: false, orders: [] })}
+                className="bg-gray-500 hover:bg-gray-600 text-white px-6 py-3 rounded-xl transition-all"
+              >
+                ❌ Đóng
+              </button>
+            </div>
           </div>
         </div>
       )}
 
-      {/* Modal sửa thông tin khách hàng */}
+      {/* Edit Customer Modal */}
       {editModal.open && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white p-6 rounded-lg w-96 max-w-90vw">
-            <h3 className="text-lg font-bold mb-4">✏️ Sửa thông tin khách hàng</h3>
+          <div className="bg-white rounded-2xl p-8 max-w-md w-full mx-4">
+            <h3 className="text-xl font-bold text-gray-900 mb-6">✏️ Sửa thông tin khách hàng</h3>
             <div className="space-y-4">
               <div>
-                <label className="block text-sm font-medium mb-1">Tên khách hàng *</label>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">Tên khách hàng</label>
                 <input
                   type="text"
                   value={editForm.name}
                   onChange={(e) => setEditForm(prev => ({ ...prev, name: e.target.value }))}
-                  className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="form-input"
                   placeholder="Nhập tên khách hàng"
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium mb-1">Số điện thoại</label>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">Số điện thoại</label>
                 <input
                   type="text"
                   value={editForm.phone}
                   onChange={(e) => setEditForm(prev => ({ ...prev, phone: e.target.value }))}
-                  className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="form-input"
                   placeholder="Nhập số điện thoại"
                 />
               </div>
-            </div>
-            <div className="flex gap-3 mt-6">
-              <button
-                onClick={handleSaveCustomer}
-                className="flex-1 bg-blue-600 text-white py-2 rounded-md hover:bg-blue-700"
-              >
-                💾 Lưu
-              </button>
+              <div className="flex gap-3 pt-4">
               <button
                 onClick={() => setEditModal({ open: false, customer: null })}
-                className="flex-1 bg-gray-500 text-white py-2 rounded-md hover:bg-gray-600"
+                  className="flex-1 bg-gray-500 hover:bg-gray-600 text-white py-3 rounded-xl transition-all"
               >
                 ❌ Hủy
               </button>
+                <button
+                  onClick={handleSaveCustomer}
+                  className="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-3 rounded-xl transition-all"
+                >
+                  ✅ Lưu
+                </button>
+              </div>
             </div>
           </div>
         </div>
       )}
-    </div>
+    </Layout>
   );
 }
 

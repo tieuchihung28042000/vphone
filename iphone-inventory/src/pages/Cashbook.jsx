@@ -1,10 +1,33 @@
-import React, { useState, useEffect } from "react";
+import { useState, useEffect } from "react";
 import { format } from "date-fns";
-import LogoutButton from "../components/LogoutButton";
+import Layout from "../components/Layout";
+import StatsCard from "../components/StatsCard";
+import FormCard from "../components/FormCard";
+import FilterCard from "../components/FilterCard";
+import DataTable from "../components/DataTable";
+import * as XLSX from "xlsx";
+import { saveAs } from "file-saver";
 
 // ======= Format số tiền =======
 function formatMoney(amount) {
-  return Number(amount).toLocaleString('vi-VN') + 'đ';
+  if (!amount || amount === 0) return "0đ";
+  
+  // Xử lý số âm
+  const isNegative = amount < 0;
+  const absAmount = Math.abs(amount);
+  
+  let result;
+  if (absAmount >= 1000000000) {
+    result = `${(absAmount / 1000000000).toFixed(1)}Tỷ`;
+  } else if (absAmount >= 1000000) {
+    result = `${(absAmount / 1000000).toFixed(1)}Tr`;
+  } else if (absAmount >= 1000) {
+    result = `${(absAmount / 1000).toFixed(0)}K`;
+  } else {
+    result = absAmount.toString().replace(/\B(?=(\d{3})+(?!\d))/g, " ") + "đ";
+  }
+  
+  return isNegative ? `-${result}` : result;
 }
 
 function formatNumberInput(val) {
@@ -23,6 +46,20 @@ export default function Cashbook() {
   const [loading, setLoading] = useState(false);
   const [summary, setSummary] = useState({ totalThu: 0, totalChi: 0, balance: 0 });
   const [modal, setModal] = useState({ open: false, type: 'add', data: null });
+  
+  // State cho hiển thị số dư theo nguồn tiền và chỉnh sửa tổng quỹ
+  const [balanceBySource, setBalanceBySource] = useState({
+    tien_mat: 0,
+    the: 0,
+    vi_dien_tu: 0
+  });
+  const [editBalanceModal, setEditBalanceModal] = useState(false);
+  const [balanceForm, setBalanceForm] = useState({
+    tien_mat: '',
+    the: '',
+    vi_dien_tu: '',
+    note: ''
+  });
   
   // State cho chi nhánh được chọn
   const [selectedBranch, setSelectedBranch] = useState('');
@@ -135,6 +172,78 @@ export default function Cashbook() {
     setLoading(false);
   };
 
+  // Load số dư theo nguồn tiền
+  const loadBalanceBySource = async () => {
+    if (!selectedBranch) return;
+    
+    try {
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/cashbook/balance?branch=${selectedBranch}`);
+      const data = await response.json();
+      
+      if (response.ok) {
+        const balanceMap = {
+          tien_mat: 0,
+          the: 0,
+          vi_dien_tu: 0
+        };
+        
+        data.forEach(item => {
+          if (item._id && item._id.source) {
+            balanceMap[item._id.source] = item.balance || 0;
+          }
+        });
+        
+        setBalanceBySource(balanceMap);
+      }
+    } catch (error) {
+      console.error('Error loading balance by source:', error);
+    }
+  };
+
+  // Chỉnh sửa tổng quỹ
+  const handleAdjustBalance = async () => {
+    try {
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/cashbook/adjust-balance`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          branch: selectedBranch,
+          tien_mat: balanceForm.tien_mat ? Number(unformatNumberInput(balanceForm.tien_mat)) : undefined,
+          the: balanceForm.the ? Number(unformatNumberInput(balanceForm.the)) : undefined,
+          vi_dien_tu: balanceForm.vi_dien_tu ? Number(unformatNumberInput(balanceForm.vi_dien_tu)) : undefined,
+          note: balanceForm.note,
+          user: 'Admin' // Có thể lấy từ user context nếu có
+        })
+      });
+      
+      const result = await response.json();
+      
+      if (response.ok) {
+        alert('✅ ' + result.message);
+        setEditBalanceModal(false);
+        setBalanceForm({ tien_mat: '', the: '', vi_dien_tu: '', note: '' });
+        loadBalanceBySource();
+        loadTransactions();
+      } else {
+        alert('❌ ' + result.message);
+      }
+    } catch (error) {
+      console.error('Error adjusting balance:', error);
+      alert('❌ Lỗi kết nối server');
+    }
+  };
+
+  // Mở modal chỉnh sửa tổng quỹ
+  const handleOpenEditBalance = () => {
+    setBalanceForm({
+      tien_mat: balanceBySource.tien_mat.toString(),
+      the: balanceBySource.the.toString(),
+      vi_dien_tu: balanceBySource.vi_dien_tu.toString(),
+      note: ''
+    });
+    setEditBalanceModal(true);
+  };
+
   // Load chi nhánh khi component mount
   useEffect(() => {
     loadBranches();
@@ -144,6 +253,7 @@ export default function Cashbook() {
   useEffect(() => {
     if (selectedBranch) {
       loadTransactions();
+      loadBalanceBySource();
     }
   }, [filters, pagination.page, selectedBranch]);
 
@@ -287,414 +397,429 @@ export default function Cashbook() {
     }
   };
 
+  // Stats calculation
+  const totalBalance = balanceBySource.tien_mat + balanceBySource.the + balanceBySource.vi_dien_tu;
+  const todayTransactions = transactions.filter(t => t.date?.slice(0, 10) === format(new Date(), 'yyyy-MM-dd'));
+  const todayIncome = todayTransactions.filter(t => t.type === 'thu').reduce((sum, t) => sum + (parseFloat(t.amount) || 0), 0);
+  const todayExpense = todayTransactions.filter(t => t.type === 'chi').reduce((sum, t) => sum + (parseFloat(t.amount) || 0), 0);
+
+  const stats = {
+    totalBalance,
+    todayIncome,
+    todayExpense,
+    todayNet: todayIncome - todayExpense
+  };
+
+  // Table columns definition
+  const tableColumns = [
+    {
+      header: "Ngày giao dịch",
+      key: "date",
+      render: (item) => (
+        <div className="text-sm text-gray-900 font-medium">
+          {item.date ? format(new Date(item.date), 'dd/MM/yyyy') : ''}
+        </div>
+      )
+    },
+    {
+      header: "Loại",
+      key: "type",
+      render: (item) => (
+        item.type === 'thu' ? (
+          <span className="badge-success">📈 Thu</span>
+        ) : (
+          <span className="badge-danger">📉 Chi</span>
+        )
+      )
+    },
+    {
+      header: "Mô tả",
+      key: "content",
+      render: (item) => (
+        <div>
+          <div className="text-sm font-semibold text-gray-900">{item.content}</div>
+          {item.note && <div className="text-xs text-gray-500">{item.note}</div>}
+        </div>
+      )
+    },
+    {
+      header: "Số tiền",
+      key: "amount",
+      render: (item) => (
+        <div className={`text-sm font-bold ${item.type === 'thu' ? 'text-green-600' : 'text-red-600'}`}>
+          {item.type === 'thu' ? '+' : '-'}{formatMoney(item.amount)}
+        </div>
+      )
+    },
+    {
+      header: "Nguồn tiền",
+      key: "source",
+      render: (item) => {
+        const sourceMap = {
+          'tien_mat': { label: 'Tiền mặt', color: 'green', icon: '💵' },
+          'the': { label: 'Thẻ', color: 'blue', icon: '💳' },
+          'vi_dien_tu': { label: 'Ví điện tử', color: 'purple', icon: '📱' }
+        };
+        const source = sourceMap[item.source] || sourceMap.tien_mat;
   return (
-    <div className="max-w-7xl mx-auto p-6 bg-white rounded-xl shadow mt-10">
-      {/* Nút logout */}
-      <div className="absolute top-4 right-4">
-        <LogoutButton />
+          <span className={`badge-${source.color}`}>
+            {source.icon} {source.label}
+          </span>
+        );
+      }
+    },
+    {
+      header: "Chi nhánh",
+      key: "branch",
+      render: (item) => (
+        <div className="text-sm text-gray-900">
+          {item.branch || <span className="text-gray-400 italic">Không có</span>}
       </div>
-
-      {/* Menu điều hướng */}
-      <div className="flex justify-center space-x-2 mb-6">
-        <button
-          onClick={() => (window.location.href = "/nhap-hang")}
-          className="bg-blue-600 text-white px-3 py-1 rounded hover:bg-blue-700"
-        >
-          📥 Nhập hàng
-        </button>
-        <button
-          onClick={() => (window.location.href = "/xuat-hang")}
-          className="bg-green-600 text-white px-3 py-1 rounded hover:bg-green-700"
-        >
-          📤 Xuất hàng
-        </button>
-        <button
-          onClick={() => (window.location.href = "/ton-kho-so-luong")}
-          className="bg-yellow-600 text-white px-3 py-1 rounded hover:bg-yellow-700"
-        >
-          📦 Tồn kho
-        </button>
-        <button
-          onClick={() => (window.location.href = "/cong-no")}
-          className="bg-red-600 text-white px-3 py-1 rounded hover:bg-red-700"
-        >
-          💳 Công nợ
-        </button>
-        <button
-          onClick={() => (window.location.href = "/bao-cao")}
-          className="bg-purple-600 text-white px-3 py-1 rounded hover:bg-purple-700"
-        >
-          📋 Báo cáo
-        </button>
-      </div>
-
-      <div className="flex justify-between items-center mb-6">
-        <h1 className="text-3xl font-bold text-blue-700">💰 Sổ Quỹ</h1>
+      )
+    },
+    {
+      header: "Thao tác",
+      key: "actions",
+      render: (item) => (
         <div className="flex gap-2">
-          <button
-            className="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700"
-            onClick={() => handleOpenModal('add')}
-          >
-            ➕ Thêm giao dịch
+          <button onClick={() => handleOpenModal('edit', item)} className="btn-action-edit">
+            ✏️ Sửa
           </button>
-          <button
-            className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700"
-            onClick={handleExportExcel}
-          >
-            📊 Xuất Excel
+          <button onClick={() => handleDeleteTransaction(item._id)} className="btn-action-delete">
+            🗑️ Xóa
           </button>
         </div>
+      )
+    }
+  ];
+
+  return (
+    <Layout 
+      activeTab="so-quy"
+      title="💰 Sổ Quỹ"
+      subtitle="Quản lý thu chi và theo dõi tài chính"
+    >
+      {/* Stats Dashboard */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        <StatsCard
+          title="Tổng số dư"
+          value={`${formatMoney(totalBalance)}`}
+          icon="💰"
+          color="blue"
+          subtitle="Tất cả nguồn tiền"
+          onClick={handleOpenEditBalance}
+        />
+        <StatsCard
+          title="Thu hôm nay"
+          value={`${formatMoney(todayIncome)}`}
+          icon="📈"
+          color="green"
+          subtitle={`${todayTransactions.filter(t => t.type === 'thu').length} giao dịch`}
+        />
+        <StatsCard
+          title="Chi hôm nay"
+          value={`${formatMoney(todayExpense)}`}
+          icon="��"
+          color="red"
+          subtitle={`${todayTransactions.filter(t => t.type === 'chi').length} giao dịch`}
+        />
+        <StatsCard
+          title="Chênh lệch hôm nay"
+          value={`${formatMoney(todayIncome - todayExpense)}`}
+          icon={todayIncome - todayExpense >= 0 ? "📊" : "⚠️"}
+          color={todayIncome - todayExpense >= 0 ? "purple" : "orange"}
+          subtitle={todayIncome - todayExpense >= 0 ? "Tích cực" : "Tiêu cực"}
+        />
       </div>
 
-      {/* ========= CHỌN CHI NHÁNH ========= */}
-      <div className="bg-gradient-to-r from-blue-100 to-purple-100 p-4 rounded-lg mb-6 border-l-4 border-blue-500">
-        <div className="flex items-center gap-4">
-          <span className="text-lg font-semibold text-blue-800">🏢 Chi nhánh hiện tại:</span>
-          {loadingBranches ? (
-            <div className="px-4 py-2 border-2 border-blue-300 rounded-lg text-lg font-semibold bg-gray-100 min-w-48">
-              ⏳ Đang tải chi nhánh...
-                </div>
-          ) : (
+      {/* Balance by Source */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <StatsCard
+          title="💵 Tiền mặt"
+          value={`${formatMoney(balanceBySource.tien_mat)}`}
+          icon="💵"
+          color="green"
+          subtitle="Số dư tiền mặt"
+        />
+        <StatsCard
+          title="💳 Thẻ"
+          value={`${formatMoney(balanceBySource.the)}`}
+          icon="💳"
+          color="blue"
+          subtitle="Số dư thẻ"
+        />
+        <StatsCard
+          title="📱 Ví điện tử"
+          value={`${formatMoney(balanceBySource.vi_dien_tu)}`}
+          icon="📱"
+          color="purple"
+          subtitle="Số dư ví điện tử"
+        />
+      </div>
+
+      {/* Form Card */}
+      <FormCard
+        title={modal.type === 'edit' ? '✏️ Chỉnh sửa giao dịch' : '➕ Thêm giao dịch mới'}
+        subtitle="Ghi chép thu chi và quản lý tài chính"
+        onReset={() => {
+          handleCloseModal();
+          setFormData({
+            type: 'thu',
+            content: '',
+            amount: '',
+            source: 'tien_mat',
+            branch: selectedBranch,
+            customer: '',
+            supplier: '',
+            note: '',
+            date: format(new Date(), 'yyyy-MM-dd')
+          });
+        }}
+        showReset={modal.type === 'edit'}
+        resetLabel="Hủy chỉnh sửa"
+        message={modal.message}
+      >
+        <form onSubmit={handleSaveTransaction} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          <div>
+            <label className="block text-sm font-semibold text-gray-700 mb-3">Ngày giao dịch *</label>
+            <input
+              name="date"
+              type="date"
+              value={formData.date}
+              onChange={(e) => setFormData(prev => ({ ...prev, date: e.target.value }))}
+              className="form-input"
+              required
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-semibold text-gray-700 mb-3">Loại giao dịch *</label>
             <select
-              className="px-4 py-2 border-2 border-blue-300 rounded-lg text-lg font-semibold bg-white shadow-sm min-w-48 focus:outline-none focus:border-blue-500"
-              value={selectedBranch}
-              onChange={(e) => {
-                setSelectedBranch(e.target.value);
-                setPagination(prev => ({ ...prev, page: 1 })); // Reset về trang 1
-              }}
+              name="type"
+              value={formData.type}
+              onChange={(e) => setFormData(prev => ({ ...prev, type: e.target.value }))}
+              className="form-input"
+              required
             >
-              {branches.map(branch => (
-                <option key={branch} value={branch}>
-                  {branch}
-                </option>
+              <option value="thu">📈 Thu tiền</option>
+              <option value="chi">📉 Chi tiền</option>
+            </select>
+                </div>
+
+          <div>
+            <label className="block text-sm font-semibold text-gray-700 mb-3">Nguồn tiền *</label>
+            <select
+              name="source"
+              value={formData.source}
+              onChange={(e) => setFormData(prev => ({ ...prev, source: e.target.value }))}
+              className="form-input"
+              required
+            >
+              <option value="tien_mat">💵 Tiền mặt</option>
+              <option value="the">💳 Thẻ</option>
+              <option value="vi_dien_tu">📱 Ví điện tử</option>
+            </select>
+          </div>
+
+          <div className="lg:col-span-2">
+            <label className="block text-sm font-semibold text-gray-700 mb-3">Mô tả giao dịch *</label>
+            <input
+              name="content"
+              placeholder="Mô tả chi tiết giao dịch"
+              value={formData.content}
+              onChange={(e) => setFormData(prev => ({ ...prev, content: e.target.value }))}
+              className="form-input"
+              required
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-semibold text-gray-700 mb-3">Số tiền *</label>
+            <input
+              name="amount"
+              type="text"
+              placeholder="0"
+              value={formatNumberInput(formData.amount)}
+              onChange={(e) => setFormData(prev => ({ ...prev, amount: unformatNumberInput(e.target.value) }))}
+              className="form-input"
+              required
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-semibold text-gray-700 mb-3">Chi nhánh</label>
+            <select 
+              name="branch" 
+              value={formData.branch} 
+              onChange={(e) => setFormData(prev => ({ ...prev, branch: e.target.value }))}
+              className="form-input"
+            >
+              <option value="">Chọn chi nhánh</option>
+              {branches.map((b) => (
+                <option key={b} value={b}>{b}</option>
               ))}
             </select>
-          )}
-          <span className="text-sm text-gray-600 italic">
-            * Tất cả giao dịch chỉ hiển thị cho chi nhánh này
-          </span>
-          </div>
           </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-        <div className="bg-green-100 p-4 rounded-lg border-l-4 border-green-500">
-          <h3 className="text-lg font-semibold text-green-800">💰 Tổng Thu ({selectedBranch})</h3>
-          <p className="text-2xl font-bold text-green-600">{formatMoney(summary.totalThu)}</p>
+          <div className="lg:col-span-2">
+            <label className="block text-sm font-semibold text-gray-700 mb-3">Ghi chú</label>
+            <input
+              name="note"
+              placeholder="Ghi chú thêm"
+              value={formData.note}
+              onChange={(e) => setFormData(prev => ({ ...prev, note: e.target.value }))}
+              className="form-input"
+            />
           </div>
-        <div className="bg-red-100 p-4 rounded-lg border-l-4 border-red-500">
-          <h3 className="text-lg font-semibold text-red-800">💸 Tổng Chi ({selectedBranch})</h3>
-          <p className="text-2xl font-bold text-red-600">{formatMoney(summary.totalChi)}</p>
-          </div>
-        <div className={`p-4 rounded-lg border-l-4 ${summary.balance >= 0 ? 'bg-blue-100 border-blue-500' : 'bg-orange-100 border-orange-500'}`}>
-          <h3 className={`text-lg font-semibold ${summary.balance >= 0 ? 'text-blue-800' : 'text-orange-800'}`}>
-            📊 Số Dư ({selectedBranch})
-          </h3>
-          <p className={`text-2xl font-bold ${summary.balance >= 0 ? 'text-blue-600' : 'text-orange-600'}`}>
-            {formatMoney(summary.balance)}
-          </p>
-        </div>
-      </div>
 
-      <div className="bg-gray-50 p-4 rounded-lg mb-6">
-        <h3 className="font-semibold mb-3">🔍 Bộ lọc</h3>
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          <div>
-            <label className="font-medium text-gray-700">Từ ngày</label>
-            <input
-              type="date"
-              className="mt-1 w-full border rounded px-2 py-1"
-              value={filters.fromDate}
-              onChange={e => handleFilterChange('fromDate', e.target.value)}
-            />
-          </div>
-          
-          <div>
-            <label className="font-medium text-gray-700">Đến ngày</label>
-            <input
-              type="date"
-              className="mt-1 w-full border rounded px-2 py-1"
-              value={filters.toDate}
-              onChange={e => handleFilterChange('toDate', e.target.value)}
-            />
-          </div>
-          
-          <div>
-            <label className="font-medium text-gray-700">Loại giao dịch</label>
-            <select
-              className="mt-1 w-full border rounded px-2 py-1"
-              value={filters.type}
-              onChange={e => handleFilterChange('type', e.target.value)}
+          <div className="md:col-span-2 lg:col-span-3">
+            <button 
+              type="submit" 
+              className="w-full btn-gradient text-white py-4 px-8 rounded-2xl font-bold text-lg transition-all duration-300"
             >
-              <option value="all">Tất cả</option>
-              <option value="thu">Thu</option>
-              <option value="chi">Chi</option>
+              {modal.type === 'edit' ? "🔄 Cập nhật giao dịch" : "💰 Thêm giao dịch"}
+            </button>
+          </div>
+        </form>
+      </FormCard>
+
+      {/* Filters */}
+      <FilterCard onClearFilters={() => {
+        handleFilterChange('fromDate', '');
+        handleFilterChange('toDate', '');
+        handleFilterChange('type', 'all');
+        handleFilterChange('source', 'all');
+        handleFilterChange('search', '');
+      }}>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-4">
+          <div>
+            <input
+              type="text"
+              placeholder="🔍 Tìm mô tả, ghi chú..."
+              value={filters.search}
+              onChange={(e) => handleFilterChange('search', e.target.value)}
+              className="form-input"
+            />
+          </div>
+          <div>
+            <input
+              type="date"
+              value={filters.fromDate}
+              onChange={(e) => handleFilterChange('fromDate', e.target.value)}
+              className="form-input"
+            />
+          </div>
+          <div>
+            <input
+              type="date"
+              value={filters.toDate}
+              onChange={(e) => handleFilterChange('toDate', e.target.value)}
+              className="form-input"
+            />
+          </div>
+          <div>
+            <select
+              value={filters.type}
+              onChange={(e) => handleFilterChange('type', e.target.value)}
+              className="form-input"
+            >
+              <option value="all">Tất cả loại</option>
+              <option value="thu">📈 Thu</option>
+              <option value="chi">📉 Chi</option>
             </select>
           </div>
-
         <div>
-            <label className="font-medium text-gray-700">Nguồn tiền</label>
           <select
-              className="mt-1 w-full border rounded px-2 py-1"
               value={filters.source}
-              onChange={e => handleFilterChange('source', e.target.value)}
+              onChange={(e) => handleFilterChange('source', e.target.value)}
+              className="form-input"
             >
-              <option value="all">Tất cả</option>
-            <option value="tien_mat">Tiền mặt</option>
-            <option value="the">Thẻ</option>
-              <option value="cong_no">Công nợ</option>
+              <option value="all">Tất cả nguồn</option>
+              <option value="tien_mat">💵 Tiền mặt</option>
+              <option value="the">💳 Thẻ</option>
+              <option value="vi_dien_tu">📱 Ví điện tử</option>
           </select>
-        </div>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
-        <div>
-            <label className="font-medium text-gray-700">Tìm kiếm</label>
-          <input
-              type="text"
-              className="mt-1 w-full border rounded px-2 py-1"
-              placeholder="Tìm theo nội dung, khách hàng, ghi chú..."
-              value={filters.search}
-              onChange={e => handleFilterChange('search', e.target.value)}
-            />
           </div>
-
-          <div className="flex items-end">
+          <div>
           <button
-              className="w-full bg-gray-500 text-white px-3 py-2 rounded hover:bg-gray-600"
-              onClick={() => {
-                setFilters({
-                  fromDate: '',
-                  toDate: '',
-                  type: 'all',
-                  source: 'all',
-                  search: ''
-                });
-              }}
+              onClick={handleExportExcel}
+              className="w-full bg-green-600 hover:bg-green-700 text-white px-4 py-3 rounded-xl transition-all duration-200 font-medium"
             >
-              🔄 Xóa lọc
+              📊 Xuất Excel
           </button>
           </div>
         </div>
-      </div>
+      </FilterCard>
 
-      <div className="overflow-x-auto">
-        <table className="w-full border-collapse border">
-          <thead>
-            <tr className="bg-gray-100">
-              <th className="border p-2 text-left">Mã phiếu</th>
-              <th className="border p-2 text-left">Ngày</th>
-              <th className="border p-2 text-left">Loại</th>
-              <th className="border p-2 text-left">Nội dung</th>
-              <th className="border p-2 text-right">Số tiền</th>
-              <th className="border p-2 text-left">Nguồn</th>
-              <th className="border p-2 text-left">Khách hàng/NCC</th>
-              <th className="border p-2 text-left">Chi nhánh</th>
-              <th className="border p-2 text-left">Ghi chú</th>
-              <th className="border p-2 text-center">Thao tác</th>
-            </tr>
-          </thead>
-          <tbody>
-            {loading ? (
-              <tr>
-                <td colSpan={10} className="text-center py-4">
-                  ⏳ Đang tải dữ liệu...
-                </td>
-              </tr>
-            ) : transactions.length === 0 ? (
-              <tr>
-                <td colSpan={10} className="text-center py-4 text-gray-500">
-                  Không có giao dịch nào
-                </td>
-              </tr>
-            ) : (
-              transactions.map((transaction, index) => (
-                <tr key={transaction._id} className={index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
-                  <td className="border p-2 text-sm">{transaction.receipt_code || transaction._id?.slice(-6)}</td>
-                  <td className="border p-2 text-sm">
-                    {transaction.date ? format(new Date(transaction.date), 'dd/MM/yyyy') : ''}
-                  </td>
-                  <td className="border p-2">
-                    <span className={`px-2 py-1 rounded text-white text-xs ${
-                      transaction.type === 'thu' ? 'bg-green-500' : 'bg-red-500'
-                    }`}>
-                      {transaction.type === 'thu' ? 'Thu' : 'Chi'}
-                    </span>
-                  </td>
-                  <td className="border p-2">{transaction.content}</td>
-                  <td className="border p-2 text-right font-semibold">
-                    {formatMoney(transaction.amount)}
-                  </td>
-                  <td className="border p-2 text-sm">
-                    {transaction.source === 'tien_mat' ? 'Tiền mặt' : 
-                     transaction.source === 'the' ? 'Thẻ' : 'Công nợ'}
-                  </td>
-                  <td className="border p-2 text-sm">
-                    {transaction.customer || transaction.supplier || '—'}
-                  </td>
-                  <td className="border p-2 text-sm">{transaction.branch || '—'}</td>
-                  <td className="border p-2 text-sm">{transaction.note || '—'}</td>
-                  <td className="border p-2 text-center">
-                    <div className="flex gap-1 justify-center">
-                      {transaction.editable !== false && (
-                        <>
-                  <button
-                            className="bg-blue-500 text-white px-2 py-1 rounded text-xs hover:bg-blue-600"
-                            onClick={() => handleOpenModal('edit', transaction)}
-                            title="Sửa"
-                  >
-                            ✏️
-                  </button>
-                  <button
-                            className="bg-red-500 text-white px-2 py-1 rounded text-xs hover:bg-red-600"
-                            onClick={() => handleDeleteTransaction(transaction._id)}
-                            title="Xóa"
-                          >
-                            🗑️
-                  </button>
-                        </>
-                      )}
-                      {transaction.is_auto && (
-                        <span className="text-xs text-gray-500" title="Giao dịch tự động">
-                          🤖
-                        </span>
-                      )}
-                    </div>
-                </td>
-              </tr>
-              ))
-            )}
-          </tbody>
-        </table>
-      </div>
+      {/* Data Table */}
+      <DataTable
+        title="📋 Lịch sử giao dịch"
+        data={transactions.map(item => ({ ...item, id: item._id }))}
+        columns={tableColumns}
+        currentPage={pagination.page}
+        totalPages={Math.ceil(pagination.total / pagination.limit)}
+        itemsPerPage={pagination.limit}
+        totalItems={pagination.total}
+        onPageChange={(newPage) => {
+          setPagination(prev => ({ ...prev, page: newPage }));
+        }}
+      />
 
-      {modal.open && (
+      {/* Edit Balance Modal */}
+      {editBalanceModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white p-6 rounded-lg w-[600px] max-w-90vw max-h-90vh overflow-y-auto">
-            <h3 className="text-xl font-bold mb-4">
-              {modal.type === 'edit' ? '✏️ Sửa giao dịch' : '➕ Thêm giao dịch mới'}
-            </h3>
-            
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="bg-white rounded-2xl p-8 max-w-md w-full mx-4">
+            <h3 className="text-xl font-bold text-gray-900 mb-6">🔧 Chỉnh sửa số dư</h3>
+            <form onSubmit={handleAdjustBalance} className="space-y-4">
               <div>
-                <label className="block font-medium mb-1">Loại giao dịch *</label>
-                <select
-                  className="w-full border rounded px-3 py-2"
-                  value={formData.type}
-                  onChange={e => setFormData(prev => ({ ...prev, type: e.target.value }))}
-                >
-                  <option value="thu">Thu</option>
-                  <option value="chi">Chi</option>
-                </select>
-      </div>
-
-          <div>
-                <label className="block font-medium mb-1">Ngày giao dịch *</label>
-              <input
-                  type="date"
-                  className="w-full border rounded px-3 py-2"
-                  value={formData.date}
-                  onChange={e => setFormData(prev => ({ ...prev, date: e.target.value }))}
-              />
-            </div>
-
-              <div>
-                <label className="block font-medium mb-1">Nội dung *</label>
-                <select
-                  className="w-full border rounded px-3 py-2"
-                  value={formData.content}
-                  onChange={e => setFormData(prev => ({ ...prev, content: e.target.value }))}
-                >
-                  <option value="">-- Chọn nội dung --</option>
-                  {categories[formData.type]?.map(cat => (
-                    <option key={cat} value={cat}>{cat}</option>
-                  ))}
-                </select>
-            </div>
-
-              <div>
-                <label className="block font-medium mb-1">Số tiền *</label>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">💵 Tiền mặt</label>
               <input
                   type="text"
-                  className="w-full border rounded px-3 py-2"
+                  value={formatNumberInput(balanceForm.tien_mat)}
+                  onChange={(e) => setBalanceForm(prev => ({ ...prev, tien_mat: unformatNumberInput(e.target.value) }))}
+                  className="form-input"
                   placeholder="0"
-                  value={formatNumberInput(formData.amount)}
-                  onChange={e => setFormData(prev => ({ ...prev, amount: unformatNumberInput(e.target.value) }))}
               />
             </div>
-
               <div>
-                <label className="block font-medium mb-1">Nguồn tiền *</label>
-              <select
-                  className="w-full border rounded px-3 py-2"
-                  value={formData.source}
-                  onChange={e => setFormData(prev => ({ ...prev, source: e.target.value }))}
-              >
-                <option value="tien_mat">Tiền mặt</option>
-                <option value="the">Thẻ</option>
-                  <option value="cong_no">Công nợ</option>
-              </select>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">💳 Thẻ</label>
+              <input
+                  type="text"
+                  value={formatNumberInput(balanceForm.the)}
+                  onChange={(e) => setBalanceForm(prev => ({ ...prev, the: unformatNumberInput(e.target.value) }))}
+                  className="form-input"
+                  placeholder="0"
+              />
             </div>
-
               <div>
-                <label className="block font-medium mb-1">Chi nhánh *</label>
-                <select
-                  className="w-full border rounded px-3 py-2"
-                  value={formData.branch}
-                  onChange={e => setFormData(prev => ({ ...prev, branch: e.target.value }))}
-                >
-                  <option value="">-- Chọn chi nhánh --</option>
-                  <option value="default">Mặc định</option>
-                  {branches.map(branch => (
-                    <option key={branch} value={branch}>{branch}</option>
-                  ))}
-                </select>
-            </div>
-
-          <div>
-                <label className="block font-medium mb-1">
-                  {formData.type === 'thu' ? 'Khách hàng' : 'Nhà cung cấp'}
-              </label>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">📱 Ví điện tử</label>
                 <input
                   type="text"
-                  className="w-full border rounded px-3 py-2"
-                  placeholder={formData.type === 'thu' ? 'Tên khách hàng' : 'Tên nhà cung cấp'}
-                  value={formData.type === 'thu' ? formData.customer : formData.supplier}
-                  onChange={e => setFormData(prev => ({ 
-                    ...prev, 
-                    [formData.type === 'thu' ? 'customer' : 'supplier']: e.target.value 
-                  }))}
+                  value={formatNumberInput(balanceForm.vi_dien_tu)}
+                  onChange={(e) => setBalanceForm(prev => ({ ...prev, vi_dien_tu: unformatNumberInput(e.target.value) }))}
+                  className="form-input"
+                  placeholder="0"
               />
             </div>
-            </div>
-
-            <div className="mt-4">
-              <label className="block font-medium mb-1">Ghi chú</label>
-              <textarea
-                className="w-full border rounded px-3 py-2"
-                rows={3}
-                placeholder="Thêm ghi chú (không bắt buộc)"
-                value={formData.note}
-                onChange={e => setFormData(prev => ({ ...prev, note: e.target.value }))}
-              />
-            </div>
-
-            <div className="flex gap-3 mt-6">
+              <div className="flex gap-3 pt-4">
               <button
-                className="flex-1 bg-blue-600 text-white py-2 rounded hover:bg-blue-700"
-                onClick={handleSaveTransaction}
-              >
-                💾 {modal.type === 'edit' ? 'Cập nhật' : 'Lưu'}
-              </button>
-              <button
-                className="flex-1 bg-gray-500 text-white py-2 rounded hover:bg-gray-600"
-                onClick={handleCloseModal}
+                  type="button"
+                  onClick={() => setEditBalanceModal(false)}
+                  className="flex-1 bg-gray-500 hover:bg-gray-600 text-white py-3 rounded-xl transition-all"
               >
                 ❌ Hủy
               </button>
+                <button
+                  type="submit"
+                  className="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-3 rounded-xl transition-all"
+                >
+                  ✅ Cập nhật
+                </button>
             </div>
+            </form>
           </div>
         </div>
       )}
-    </div>
+    </Layout>
   );
 }
