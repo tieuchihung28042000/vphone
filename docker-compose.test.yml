@@ -56,7 +56,7 @@ services:
     ports:
       - "8081:80"  # Port khác
     environment:
-      VITE_API_URL: https://test.vphone.vn/api
+      VITE_API_URL: http://test.vphone.vn/api
     depends_on:
       - backend-test
     networks:
