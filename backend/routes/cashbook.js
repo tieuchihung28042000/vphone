@@ -552,4 +552,102 @@ router.post('/adjust-balance', async (req, res) => {
   }
 });
 
+// API: Tổng hợp sổ quỹ tất cả chi nhánh
+router.get('/total-summary', async (req, res) => {
+  try {
+    const { from, to, type, source, search } = req.query;
+    
+    let query = {};
+    
+    // Filter theo thời gian
+    if (from && to) {
+      query.date = {
+        $gte: new Date(from),
+        $lte: new Date(to + 'T23:59:59')
+      };
+    } else if (from) {
+      query.date = { $gte: new Date(from) };
+    } else if (to) {
+      query.date = { $lte: new Date(to + 'T23:59:59') };
+    }
+    
+    // Filter theo loại giao dịch
+    if (type && type !== 'all') {
+      query.type = type;
+    }
+    
+    // Filter theo nguồn tiền
+    if (source && source !== 'all') {
+      query.source = source;
+    }
+    
+    // Search trong content hoặc note
+    if (search && search.trim()) {
+      query.$or = [
+        { content: { $regex: search, $options: 'i' } },
+        { note: { $regex: search, $options: 'i' } },
+        { customer: { $regex: search, $options: 'i' } },
+        { supplier: { $regex: search, $options: 'i' } }
+      ];
+    }
+
+    // Tổng hợp theo chi nhánh
+    const branchSummary = await Cashbook.aggregate([
+      { $match: query },
+      {
+        $group: {
+          _id: '$branch',
+          totalThu: {
+            $sum: { $cond: [{ $eq: ['$type', 'thu'] }, '$amount', 0] }
+          },
+          totalChi: {
+            $sum: { $cond: [{ $eq: ['$type', 'chi'] }, '$amount', 0] }
+          },
+          transactions: { $sum: 1 }
+        }
+      },
+      {
+        $project: {
+          branch: '$_id',
+          totalThu: 1,
+          totalChi: 1,
+          balance: { $subtract: ['$totalThu', '$totalChi'] },
+          transactions: 1,
+          _id: 0
+        }
+      },
+      { $sort: { branch: 1 } }
+    ]);
+
+    // Tổng hợp chung
+    const totalStats = await Cashbook.aggregate([
+      { $match: query },
+      {
+        $group: {
+          _id: null,
+          totalThu: {
+            $sum: { $cond: [{ $eq: ['$type', 'thu'] }, '$amount', 0] }
+          },
+          totalChi: {
+            $sum: { $cond: [{ $eq: ['$type', 'chi'] }, '$amount', 0] }
+          },
+          totalTransactions: { $sum: 1 }
+        }
+      }
+    ]);
+
+    const stats = totalStats[0] || { totalThu: 0, totalChi: 0, totalTransactions: 0 };
+    
+    res.json({
+      totalThu: stats.totalThu,
+      totalChi: stats.totalChi,
+      balance: stats.totalThu - stats.totalChi,
+      totalTransactions: stats.totalTransactions,
+      branchDetails: branchSummary
+    });
+  } catch (error) {
+    res.status(500).json({ message: '❌ Lỗi server khi lấy tổng hợp sổ quỹ', error: error.message });
+  }
+});
+
 module.exports = router;

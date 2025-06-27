@@ -241,6 +241,63 @@ function NhapHang() {
     setFilterSupplier("");
   };
 
+  // Export to Excel function
+  const exportToExcel = () => {
+    try {
+      // Prepare data for export
+      const exportData = filteredItems.map(item => ({
+        "IMEI": item.imei || "",
+        "Tên sản phẩm": item.product_name || item.tenSanPham || "",
+        "SKU": item.sku || "",
+        "Giá nhập": item.price_import || 0,
+        "Ngày nhập": item.import_date ? new Date(item.import_date).toLocaleDateString('vi-VN') : "",
+        "Nhà cung cấp": item.supplier || "",
+        "Chi nhánh": item.branch || "",
+        "Thư mục": item.category || "",
+        "Số lượng": item.quantity || 1,
+        "Ghi chú": item.note || "",
+        "Trạng thái": item.status === 'sold' ? 'Đã bán' : 'Tồn kho'
+      }));
+
+      // Create workbook and worksheet
+      const wb = XLSX.utils.book_new();
+      const ws = XLSX.utils.json_to_sheet(exportData);
+      
+      // Set column widths
+      const colWidths = [
+        { wch: 15 }, // IMEI
+        { wch: 30 }, // Tên sản phẩm
+        { wch: 15 }, // SKU
+        { wch: 12 }, // Giá nhập
+        { wch: 12 }, // Ngày nhập
+        { wch: 20 }, // Nhà cung cấp
+        { wch: 15 }, // Chi nhánh
+        { wch: 15 }, // Thư mục
+        { wch: 10 }, // Số lượng
+        { wch: 25 }, // Ghi chú
+        { wch: 12 }  // Trạng thái
+      ];
+      ws['!cols'] = colWidths;
+
+      XLSX.utils.book_append_sheet(wb, ws, "Danh sách nhập hàng");
+      
+      // Generate filename with current date
+      const now = new Date();
+      const dateStr = now.toISOString().slice(0, 10);
+      const filename = `DanhSachNhapHang_${dateStr}.xlsx`;
+      
+      // Save file
+      XLSX.writeFile(wb, filename);
+      
+      setMessage("✅ Đã xuất file Excel thành công!");
+      setTimeout(() => setMessage(""), 3000);
+    } catch (err) {
+      console.error("❌ Lỗi khi xuất Excel:", err);
+      setMessage("❌ Lỗi khi xuất Excel");
+      setTimeout(() => setMessage(""), 3000);
+    }
+  };
+
   // Filter and pagination
   const filteredItems = items.filter((item) => {
     const matchSearch =
@@ -309,6 +366,15 @@ function NhapHang() {
       render: (item) => (
         <div className="text-sm font-semibold text-gray-900">
           {item.quantity || 1}
+        </div>
+      )
+    },
+    {
+      header: "Nhà cung cấp",
+      key: "supplier",
+      render: (item) => (
+        <div className="text-sm text-gray-700">
+          {item.supplier || <span className="text-gray-400 italic">Chưa có</span>}
         </div>
       )
     },
@@ -584,6 +650,26 @@ function NhapHang() {
                 <option key={c._id} value={c.name}>{c.name}</option>
               ))}
             </select>
+          </div>
+          <div>
+            <select
+              value={filterSupplier}
+              onChange={(e) => setFilterSupplier(e.target.value)}
+              className="form-input"
+            >
+              <option value="">Tất cả nhà cung cấp</option>
+              {Array.from(new Set(items.map(item => item.supplier).filter(Boolean))).map((supplier) => (
+                <option key={supplier} value={supplier}>{supplier}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <button
+              onClick={exportToExcel}
+              className="w-full bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg font-medium transition-colors duration-200 flex items-center justify-center gap-2"
+            >
+              📊 Xuất Excel
+            </button>
           </div>
         </div>
       </FilterCard>

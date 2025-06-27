@@ -66,6 +66,15 @@ export default function Cashbook() {
   const [branches, setBranches] = useState([]);
   const [loadingBranches, setLoadingBranches] = useState(true);
   
+  // State cho view tổng hợp tất cả chi nhánh
+  const [viewMode, setViewMode] = useState('branch'); // 'branch' | 'total'
+  const [totalSummary, setTotalSummary] = useState({
+    totalThu: 0,
+    totalChi: 0,
+    balance: 0,
+    branchDetails: []
+  });
+  
   const [filters, setFilters] = useState({
     fromDate: '',
     toDate: '',
@@ -135,15 +144,19 @@ export default function Cashbook() {
   };
 
   const loadTransactions = async () => {
-    if (!selectedBranch) return; // Không load nếu chưa có chi nhánh
+    if (viewMode === 'branch' && !selectedBranch) return; // Không load nếu chưa có chi nhánh
     
     setLoading(true);
     try {
       const params = new URLSearchParams({
         page: pagination.page,
-        limit: pagination.limit,
-        branch: selectedBranch // Luôn lọc theo chi nhánh được chọn
+        limit: pagination.limit
       });
+      
+      // Chỉ filter theo chi nhánh nếu đang ở view chi nhánh
+      if (viewMode === 'branch') {
+        params.append('branch', selectedBranch);
+      }
       
       Object.keys(filters).forEach(key => {
         if (filters[key] && filters[key] !== 'all' && filters[key] !== '') {
@@ -170,6 +183,30 @@ export default function Cashbook() {
       console.error('Error loading transactions:', error);
     }
     setLoading(false);
+  };
+
+  // Load tổng hợp tất cả chi nhánh
+  const loadTotalSummary = async () => {
+    try {
+      const params = new URLSearchParams();
+      
+      Object.keys(filters).forEach(key => {
+        if (filters[key] && filters[key] !== 'all' && filters[key] !== '') {
+          if (key === 'fromDate') params.append('from', filters[key]);
+          else if (key === 'toDate') params.append('to', filters[key]);
+          else params.append(key, filters[key]);
+        }
+      });
+
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/cashbook/total-summary?${params}`);
+      const data = await response.json();
+      
+      if (response.ok) {
+        setTotalSummary(data);
+      }
+    } catch (error) {
+      console.error('Error loading total summary:', error);
+    }
   };
 
   // Load số dư theo nguồn tiền
@@ -251,11 +288,13 @@ export default function Cashbook() {
 
   // Load transactions khi có selectedBranch và các filter thay đổi
   useEffect(() => {
-    if (selectedBranch) {
+    if (viewMode === 'branch' && selectedBranch) {
       loadTransactions();
       loadBalanceBySource();
+    } else if (viewMode === 'total') {
+      loadTotalSummary();
     }
-  }, [filters, pagination.page, selectedBranch]);
+  }, [filters, pagination.page, selectedBranch, viewMode]);
 
   // Cập nhật formData.branch khi selectedBranch thay đổi
   useEffect(() => {
@@ -461,7 +500,7 @@ export default function Cashbook() {
           'vi_dien_tu': { label: 'Ví điện tử', color: 'purple', icon: '📱' }
         };
         const source = sourceMap[item.source] || sourceMap.tien_mat;
-  return (
+        return (
           <span className={`badge-${source.color}`}>
             {source.icon} {source.label}
           </span>
@@ -474,7 +513,7 @@ export default function Cashbook() {
       render: (item) => (
         <div className="text-sm text-gray-900">
           {item.branch || <span className="text-gray-400 italic">Không có</span>}
-      </div>
+        </div>
       )
     },
     {
@@ -499,8 +538,40 @@ export default function Cashbook() {
       title="💰 Sổ Quỹ"
       subtitle="Quản lý thu chi và theo dõi tài chính"
     >
+      {/* View Mode Toggle */}
+      <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-1 mb-6">
+        <div className="flex">
+          <button
+            onClick={() => {
+              setViewMode('branch');
+              loadTransactions();
+            }}
+            className={`flex-1 py-3 px-6 rounded-xl font-semibold transition-all duration-200 ${
+              viewMode === 'branch'
+                ? "bg-blue-600 text-white shadow-md"
+                : "text-gray-600 hover:text-blue-600"
+            }`}
+          >
+            🏢 Theo chi nhánh
+          </button>
+          <button
+            onClick={() => {
+              setViewMode('total');
+              loadTotalSummary();
+            }}
+            className={`flex-1 py-3 px-6 rounded-xl font-semibold transition-all duration-200 ${
+              viewMode === 'total'
+                ? "bg-green-600 text-white shadow-md"
+                : "text-gray-600 hover:text-green-600"
+            }`}
+          >
+            📊 Sổ quỹ tổng
+          </button>
+        </div>
+      </div>
       {/* Stats Dashboard */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+      {viewMode === 'branch' ? (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <StatsCard
           title="Tổng số dư"
           value={`${formatMoney(totalBalance)}`}
@@ -519,7 +590,7 @@ export default function Cashbook() {
         <StatsCard
           title="Chi hôm nay"
           value={`${formatMoney(todayExpense)}`}
-          icon="��"
+          icon="📉"
           color="red"
           subtitle={`${todayTransactions.filter(t => t.type === 'chi').length} giao dịch`}
         />
@@ -530,158 +601,229 @@ export default function Cashbook() {
           color={todayIncome - todayExpense >= 0 ? "purple" : "orange"}
           subtitle={todayIncome - todayExpense >= 0 ? "Tích cực" : "Tiêu cực"}
         />
-      </div>
-
-      {/* Balance by Source */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <StatsCard
-          title="💵 Tiền mặt"
-          value={`${formatMoney(balanceBySource.tien_mat)}`}
-          icon="💵"
-          color="green"
-          subtitle="Số dư tiền mặt"
-        />
-        <StatsCard
-          title="💳 Thẻ"
-          value={`${formatMoney(balanceBySource.the)}`}
-          icon="💳"
-          color="blue"
-          subtitle="Số dư thẻ"
-        />
-        <StatsCard
-          title="📱 Ví điện tử"
-          value={`${formatMoney(balanceBySource.vi_dien_tu)}`}
-          icon="📱"
-          color="purple"
-          subtitle="Số dư ví điện tử"
-        />
-      </div>
-
-      {/* Form Card */}
-      <FormCard
-        title={modal.type === 'edit' ? '✏️ Chỉnh sửa giao dịch' : '➕ Thêm giao dịch mới'}
-        subtitle="Ghi chép thu chi và quản lý tài chính"
-        onReset={() => {
-          handleCloseModal();
-          setFormData({
-            type: 'thu',
-            content: '',
-            amount: '',
-            source: 'tien_mat',
-            branch: selectedBranch,
-            customer: '',
-            supplier: '',
-            note: '',
-            date: format(new Date(), 'yyyy-MM-dd')
-          });
-        }}
-        showReset={modal.type === 'edit'}
-        resetLabel="Hủy chỉnh sửa"
-        message={modal.message}
-      >
-        <form onSubmit={handleSaveTransaction} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          <div>
-            <label className="block text-sm font-semibold text-gray-700 mb-3">Ngày giao dịch *</label>
-            <input
-              name="date"
-              type="date"
-              value={formData.date}
-              onChange={(e) => setFormData(prev => ({ ...prev, date: e.target.value }))}
-              className="form-input"
-              required
+        </div>
+      ) : (
+        // Sổ quỹ tổng - Hiển thị tổng hợp tất cả chi nhánh
+        <div className="space-y-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+            <StatsCard
+              title="Tổng thu"
+              value={`${formatMoney(totalSummary.totalThu)}`}
+              icon="📈"
+              color="green"
+              subtitle="Tất cả chi nhánh"
+            />
+            <StatsCard
+              title="Tổng chi"
+              value={`${formatMoney(totalSummary.totalChi)}`}
+              icon="📉"
+              color="red"
+              subtitle="Tất cả chi nhánh"
+            />
+            <StatsCard
+              title="Số dư tổng"
+              value={`${formatMoney(totalSummary.balance)}`}
+              icon="💰"
+              color="blue"
+              subtitle="Thu - Chi"
+            />
+            <StatsCard
+              title="Tổng giao dịch"
+              value={totalSummary.totalTransactions?.toString() || '0'}
+              icon="📊"
+              color="purple"
+              subtitle="Tất cả chi nhánh"
             />
           </div>
 
-          <div>
-            <label className="block text-sm font-semibold text-gray-700 mb-3">Loại giao dịch *</label>
-            <select
-              name="type"
-              value={formData.type}
-              onChange={(e) => setFormData(prev => ({ ...prev, type: e.target.value }))}
-              className="form-input"
-              required
-            >
-              <option value="thu">📈 Thu tiền</option>
-              <option value="chi">📉 Chi tiền</option>
-            </select>
+          {/* Chi tiết theo từng chi nhánh */}
+          <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
+            <h3 className="text-lg font-bold text-gray-900 mb-4">📋 Chi tiết theo chi nhánh</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {totalSummary.branchDetails?.map((branch, index) => (
+                <div key={index} className="bg-gray-50 rounded-xl p-4">
+                  <h4 className="font-semibold text-gray-900 mb-2">🏢 {branch.branch || 'Không có tên'}</h4>
+                  <div className="space-y-2 text-sm">
+                    <div className="flex justify-between">
+                      <span className="text-gray-600">Thu:</span>
+                      <span className="text-green-600 font-semibold">+{formatMoney(branch.totalThu)}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-gray-600">Chi:</span>
+                      <span className="text-red-600 font-semibold">-{formatMoney(branch.totalChi)}</span>
+                    </div>
+                    <div className="flex justify-between border-t pt-2">
+                      <span className="text-gray-700 font-medium">Số dư:</span>
+                      <span className={`font-bold ${branch.balance >= 0 ? 'text-blue-600' : 'text-orange-600'}`}>
+                        {formatMoney(branch.balance)}
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-gray-600">Giao dịch:</span>
+                      <span className="text-gray-800 font-medium">{branch.transactions}</span>
+                    </div>
+                  </div>
                 </div>
-
-          <div>
-            <label className="block text-sm font-semibold text-gray-700 mb-3">Nguồn tiền *</label>
-            <select
-              name="source"
-              value={formData.source}
-              onChange={(e) => setFormData(prev => ({ ...prev, source: e.target.value }))}
-              className="form-input"
-              required
-            >
-              <option value="tien_mat">💵 Tiền mặt</option>
-              <option value="the">💳 Thẻ</option>
-              <option value="vi_dien_tu">📱 Ví điện tử</option>
-            </select>
-          </div>
-
-          <div className="lg:col-span-2">
-            <label className="block text-sm font-semibold text-gray-700 mb-3">Mô tả giao dịch *</label>
-            <input
-              name="content"
-              placeholder="Mô tả chi tiết giao dịch"
-              value={formData.content}
-              onChange={(e) => setFormData(prev => ({ ...prev, content: e.target.value }))}
-              className="form-input"
-              required
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-semibold text-gray-700 mb-3">Số tiền *</label>
-            <input
-              name="amount"
-              type="text"
-              placeholder="0"
-              value={formatNumberInput(formData.amount)}
-              onChange={(e) => setFormData(prev => ({ ...prev, amount: unformatNumberInput(e.target.value) }))}
-              className="form-input"
-              required
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-semibold text-gray-700 mb-3">Chi nhánh</label>
-            <select 
-              name="branch" 
-              value={formData.branch} 
-              onChange={(e) => setFormData(prev => ({ ...prev, branch: e.target.value }))}
-              className="form-input"
-            >
-              <option value="">Chọn chi nhánh</option>
-              {branches.map((b) => (
-                <option key={b} value={b}>{b}</option>
               ))}
-            </select>
+            </div>
           </div>
+        </div>
+      )}
 
-          <div className="lg:col-span-2">
-            <label className="block text-sm font-semibold text-gray-700 mb-3">Ghi chú</label>
-            <input
-              name="note"
-              placeholder="Ghi chú thêm"
-              value={formData.note}
-              onChange={(e) => setFormData(prev => ({ ...prev, note: e.target.value }))}
-              className="form-input"
-            />
-          </div>
+      {/* Balance by Source - chỉ hiển thị khi view chi nhánh */}
+      {viewMode === 'branch' && (
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <StatsCard
+            title="💵 Tiền mặt"
+            value={`${formatMoney(balanceBySource.tien_mat)}`}
+            icon="💵"
+            color="green"
+            subtitle="Số dư tiền mặt"
+          />
+          <StatsCard
+            title="💳 Thẻ"
+            value={`${formatMoney(balanceBySource.the)}`}
+            icon="💳"
+            color="blue"
+            subtitle="Số dư thẻ"
+          />
+          <StatsCard
+            title="📱 Ví điện tử"
+            value={`${formatMoney(balanceBySource.vi_dien_tu)}`}
+            icon="📱"
+            color="purple"
+            subtitle="Số dư ví điện tử"
+          />
+        </div>
+      )}
 
-          <div className="md:col-span-2 lg:col-span-3">
-            <button 
-              type="submit" 
-              className="w-full btn-gradient text-white py-4 px-8 rounded-2xl font-bold text-lg transition-all duration-300"
-            >
-              {modal.type === 'edit' ? "🔄 Cập nhật giao dịch" : "💰 Thêm giao dịch"}
-            </button>
-          </div>
-        </form>
-      </FormCard>
+      {/* Form Card - chỉ hiển thị khi view chi nhánh */}
+      {viewMode === 'branch' && (
+        <FormCard
+          title={modal.type === 'edit' ? '✏️ Chỉnh sửa giao dịch' : '➕ Thêm giao dịch mới'}
+          subtitle="Ghi chép thu chi và quản lý tài chính"
+          onReset={() => {
+            handleCloseModal();
+            setFormData({
+              type: 'thu',
+              content: '',
+              amount: '',
+              source: 'tien_mat',
+              branch: selectedBranch,
+              customer: '',
+              supplier: '',
+              note: '',
+              date: format(new Date(), 'yyyy-MM-dd')
+            });
+          }}
+          showReset={modal.type === 'edit'}
+          resetLabel="Hủy chỉnh sửa"
+          message={modal.message}
+        >
+          <form onSubmit={handleSaveTransaction} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-3">Ngày giao dịch *</label>
+              <input
+                name="date"
+                type="date"
+                value={formData.date}
+                onChange={(e) => setFormData(prev => ({ ...prev, date: e.target.value }))}
+                className="form-input"
+                required
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-3">Loại giao dịch *</label>
+              <select
+                name="type"
+                value={formData.type}
+                onChange={(e) => setFormData(prev => ({ ...prev, type: e.target.value }))}
+                className="form-input"
+                required
+              >
+                <option value="thu">📈 Thu tiền</option>
+                <option value="chi">📉 Chi tiền</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-3">Nguồn tiền *</label>
+              <select
+                name="source"
+                value={formData.source}
+                onChange={(e) => setFormData(prev => ({ ...prev, source: e.target.value }))}
+                className="form-input"
+                required
+              >
+                <option value="tien_mat">💵 Tiền mặt</option>
+                <option value="the">💳 Thẻ</option>
+                <option value="vi_dien_tu">📱 Ví điện tử</option>
+              </select>
+            </div>
+
+            <div className="lg:col-span-2">
+              <label className="block text-sm font-semibold text-gray-700 mb-3">Mô tả giao dịch *</label>
+              <input
+                name="content"
+                placeholder="Mô tả chi tiết giao dịch"
+                value={formData.content}
+                onChange={(e) => setFormData(prev => ({ ...prev, content: e.target.value }))}
+                className="form-input"
+                required
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-3">Số tiền *</label>
+              <input
+                name="amount"
+                type="text"
+                placeholder="0"
+                value={formatNumberInput(formData.amount)}
+                onChange={(e) => setFormData(prev => ({ ...prev, amount: unformatNumberInput(e.target.value) }))}
+                className="form-input"
+                required
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-3">Chi nhánh</label>
+              <select 
+                name="branch" 
+                value={formData.branch} 
+                onChange={(e) => setFormData(prev => ({ ...prev, branch: e.target.value }))}
+                className="form-input"
+              >
+                <option value="">Chọn chi nhánh</option>
+                {branches.map((b) => (
+                  <option key={b} value={b}>{b}</option>
+                ))}
+              </select>
+            </div>
+
+            <div className="lg:col-span-2">
+              <label className="block text-sm font-semibold text-gray-700 mb-3">Ghi chú</label>
+              <input
+                name="note"
+                placeholder="Ghi chú thêm"
+                value={formData.note}
+                onChange={(e) => setFormData(prev => ({ ...prev, note: e.target.value }))}
+                className="form-input"
+              />
+            </div>
+
+            <div className="md:col-span-2 lg:col-span-3">
+              <button 
+                type="submit" 
+                className="w-full btn-gradient text-white py-4 px-8 rounded-2xl font-bold text-lg transition-all duration-300"
+              >
+                {modal.type === 'edit' ? "🔄 Cập nhật giao dịch" : "💰 Thêm giao dịch"}
+              </button>
+            </div>
+          </form>
+        </FormCard>
+      )}
 
       {/* Filters */}
       <FilterCard onClearFilters={() => {

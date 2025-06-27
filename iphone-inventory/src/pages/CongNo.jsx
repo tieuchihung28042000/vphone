@@ -25,9 +25,15 @@ function formatCurrency(amount) {
 }
 
 function CongNo() {
+  // Tab state - có 2 tab: khach_no (khách nợ mình) và minh_no_ncc (mình nợ nhà cung cấp)
+  const [activeTab, setActiveTab] = useState("khach_no");
+  
   const [debts, setDebts] = useState([]);
+  const [supplierDebts, setSupplierDebts] = useState([]);
   const [selectedCustomer, setSelectedCustomer] = useState(null);
+  const [selectedSupplier, setSelectedSupplier] = useState(null);
   const [customerDebt, setCustomerDebt] = useState({ total_debt: 0, total_paid: 0, debt_history: [] });
+  const [supplierDebt, setSupplierDebt] = useState({ total_debt: 0, total_paid: 0, debt_history: [] });
   const [payAmount, setPayAmount] = useState("");
   const [payNote, setPayNote] = useState("");
   const [addAmount, setAddAmount] = useState("");
@@ -41,17 +47,22 @@ function CongNo() {
   const [editModal, setEditModal] = useState({ open: false, customer: null });
   const [editForm, setEditForm] = useState({ name: "", phone: "" });
 
-  // Stats calculation - debt đã là số còn nợ
-  const totalDebt = debts.reduce((sum, debt) => sum + debt.total_debt, 0);
-  const totalCustomers = debts.length;
-  const largestDebt = Math.max(...debts.map(debt => debt.total_debt), 0);
-
-  const stats = {
-    totalDebt,
-    totalCustomers,
-    largestDebt,
-    averageDebt: totalCustomers > 0 ? totalDebt / totalCustomers : 0
+  // Stats calculation - tách riêng cho 2 tab
+  const customerStats = {
+    totalDebt: debts.reduce((sum, debt) => sum + debt.total_debt, 0),
+    totalCustomers: debts.length,
+    largestDebt: Math.max(...debts.map(debt => debt.total_debt), 0),
+    averageDebt: debts.length > 0 ? debts.reduce((sum, debt) => sum + debt.total_debt, 0) / debts.length : 0
   };
+
+  const supplierStats = {
+    totalDebt: supplierDebts.reduce((sum, debt) => sum + debt.total_debt, 0),
+    totalSuppliers: supplierDebts.length,
+    largestDebt: Math.max(...supplierDebts.map(debt => debt.total_debt), 0),
+    averageDebt: supplierDebts.length > 0 ? supplierDebts.reduce((sum, debt) => sum + debt.total_debt, 0) / supplierDebts.length : 0
+  };
+
+  const stats = activeTab === "khach_no" ? customerStats : supplierStats;
 
   // API functions
   const fetchDebts = async () => {
@@ -62,6 +73,21 @@ function CongNo() {
     const res = await fetch(`${import.meta.env.VITE_API_URL}/api/cong-no/cong-no-list?${params}`);
     const data = await res.json();
     setDebts(data.items || []);
+  };
+
+  const fetchSupplierDebts = async () => {
+    const params = new URLSearchParams();
+    if (searchText.trim()) params.append('search', searchText.trim());
+    if (showAll) params.append('show_all', 'true');
+    
+    try {
+      const res = await fetch(`${import.meta.env.VITE_API_URL}/api/cong-no/supplier-debt-list?${params}`);
+      const data = await res.json();
+      setSupplierDebts(data.items || []);
+    } catch (err) {
+      console.error('Error fetching supplier debts:', err);
+      setSupplierDebts([]);
+    }
   };
 
   const handleSelectCustomer = (customer) => {
@@ -75,6 +101,94 @@ function CongNo() {
     setPayNote("");
     setAddAmount(""); 
     setAddNote("");
+  };
+
+  // Supplier handler functions
+  const handleSelectSupplier = (supplier) => {
+    setSelectedSupplier(supplier);
+    setSupplierDebt({
+      total_debt: supplier.total_debt || 0,
+      total_paid: supplier.total_paid || 0,
+      debt_history: supplier.debt_history || []
+    });
+    setPayAmount(""); 
+    setPayNote("");
+    setAddAmount(""); 
+    setAddNote("");
+  };
+
+  const handleShowSupplierDetail = async (supplier) => {
+    const res = await fetch(
+      `${import.meta.env.VITE_API_URL}/api/cong-no/supplier-orders?supplier_name=${encodeURIComponent(supplier.supplier_name)}`
+    );
+    const data = await res.json();
+    setDetailModal({ open: true, orders: data.orders || [] });
+  };
+
+  const handlePaySupplierDebt = async () => {
+    if (!payAmount || isNaN(payAmount)) return alert("Nhập số tiền muốn trả");
+    const res = await fetch(`${import.meta.env.VITE_API_URL}/api/cong-no/supplier-debt-pay`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        supplier_name: selectedSupplier.supplier_name,
+        amount: payAmount,
+        note: payNote
+      }),
+    });
+    const data = await res.json();
+    if (res.ok) {
+      alert("✅ Đã trả nợ nhà cung cấp!");
+      setPayAmount(""); 
+      setPayNote("");
+      await fetchSupplierDebts();
+      // Update selected supplier debt info
+      setTimeout(() => {
+        const updated = supplierDebts.find(d => d.supplier_name === selectedSupplier.supplier_name);
+        if (updated) {
+          setSupplierDebt({
+            total_debt: updated.total_debt,
+            total_paid: updated.total_paid,
+            debt_history: updated.debt_history || []
+          });
+        }
+      }, 200);
+    } else {
+      alert("❌ " + (data.message || "Trả nợ NCC thất bại!"));
+    }
+  };
+
+  const handleAddSupplierDebt = async () => {
+    if (!addAmount || isNaN(addAmount)) return alert("Nhập số tiền muốn cộng nợ");
+    const res = await fetch(`${import.meta.env.VITE_API_URL}/api/cong-no/supplier-debt-add`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        supplier_name: selectedSupplier.supplier_name,
+        amount: addAmount,
+        note: addNote
+      }),
+    });
+    const data = await res.json();
+    if (res.ok) {
+      alert("✅ Đã cộng thêm nợ NCC!");
+      setAddAmount(""); 
+      setAddNote("");
+      await fetchSupplierDebts();
+      // Update selected supplier debt info
+      setTimeout(() => {
+        const updated = supplierDebts.find(d => d.supplier_name === selectedSupplier.supplier_name);
+        if (updated) {
+          setSupplierDebt({
+            total_debt: updated.total_debt,
+            total_paid: updated.total_paid,
+            debt_history: updated.debt_history || []
+          });
+        }
+      }, 200);
+    } else {
+      alert("❌ " + (data.message || "Cộng nợ NCC thất bại!"));
+    }
   };
 
   const handlePayDebt = async () => {
@@ -221,8 +335,8 @@ function CongNo() {
     setShowAll(false);
   };
 
-  // Table columns definition
-  const tableColumns = [
+  // Table columns definition - Tự động switch theo tab
+  const tableColumns = activeTab === "khach_no" ? [
     {
       header: "Khách hàng",
       key: "customer",
@@ -310,14 +424,133 @@ function CongNo() {
       </div>
       )
     }
+  ] : [
+    // Supplier Debt columns
+    {
+      header: "Nhà cung cấp",
+      key: "supplier",
+      render: (supplier) => (
+        <div>
+          <div className="text-sm font-semibold text-gray-900">{supplier.supplier_name}</div>
+          <div className="text-sm text-gray-500">{supplier.supplier_phone || 'Chưa có SĐT'}</div>
+        </div>
+      )
+    },
+    {
+      header: "Tổng nợ",
+      key: "total_debt",
+      render: (supplier) => (
+        <div className="text-sm font-bold text-red-600">
+          {formatCurrency(supplier.total_debt)}
+        </div>
+      )
+    },
+    {
+      header: "Đã trả",
+      key: "total_paid",
+      render: (supplier) => (
+        <div className="text-sm font-bold text-green-600">
+          {formatCurrency(supplier.total_paid)}
+        </div>
+      )
+    },
+    {
+      header: "Còn nợ",
+      key: "remaining",
+      render: (supplier) => {
+        const remaining = supplier.total_debt;
+        return (
+          <div className={`text-sm font-bold ${remaining > 0 ? 'text-orange-600' : 'text-green-600'}`}>
+            {formatCurrency(remaining)}
+          </div>
+        );
+      }
+    },
+    {
+      header: "Trạng thái",
+      key: "status",
+      render: (supplier) => {
+        const remaining = supplier.total_debt;
+        if (remaining <= 0) {
+          return <span className="badge-success">✅ Đã thanh toán</span>;
+        } else if (supplier.total_paid > 0) {
+          return <span className="badge-yellow">⚠️ Đã trả một phần</span>;
+        } else {
+          return <span className="badge-danger">❌ Chưa trả</span>;
+        }
+      }
+    },
+    {
+      header: "Thao tác",
+      key: "actions",
+      render: (supplier) => (
+        <div className="flex gap-2 flex-wrap">
+          <button
+            onClick={() => handleSelectSupplier(supplier)} 
+            className="btn-action-edit text-xs"
+          >
+            💰 Quản lý
+          </button>
+          <button
+            onClick={() => handleShowSupplierDetail(supplier)} 
+            className="btn-action-edit text-xs"
+          >
+            📋 Chi tiết
+          </button>
+        </div>
+      )
+    }
   ];
+
+  // useEffect để fetch data khi tab thay đổi
+  useEffect(() => {
+    if (activeTab === "khach_no") {
+      fetchDebts();
+    } else {
+      fetchSupplierDebts();
+    }
+  }, [activeTab, searchText, showAll]);
 
   return (
     <Layout 
       activeTab="cong-no"
       title="💳 Công Nợ"
-      subtitle="Quản lý công nợ khách hàng"
+      subtitle={activeTab === "khach_no" ? "Quản lý công nợ khách hàng" : "Quản lý công nợ nhà cung cấp"}
     >
+      {/* Tab Navigation */}
+      <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-1 mb-6">
+        <div className="flex">
+          <button
+            onClick={() => {
+              setActiveTab("khach_no");
+              setSelectedCustomer(null);
+              setSelectedSupplier(null);
+            }}
+            className={`flex-1 py-3 px-6 rounded-xl font-semibold transition-all duration-200 ${
+              activeTab === "khach_no"
+                ? "bg-blue-600 text-white shadow-md"
+                : "text-gray-600 hover:text-blue-600"
+            }`}
+          >
+            👥 Khách nợ mình
+          </button>
+          <button
+            onClick={() => {
+              setActiveTab("minh_no_ncc");
+              setSelectedCustomer(null);
+              setSelectedSupplier(null);
+            }}
+            className={`flex-1 py-3 px-6 rounded-xl font-semibold transition-all duration-200 ${
+              activeTab === "minh_no_ncc"
+                ? "bg-orange-600 text-white shadow-md"
+                : "text-gray-600 hover:text-orange-600"
+            }`}
+          >
+            🏪 Mình nợ nhà cung cấp
+          </button>
+        </div>
+      </div>
+
       {/* Stats Dashboard */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <StatsCard
@@ -434,6 +667,90 @@ function CongNo() {
         </FormCard>
       )}
 
+      {/* Supplier Management Form */}
+      {selectedSupplier && (
+        <FormCard
+          title={`🏪 Quản lý nợ nhà cung cấp: ${selectedSupplier.supplier_name}`}
+          subtitle={`Còn nợ: ${formatCurrency(supplierDebt.total_debt)}`}
+          onReset={() => setSelectedSupplier(null)}
+          showReset={true}
+          resetLabel="Đóng"
+        >
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+            {/* Pay Debt Form */}
+            <div className="space-y-4">
+              <h4 className="text-lg font-semibold text-green-600">💸 Trả nợ NCC</h4>
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">Số tiền trả</label>
+                <input
+                  type="number"
+                  placeholder="Nhập số tiền trả"
+                  value={payAmount}
+                  onChange={(e) => setPayAmount(e.target.value)}
+                  className="form-input"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">Ghi chú</label>
+                <input
+                  type="text"
+                  placeholder="Ghi chú trả nợ"
+                  value={payNote}
+                  onChange={(e) => setPayNote(e.target.value)}
+                  className="form-input"
+                />
+              </div>
+              <button
+                onClick={handlePaySupplierDebt}
+                className="w-full bg-green-600 hover:bg-green-700 text-white py-3 rounded-xl transition-all font-medium"
+              >
+                ✅ Xác nhận trả nợ
+              </button>
+            </div>
+
+            {/* Add Debt Form */}
+            <div className="space-y-4">
+              <h4 className="text-lg font-semibold text-orange-600">📈 Cộng nợ NCC</h4>
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">Số tiền cộng</label>
+                <input
+                  type="number"
+                  placeholder="Nhập số tiền cộng nợ"
+                  value={addAmount}
+                  onChange={(e) => setAddAmount(e.target.value)}
+                  className="form-input"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">Ghi chú</label>
+                <input
+                  type="text"
+                  placeholder="Ghi chú cộng nợ"
+                  value={addNote}
+                  onChange={(e) => setAddNote(e.target.value)}
+                  className="form-input"
+                />
+              </div>
+              <button
+                onClick={handleAddSupplierDebt}
+                className="w-full bg-orange-600 hover:bg-orange-700 text-white py-3 rounded-xl transition-all font-medium"
+              >
+                ➕ Cộng thêm nợ
+              </button>
+            </div>
+          </div>
+
+          <div className="mt-6 pt-6 border-t border-gray-200">
+            <button
+              onClick={() => setHistoryModal({ open: true, history: supplierDebt.debt_history || [] })}
+              className="bg-purple-600 hover:bg-purple-700 text-white px-6 py-3 rounded-xl transition-all font-medium"
+            >
+              📈 Xem lịch sử giao dịch
+            </button>
+          </div>
+        </FormCard>
+      )}
+
       {/* Filters */}
       <FilterCard onClearFilters={clearFilters}>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -462,13 +779,17 @@ function CongNo() {
 
       {/* Data Table */}
       <DataTable
-        title="📋 Danh sách công nợ khách hàng"
-        data={debts.map(item => ({ ...item, id: item._id || `${item.customer_name}-${item.customer_phone}` }))}
+        title={activeTab === "khach_no" ? "📋 Danh sách công nợ khách hàng" : "📋 Danh sách công nợ nhà cung cấp"}
+        data={
+          activeTab === "khach_no" 
+            ? debts.map(item => ({ ...item, id: item._id || `${item.customer_name}-${item.customer_phone}` }))
+            : supplierDebts.map(item => ({ ...item, id: item._id || `${item.supplier_name}-${item.supplier_phone}` }))
+        }
         columns={tableColumns}
         currentPage={1}
         totalPages={1}
-        itemsPerPage={debts.length}
-        totalItems={debts.length}
+        itemsPerPage={activeTab === "khach_no" ? debts.length : supplierDebts.length}
+        totalItems={activeTab === "khach_no" ? debts.length : supplierDebts.length}
       />
 
       {/* History Modal */}

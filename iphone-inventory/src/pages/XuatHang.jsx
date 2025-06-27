@@ -43,6 +43,11 @@ function XuatHang() {
 
   const [formData, setFormData] = useState({
     item_id: "",
+    imei: "",
+    product_name: "",
+    sku: "",
+    quantity: "1",
+    warranty: "",
     sale_price: "",
     sale_date: getToday(),
     buyer_name: "",
@@ -142,11 +147,33 @@ function XuatHang() {
     fetchCategories();
   }, []);
 
-  const handleChange = (e) => {
+  const handleChange = async (e) => {
     const { name, value } = e.target;
     if (name === "branch") localStorage.setItem('lastBranch', value);
+    
     if (name === "sale_price") {
       setFormData((prev) => ({ ...prev, [name]: parseNumber(value) }));
+    } else if (name === "imei" && value.trim()) {
+      // Auto-fill product info when IMEI is entered
+      try {
+        const res = await fetch(`${import.meta.env.VITE_API_URL}/api/find-by-imei?imei=${value.trim()}`);
+        if (res.ok) {
+          const data = await res.json();
+          setFormData((prev) => ({ 
+            ...prev, 
+            imei: value,
+            item_id: data._id,
+            product_name: data.product_name || data.tenSanPham || "",
+            sku: data.sku || "",
+            sale_price: prev.sale_price || data.price_sell || ""
+          }));
+        } else {
+          setFormData((prev) => ({ ...prev, [name]: value }));
+        }
+      } catch (err) {
+        console.error("Error fetching product by IMEI:", err);
+        setFormData((prev) => ({ ...prev, [name]: value }));
+      }
     } else {
       setFormData((prev) => ({ ...prev, [name]: value }));
     }
@@ -155,6 +182,11 @@ function XuatHang() {
   const resetForm = () => {
     setFormData({
       item_id: "",
+      imei: "",
+      product_name: "",
+      sku: "",
+      quantity: "1",
+      warranty: "",
       sale_price: "",
       sale_date: getToday(),
       buyer_name: "",
@@ -174,10 +206,26 @@ function XuatHang() {
         ? `${import.meta.env.VITE_API_URL}/api/xuat-hang/${editingItemId}`
         : `${import.meta.env.VITE_API_URL}/api/xuat-hang`;
 
+      // Prepare data for API
+      const apiData = {
+        imei: formData.imei,
+        sku: formData.sku,
+        product_name: formData.product_name,
+        quantity: parseInt(formData.quantity) || 1,
+        warranty: formData.warranty,
+        sale_price: parseNumber(formData.sale_price),
+        buyer_name: formData.buyer_name,
+        buyer_phone: formData.buyer_phone,
+        branch: formData.branch,
+        note: formData.note,
+        source: formData.source,
+        sale_date: formData.sale_date
+      };
+
       const res = await fetch(url, {
         method,
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(formData)
+        body: JSON.stringify(apiData)
       });
 
       const data = await res.json();
@@ -200,6 +248,11 @@ function XuatHang() {
   const handleEdit = (item) => {
     setFormData({
       item_id: item.item_id || "",
+      imei: item.item?.imei || "",
+      product_name: item.item?.product_name || item.item?.tenSanPham || "",
+      sku: item.item?.sku || "",
+      quantity: "1",
+      warranty: item.warranty || "",
       sale_price: item.sale_price || "",
       sale_date: item.sale_date?.slice(0, 10) || getToday(),
       buyer_name: item.buyer_name || "",
@@ -404,16 +457,76 @@ function XuatHang() {
         message={message}
       >
         <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          <div>
+            <label className="block text-sm font-semibold text-gray-700 mb-3">IMEI *</label>
+            <input
+              name="imei"
+              placeholder="Nhập IMEI để tự động điền thông tin"
+              value={formData.imei}
+              onChange={handleChange}
+              className="form-input"
+              required
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-semibold text-gray-700 mb-3">Tên sản phẩm *</label>
+            <input
+              name="product_name"
+              placeholder="Tên sản phẩm (tự động điền khi nhập IMEI)"
+              value={formData.product_name}
+              onChange={handleChange}
+              className="form-input"
+              required
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-semibold text-gray-700 mb-3">SKU *</label>
+            <input
+              name="sku"
+              placeholder="SKU sản phẩm (tự động điền)"
+              value={formData.sku}
+              onChange={handleChange}
+              className="form-input"
+              required
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-semibold text-gray-700 mb-3">Số lượng *</label>
+            <input
+              name="quantity"
+              type="number"
+              min="1"
+              placeholder="1"
+              value={formData.quantity}
+              onChange={handleChange}
+              className="form-input"
+              required
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-semibold text-gray-700 mb-3">Bảo hành</label>
+            <input
+              name="warranty"
+              placeholder="VD: 12 tháng"
+              value={formData.warranty}
+              onChange={handleChange}
+              className="form-input"
+            />
+          </div>
+
           <div className="lg:col-span-2">
-            <label className="block text-sm font-semibold text-gray-700 mb-3">Chọn sản phẩm *</label>
+            <label className="block text-sm font-semibold text-gray-700 mb-3">Chọn sản phẩm từ danh sách (tuỳ chọn)</label>
             <select
               name="item_id"
               value={formData.item_id}
               onChange={handleChange}
               className="form-input"
-              required
             >
-              <option value="">-- Chọn sản phẩm để bán --</option>
+              <option value="">-- Hoặc chọn từ danh sách --</option>
               {availableItems.map((item) => (
                 <option key={item._id} value={item._id}>
                   {item.product_name || item.tenSanPham} - {item.imei} - {formatNumber(item.price_import)}đ
