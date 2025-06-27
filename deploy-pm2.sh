@@ -186,18 +186,23 @@ setup_backend() {
     print_status "Installing backend dependencies..."
     npm install
     
-    # Create .env file
-    print_status "Creating .env file..."
-    cat > .env << EOF
-NODE_ENV=production
+    # Create .env file from .env_test template
+    print_status "Creating .env file from .env_test template..."
+    if [ -f ".env_test" ]; then
+        cp .env_test .env
+        print_status "Copied .env_test to .env successfully!"
+    else
+        # Fallback to create .env manually
+        print_warning ".env_test not found, creating .env manually..."
+        cat > .env << EOF
 MONGODB_URI=mongodb://vphone_admin:vphone_secure_2024@localhost:27017/vphone?authSource=admin
-JWT_SECRET=vphone2024!secure#key\$app
-EMAIL_HOST=smtp.gmail.com
-EMAIL_PORT=587
+JWT_SECRET=mh2!#F8m@kd%$a7LzQxT9^v!w
 EMAIL_USER=vphone24h3@gmail.com
 EMAIL_PASS=ftxhkismjvdqzawp
+NODE_ENV=production
 PORT=4000
 EOF
+    fi
     
     cd ..
     print_status "Backend setup completed!"
