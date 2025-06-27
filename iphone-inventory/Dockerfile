@@ -12,6 +12,10 @@ RUN npm install
 # Copy source code
 COPY . .
 
+# Build args
+ARG VITE_API_URL=http://localhost:8080/api
+ENV VITE_API_URL=$VITE_API_URL
+
 # Build production
 RUN npm run build
 
@@ -29,7 +33,7 @@ EXPOSE 80
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-  CMD curl -f http://localhost:80 || exit 1
+  CMD wget --no-verbose --tries=1 --spider http://localhost:80 || exit 1
 
 # Start nginx
 CMD ["nginx", "-g", "daemon off;"] 

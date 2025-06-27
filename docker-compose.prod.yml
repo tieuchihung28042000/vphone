@@ -1,7 +1,7 @@
 version: '3.8'
 
 services:
-  # MongoDB Database - Chứa toàn bộ dữ liệu vphone
+  # MongoDB Database
   mongodb:
     image: mongo:7.0
     container_name: vphone-mongodb
@@ -18,9 +18,9 @@ services:
       MONGO_INITDB_DATABASE: vphone
     networks:
       - vphone-network
-    command: --wiredTigerCacheSizeGB 0.5
+    command: --wiredTigerCacheSizeGB 1.0
 
-  # Backend API cho app.vphone.vn
+  # Backend API
   backend:
     build: 
       context: ./backend
@@ -32,44 +32,43 @@ services:
     environment:
       NODE_ENV: production
       MONGODB_URI: mongodb://vphone_admin:vphone_secure_2024@mongodb:27017/vphone?authSource=admin
-      JWT_SECRET: ${JWT_SECRET:-vphone2024!secure#key$app}
+      JWT_SECRET: vphone2024!secure#key$app
       EMAIL_HOST: smtp.gmail.com
       EMAIL_PORT: 587
-      EMAIL_USER: ${EMAIL_USER:-vphone24h3@gmail.com}
-      EMAIL_PASS: ${EMAIL_PASS:-ftxhkismjvdqzawp}
+      EMAIL_USER: vphone24h3@gmail.com
+      EMAIL_PASS: ftxhkismjvdqzawp
     depends_on:
       - mongodb
     networks:
       - vphone-network
-    volumes:
-      - ./backend:/app
-      - /app/node_modules
 
-  # Frontend Web App cho app.vphone.vn
+  # Frontend Web App
   frontend:
     build: 
       context: ./iphone-inventory
       dockerfile: Dockerfile
+      args:
+        VITE_API_URL: https://app.vphone.vn/api
     container_name: vphone-frontend
     restart: unless-stopped
     ports:
-      - "80:80"
-    environment:
-      VITE_API_URL: http://localhost:8080/api
+      - "3000:80"
     depends_on:
       - backend
     networks:
       - vphone-network
 
-  # Nginx Reverse Proxy cho app.vphone.vn
+  # Nginx Reverse Proxy
   nginx:
     image: nginx:alpine
     container_name: vphone-nginx
     restart: unless-stopped
     ports:
-      - "8080:80"
+      - "80:80"
+      - "443:443"
     volumes:
-      - ./nginx.conf:/etc/nginx/conf.d/default.conf
+      - ./nginx.prod.conf:/etc/nginx/conf.d/default.conf
+      - /etc/letsencrypt:/etc/letsencrypt:ro
     depends_on:
       - frontend
       - backend
