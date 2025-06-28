@@ -599,13 +599,29 @@ export default function Cashbook() {
               ) : (
                 <select
                   value={selectedBranch}
-                  onChange={(e) => {
-                    setSelectedBranch(e.target.value);
-                    // Reload data khi chọn chi nhánh mới
-                    setTimeout(() => {
-                      loadTransactions();
-                      loadBalanceBySource();
-                    }, 100);
+                  onChange={async (e) => {
+                    const newBranch = e.target.value;
+                    setSelectedBranch(newBranch);
+                    
+                    // ✅ Reset data ngay lập tức để tránh hiển thị data cũ
+                    setTransactions([]);
+                    setBalanceBySource({ tien_mat: 0, the: 0, vi_dien_tu: 0 });
+                    setSummary({ totalThu: 0, totalChi: 0, balance: 0 });
+                    
+                    // ✅ Reload data ngay lập tức cho chi nhánh mới
+                    if (newBranch) {
+                      setLoading(true);
+                      try {
+                        await Promise.all([
+                          loadTransactions(),
+                          loadBalanceBySource()
+                        ]);
+                      } catch (error) {
+                        console.error('Error reloading data:', error);
+                      } finally {
+                        setLoading(false);
+                      }
+                    }
                   }}
                   className="form-input text-lg font-semibold"
                 >

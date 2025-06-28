@@ -183,7 +183,7 @@ function XuatHang() {
       sold_date: item.sold_date ? item.sold_date.slice(0, 10) : "",
       sku: item.sku || "",
       product_name: item.product_name || "",
-      price_sell: item.price_sell || "",
+      price_sell: item.price_sell || item.sale_price || "",
       customer_name: item.customer_name || "",
       customer_phone: item.customer_phone || "", // Thêm SĐT khách hàng khi sửa
       warranty: item.warranty || "",
@@ -432,7 +432,7 @@ function XuatHang() {
                 <td className="border p-2">{item.imei || ""}</td>
                 <td className="border p-2">{item.sku || ""}</td>
                 <td className="border p-2">{item.product_name || ""}</td>
-                <td className="border p-2 text-center">{item.price_sell ? Number(item.price_sell).toLocaleString() : ""}đ</td>
+                <td className="border p-2 text-center">{(item.price_sell || item.sale_price) ? Number(item.price_sell || item.sale_price).toLocaleString() : "0"}đ</td>
                 <td className="border p-2">{item.sold_date ? item.sold_date.slice(0, 10) : ""}</td>
                 <td className="border p-2">{item.customer_name || ""}</td>
                 <td className="border p-2">{item.customer_phone || ""}</td>

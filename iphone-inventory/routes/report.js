@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const Inventory = require('../models/Inventory');
+const ExportHistory = require('../models/ExportHistory');
 const { sendResetPasswordEmail } = require('../utils/mail');
 
 // ==================== API: Báo cáo lợi nhuận có lọc ====================
@@ -265,6 +266,25 @@ router.post('/xuat-hang', async (req, res) => {
         return res.status(404).json({ message: "❌ Không tìm thấy máy trong kho hoặc đã được bán" });
       }
 
+      // ✅ Tạo ExportHistory record cho iPhone
+      await ExportHistory.create({
+        imei: item.imei,
+        sku: item.sku,
+        product_name: item.product_name || item.tenSanPham,
+        quantity: 1,
+        price_import: item.price_import || 0,
+        price_sell: parseFloat(sale_price) || 0,
+        sold_date: sale_date ? new Date(sale_date) : new Date(),
+        customer_name: buyer_name || '',
+        customer_phone: buyer_phone || '',
+        warranty: warranty || '',
+        note: note || '',
+        debt: 0,
+        branch: branch || item.branch || '',
+        category: item.category || '',
+        export_type: 'iphone'
+      });
+
       const profit = (parseFloat(sale_price) || 0) - (item.price_import || 0);
       return res.status(200).json({ 
         message: "✅ Xuất máy thành công!", 
@@ -304,6 +324,25 @@ router.post('/xuat-hang', async (req, res) => {
         await accessory.save();
       }
 
+      // ✅ Tạo ExportHistory record cho phụ kiện
+      await ExportHistory.create({
+        imei: null, // Phụ kiện không có IMEI
+        sku: accessory.sku,
+        product_name: accessory.product_name || accessory.tenSanPham,
+        quantity: parseInt(quantity),
+        price_import: accessory.price_import || 0,
+        price_sell: parseFloat(sale_price) || 0,
+        sold_date: sale_date ? new Date(sale_date) : new Date(),
+        customer_name: buyer_name || '',
+        customer_phone: buyer_phone || '',
+        warranty: warranty || '',
+        note: note || '',
+        debt: 0,
+        branch: branch || accessory.branch || '',
+        category: accessory.category || '',
+        export_type: 'accessory'
+      });
+
       const totalProfit = (parseFloat(sale_price) || 0) * parseInt(quantity) - (accessory.price_import || 0) * parseInt(quantity);
       
       return res.status(200).json({
@@ -321,37 +360,40 @@ router.post('/xuat-hang', async (req, res) => {
 // ==================== API: Lấy danh sách đã xuất ====================
 router.get('/xuat-hang-list', async (req, res) => {
   try {
-    const rawItems = await Inventory.find({ status: 'sold' }).sort({ sold_date: -1 });
+    // ✅ Query từ ExportHistory để có cả iPhone và phụ kiện đã xuất
+    const rawItems = await ExportHistory.find({}).sort({ sold_date: -1 });
     
     // Debug: Log một sample để check field
     if (rawItems.length > 0) {
-      console.log('Sample sold item fields:', {
+      console.log('Sample export history fields:', {
         price_sell: rawItems[0].price_sell,
-        giaBan: rawItems[0].giaBan,
+        export_type: rawItems[0].export_type,
         all_keys: Object.keys(rawItems[0].toObject())
       });
     }
     
-    // ✅ FIX: Flexible field mapping để support nhiều field name khác nhau
+    // ✅ FIX: Mapping field từ ExportHistory
     const items = rawItems.map(item => ({
       _id: item._id,
       sale_date: item.sold_date || item.createdAt,
-      // ✅ Cải tiến mapping field giá bán - check nhiều field
-      sale_price: item.price_sell || item.giaBan || item.sale_price || 0,
-      buyer_name: item.customer_name || item.buyer_name || '',
-      buyer_phone: item.customer_phone || item.buyer_phone || '',
+      // ✅ Giá bán từ ExportHistory
+      sale_price: item.price_sell || 0,
+      buyer_name: item.customer_name || '',
+      buyer_phone: item.customer_phone || '',
       branch: item.branch || '',
       note: item.note || '',
-      source: item.source || 'tien_mat',
+      source: 'tien_mat', // Default value, có thể thêm field này vào ExportHistory sau
       warranty: item.warranty || '',
+      quantity: item.quantity || 1,
+      export_type: item.export_type || 'normal',
       // ✅ Thêm các field quan trọng khác
-      price_import: item.price_import || item.giaNhap || 0,
-      profit: (item.price_sell || item.giaBan || 0) - (item.price_import || item.giaNhap || 0),
+      price_import: item.price_import || 0,
+      profit: (item.price_sell || 0) - (item.price_import || 0),
       debt: item.debt || 0,
       item: {
         _id: item._id,
-        product_name: item.product_name || item.tenSanPham,
-        tenSanPham: item.tenSanPham || item.product_name,
+        product_name: item.product_name,
+        tenSanPham: item.product_name,
         imei: item.imei || '',
         sku: item.sku || '',
         category: item.category || '',

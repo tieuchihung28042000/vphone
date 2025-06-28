@@ -137,22 +137,44 @@ function TonKhoSoLuong() {
   const handleShowIMEI = async (row) => {
     setSelectedSKU(row.sku);
     setImeiList(row.imeis);
+    setImeiDetails([]); // ✅ Reset data trước khi load
     
     // Fetch detailed info for each IMEI
     try {
+      console.log('🔍 Fetching details for IMEIs:', row.imeis); // Debug
+      
       const imeiDetailsPromises = row.imeis.map(async (imei) => {
-        const res = await fetch(`${import.meta.env.VITE_API_URL}/api/imei-detail/${imei}`);
-        if (res.ok) {
-          const data = await res.json();
-          return data.item;
+        try {
+          const res = await fetch(`${import.meta.env.VITE_API_URL}/api/imei-detail/${imei}`);
+          console.log(`📱 IMEI ${imei} response status:`, res.status); // Debug
+          
+          if (res.ok) {
+            const data = await res.json();
+            console.log(`📱 IMEI ${imei} data:`, data.item); // Debug
+            return data.item;
+          } else {
+            const errorData = await res.json();
+            console.warn(`⚠️ IMEI ${imei} error:`, errorData.message);
+            return null;
+          }
+        } catch (error) {
+          console.error(`❌ Error fetching IMEI ${imei}:`, error);
+          return null;
         }
-        return null;
       });
       
       const details = await Promise.all(imeiDetailsPromises);
-      setImeiDetails(details.filter(item => item !== null));
+      const validDetails = details.filter(item => item !== null);
+      console.log('✅ Valid IMEI details:', validDetails); // Debug
+      
+      setImeiDetails(validDetails);
+      
+      // ✅ Nếu không có details nào thì hiển thị thông báo
+      if (validDetails.length === 0) {
+        console.warn('⚠️ Không có thông tin chi tiết nào được tải');
+      }
     } catch (err) {
-      console.error('Error fetching IMEI details:', err);
+      console.error('❌ Error fetching IMEI details:', err);
       setImeiDetails([]);
     }
   };
@@ -396,10 +418,15 @@ function TonKhoSoLuong() {
               </div>
             </div>
             
-            {imeiDetails.length === 0 ? (
+            {imeiList.length === 0 ? (
+              <div className="text-center py-8">
+                <p className="text-gray-500">Không có IMEI nào để hiển thị.</p>
+              </div>
+            ) : imeiDetails.length === 0 ? (
               <div className="text-center py-8">
                 <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-purple-600 mx-auto mb-4"></div>
                 <p className="text-gray-500">Đang tải thông tin chi tiết...</p>
+                <p className="text-xs text-gray-400 mt-2">Tải {imeiList.length} IMEI...</p>
               </div>
             ) : (
               <div className="overflow-x-auto">
