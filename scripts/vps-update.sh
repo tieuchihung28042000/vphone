@@ -27,7 +27,7 @@ print_error() {
 }
 
 # Project directory on VPS
-PROJECT_DIR="/var/www/vphone"
+PROJECT_DIR="/vphone"
 
 echo "🔄 VPS Update Script"
 echo "===================="
