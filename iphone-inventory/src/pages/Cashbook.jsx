@@ -123,8 +123,8 @@ export default function Cashbook() {
           setSelectedBranch(branchNames[0]);
         }
       } else {
-        // Fallback nếu không load được
-        const fallbackBranches = ['Chi nhánh 1', 'Chi nhánh 2', 'Chi nhánh 3'];
+        // Fallback nếu không load được - sử dụng chi nhánh thực tế
+        const fallbackBranches = ['Dĩ An', 'Quận 9'];
         setBranches(fallbackBranches);
         if (!selectedBranch) {
           setSelectedBranch(fallbackBranches[0]);
@@ -132,8 +132,8 @@ export default function Cashbook() {
       }
     } catch (error) {
       console.error('Error loading branches:', error);
-      // Fallback nếu có lỗi
-      const fallbackBranches = ['Chi nhánh 1', 'Chi nhánh 2', 'Chi nhánh 3'];
+      // Fallback nếu có lỗi - sử dụng chi nhánh thực tế
+      const fallbackBranches = ['Dĩ An', 'Quận 9'];
       setBranches(fallbackBranches);
       if (!selectedBranch) {
         setSelectedBranch(fallbackBranches[0]);

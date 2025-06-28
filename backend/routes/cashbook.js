@@ -13,16 +13,21 @@ function generateReceiptCode(type, date = new Date()) {
 
 // Helper function: Tính số dư sau giao dịch
 async function calculateBalance(source, branch, amount, type) {
-  // Lấy giao dịch gần nhất cùng nguồn và chi nhánh
-  const lastTransaction = await Cashbook.findOne({ 
-    source, 
-    branch 
-  }).sort({ createdAt: -1 });
-  
-  const lastBalance = lastTransaction ? lastTransaction.balance_after : 0;
-  const newBalance = type === 'thu' ? lastBalance + amount : lastBalance - amount;
-  
-  return { balance_before: lastBalance, balance_after: newBalance };
+  try {
+    // Lấy giao dịch gần nhất cùng nguồn và chi nhánh
+    const lastTransaction = await Cashbook.findOne({ 
+      source, 
+      branch 
+    }).sort({ createdAt: -1 });
+    
+    const lastBalance = lastTransaction ? (lastTransaction.balance_after || 0) : 0;
+    const newBalance = type === 'thu' ? lastBalance + Number(amount) : lastBalance - Number(amount);
+    
+    return { balance_before: lastBalance, balance_after: newBalance };
+  } catch (err) {
+    console.error('Error calculating balance:', err);
+    return { balance_before: 0, balance_after: Number(amount) * (type === 'thu' ? 1 : -1) };
+  }
 }
 
 // 1. Thêm mới giao dịch (POST)
@@ -434,6 +439,17 @@ router.post('/adjust-balance', async (req, res) => {
       return res.status(400).json({ message: 'Thiếu thông tin chi nhánh' });
     }
 
+    // Validate số tiền nhập vào
+    if (tien_mat !== undefined && (isNaN(tien_mat) || Number(tien_mat) < 0)) {
+      return res.status(400).json({ message: 'Số tiền mặt không hợp lệ' });
+    }
+    if (the !== undefined && (isNaN(the) || Number(the) < 0)) {
+      return res.status(400).json({ message: 'Số tiền thẻ không hợp lệ' });
+    }
+    if (vi_dien_tu !== undefined && (isNaN(vi_dien_tu) || Number(vi_dien_tu) < 0)) {
+      return res.status(400).json({ message: 'Số tiền ví điện tử không hợp lệ' });
+    }
+
     const adjustments = [];
     const date = new Date();
 
@@ -463,82 +479,100 @@ router.post('/adjust-balance', async (req, res) => {
 
     // Điều chỉnh tiền mặt
     if (tien_mat !== undefined && tien_mat !== null && tien_mat !== '') {
-      const newBalance = Number(tien_mat);
-      const currentTienMat = currentBalanceMap['tien_mat'] || 0;
-      const diff = newBalance - currentTienMat;
-      
-      if (diff !== 0) {
-        const receipt_code = generateReceiptCode(diff > 0 ? 'thu' : 'chi', date);
-        const adjustment = new Cashbook({
-          type: diff > 0 ? 'thu' : 'chi',
-          content: 'Điều chỉnh số dư tiền mặt',
-          amount: Math.abs(diff),
-          source: 'tien_mat',
-          branch,
-          note: note || 'Điều chỉnh tổng quỹ',
-          user,
-          related_type: 'manual',
-          receipt_code,
-          balance_before: currentTienMat,
-          balance_after: newBalance
-        });
+      try {
+        const newBalance = Number(tien_mat);
+        const currentTienMat = currentBalanceMap['tien_mat'] || 0;
+        const diff = newBalance - currentTienMat;
         
-        await adjustment.save();
-        adjustments.push(adjustment);
+        if (diff !== 0) {
+          const receipt_code = generateReceiptCode(diff > 0 ? 'thu' : 'chi', date);
+          const adjustment = new Cashbook({
+            type: diff > 0 ? 'thu' : 'chi',
+            content: 'Điều chỉnh số dư tiền mặt',
+            amount: Math.abs(diff),
+            source: 'tien_mat',
+            branch,
+            note: note || 'Điều chỉnh tổng quỹ',
+            user: user || 'System',
+            related_type: 'manual',
+            receipt_code,
+            balance_before: currentTienMat,
+            balance_after: newBalance,
+            date: date
+          });
+          
+          await adjustment.save();
+          adjustments.push(adjustment);
+        }
+      } catch (err) {
+        console.error('Error adjusting tien_mat:', err);
+        throw new Error(`Lỗi điều chỉnh tiền mặt: ${err.message}`);
       }
     }
 
     // Điều chỉnh thẻ
     if (the !== undefined && the !== null && the !== '') {
-      const newBalance = Number(the);
-      const currentThe = currentBalanceMap['the'] || 0;
-      const diff = newBalance - currentThe;
-      
-      if (diff !== 0) {
-        const receipt_code = generateReceiptCode(diff > 0 ? 'thu' : 'chi', date);
-        const adjustment = new Cashbook({
-          type: diff > 0 ? 'thu' : 'chi',
-          content: 'Điều chỉnh số dư thẻ',
-          amount: Math.abs(diff),
-          source: 'the',
-          branch,
-          note: note || 'Điều chỉnh tổng quỹ',
-          user,
-          related_type: 'manual',
-          receipt_code,
-          balance_before: currentThe,
-          balance_after: newBalance
-        });
+      try {
+        const newBalance = Number(the);
+        const currentThe = currentBalanceMap['the'] || 0;
+        const diff = newBalance - currentThe;
         
-        await adjustment.save();
-        adjustments.push(adjustment);
+        if (diff !== 0) {
+          const receipt_code = generateReceiptCode(diff > 0 ? 'thu' : 'chi', date);
+          const adjustment = new Cashbook({
+            type: diff > 0 ? 'thu' : 'chi',
+            content: 'Điều chỉnh số dư thẻ',
+            amount: Math.abs(diff),
+            source: 'the',
+            branch,
+            note: note || 'Điều chỉnh tổng quỹ',
+            user: user || 'System',
+            related_type: 'manual',
+            receipt_code,
+            balance_before: currentThe,
+            balance_after: newBalance,
+            date: date
+          });
+          
+          await adjustment.save();
+          adjustments.push(adjustment);
+        }
+      } catch (err) {
+        console.error('Error adjusting the:', err);
+        throw new Error(`Lỗi điều chỉnh thẻ: ${err.message}`);
       }
     }
 
     // Điều chỉnh ví điện tử
     if (vi_dien_tu !== undefined && vi_dien_tu !== null && vi_dien_tu !== '') {
-      const newBalance = Number(vi_dien_tu);
-      const currentViDienTu = currentBalanceMap['vi_dien_tu'] || 0;
-      const diff = newBalance - currentViDienTu;
-      
-      if (diff !== 0) {
-        const receipt_code = generateReceiptCode(diff > 0 ? 'thu' : 'chi', date);
-        const adjustment = new Cashbook({
-          type: diff > 0 ? 'thu' : 'chi',
-          content: 'Điều chỉnh số dư ví điện tử',
-          amount: Math.abs(diff),
-          source: 'vi_dien_tu',
-          branch,
-          note: note || 'Điều chỉnh tổng quỹ',
-          user,
-          related_type: 'manual',
-          receipt_code,
-          balance_before: currentViDienTu,
-          balance_after: newBalance
-        });
+      try {
+        const newBalance = Number(vi_dien_tu);
+        const currentViDienTu = currentBalanceMap['vi_dien_tu'] || 0;
+        const diff = newBalance - currentViDienTu;
         
-        await adjustment.save();
-        adjustments.push(adjustment);
+        if (diff !== 0) {
+          const receipt_code = generateReceiptCode(diff > 0 ? 'thu' : 'chi', date);
+          const adjustment = new Cashbook({
+            type: diff > 0 ? 'thu' : 'chi',
+            content: 'Điều chỉnh số dư ví điện tử',
+            amount: Math.abs(diff),
+            source: 'vi_dien_tu',
+            branch,
+            note: note || 'Điều chỉnh tổng quỹ',
+            user: user || 'System',
+            related_type: 'manual',
+            receipt_code,
+            balance_before: currentViDienTu,
+            balance_after: newBalance,
+            date: date
+          });
+          
+          await adjustment.save();
+          adjustments.push(adjustment);
+        }
+      } catch (err) {
+        console.error('Error adjusting vi_dien_tu:', err);
+        throw new Error(`Lỗi điều chỉnh ví điện tử: ${err.message}`);
       }
     }
 

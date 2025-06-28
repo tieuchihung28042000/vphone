@@ -9,6 +9,7 @@ function BaoCao() {
   const [filter, setFilter] = useState("Hôm nay");
   const [branch, setBranch] = useState("all");
   const [showDetails, setShowDetails] = useState(false);
+  const [branches, setBranches] = useState([]); // ✅ Thêm state cho branches
   const navigate = useNavigate();
 
   // Gán sẵn khoảng thời gian các filter nhanh
@@ -24,6 +25,25 @@ function BaoCao() {
     ],
     "Tháng này": [new Date(new Date().getFullYear(), new Date().getMonth(), 1), new Date()],
     "Năm nay": [new Date(new Date().getFullYear(), 0, 1), new Date()],
+  };
+
+  // ✅ Load branches từ API
+  const loadBranches = async () => {
+    try {
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/branches`);
+      const data = await response.json();
+      
+      if (response.ok && data.length > 0) {
+        setBranches(data.map(branch => branch.name));
+      } else {
+        // Fallback nếu không load được
+        setBranches(['Dĩ An', 'Quận 9']);
+      }
+    } catch (error) {
+      console.error('Error loading branches:', error);
+      // Fallback nếu có lỗi
+      setBranches(['Dĩ An', 'Quận 9']);
+    }
   };
 
   // Gọi API lấy dữ liệu báo cáo
@@ -42,6 +62,11 @@ function BaoCao() {
       setData(null);
     }
   };
+
+  // ✅ Load branches khi component mount
+  useEffect(() => {
+    loadBranches();
+  }, []);
 
   // Khi đổi filter hoặc chi nhánh thì cập nhật ngày và gọi API luôn
   useEffect(() => {
@@ -65,6 +90,9 @@ function BaoCao() {
 
   // Lấy danh sách đơn chi tiết từ data
   const orders = data?.orders || data?.items || [];
+  
+  // Debug: Log dữ liệu để check field mapping
+  console.log('Orders sample:', orders[0]);
 
   return (
     <div className="max-w-5xl mx-auto p-4 relative">
@@ -115,9 +143,11 @@ function BaoCao() {
           className="border px-3 py-2 rounded"
         >
           <option value="all">Tất cả chi nhánh</option>
-          <option value="Dĩ An">Chi nhánh Dĩ An</option>
-          <option value="Gò Vấp">Chi nhánh Gò Vấp</option>
-          <option value="Thủ Đức">Chi nhánh Thủ Đức</option>
+          {branches.map((branchName) => (
+            <option key={branchName} value={branchName}>
+              Chi nhánh {branchName}
+            </option>
+          ))}
         </select>
 
         {filter === "Tùy chọn" && (
@@ -153,13 +183,9 @@ function BaoCao() {
             </div>
             <div>
               <p className="text-gray-500">Doanh thu</p>
-              <button
-                className="text-blue-600 font-semibold underline hover:text-blue-800 transition duration-200"
-                onClick={() => setShowDetails(!showDetails)}
-              >
-                {data.totalRevenue?.toLocaleString() || 0} đ{" "}
-                <span className="text-sm font-normal">(nhấn vào xem chi tiết)</span>
-              </button>
+              <p className="text-blue-600 font-semibold">
+                {data.totalRevenue?.toLocaleString() || 0} đ
+              </p>
             </div>
             <div>
               <p className="text-gray-500">Chi phí</p>
@@ -175,48 +201,113 @@ function BaoCao() {
         <p className="text-gray-500 mt-4">Đang tải dữ liệu...</p>
       )}
 
-      {/* Danh sách đơn hàng bán chi tiết */}
-      {showDetails && (
-        <div className="mt-8">
-          <h3 className="font-bold mb-2 text-lg">🗂️ Danh sách đơn hàng</h3>
+      {/* Danh sách đơn hàng bán chi tiết - LUÔN HIỂN THỊ */}
+      <div className="mt-8">
+        <div className="flex justify-between items-center mb-4">
+          <h3 className="font-bold text-lg">🗂️ Danh sách đơn hàng chi tiết</h3>
+          <button
+            onClick={() => setShowDetails(!showDetails)}
+            className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700"
+          >
+            {showDetails ? '🔼 Thu gọn' : '🔽 Xem chi tiết'}
+          </button>
+        </div>
+        
+        {showDetails && (
           <div className="overflow-x-auto">
-            <table className="min-w-full border text-sm">
+            <table className="min-w-full border text-sm bg-white rounded-lg shadow">
               <thead>
                 <tr className="bg-gray-100">
-                  <th className="border p-2">Mã hàng (SKU)</th>
-                  <th className="border p-2">Tên SP</th>
-                  <th className="border p-2">Thời gian bán</th>
-                  <th className="border p-2">Khách hàng</th>
-                  <th className="border p-2">Giá vốn</th>
-                  <th className="border p-2">Giá bán</th>
-                  <th className="border p-2">Lợi nhuận</th>
+                  <th className="border p-3 text-left">Mã hàng (SKU)</th>
+                  <th className="border p-3 text-left">Tên sản phẩm</th>
+                  <th className="border p-3 text-left">IMEI</th>
+                  <th className="border p-3 text-left">Ngày bán</th>
+                  <th className="border p-3 text-left">Khách hàng</th>
+                  <th className="border p-3 text-right">Giá nhập</th>
+                  <th className="border p-3 text-right">Giá bán</th>
+                  <th className="border p-3 text-right">Lợi nhuận</th>
+                  <th className="border p-3 text-center">Chi nhánh</th>
                 </tr>
               </thead>
               <tbody>
                 {orders.length > 0 ? (
-                  orders.map((item, idx) => (
-                    <tr key={item._id || idx}>
-                      <td className="border p-2">{item.sku}</td>
-                      <td className="border p-2">{item.product_name}</td>
-                      <td className="border p-2">{item.sold_date?.slice(0, 10)}</td>
-                      <td className="border p-2">{item.customer_name}</td>
-                      <td className="border p-2 text-right">{item.price_import?.toLocaleString() || 0} đ</td>
-                      <td className="border p-2 text-right">{item.price_sell?.toLocaleString() || 0} đ</td>
-                      <td className="border p-2 text-right">
-                        {(item.price_sell - (item.price_import || 0))?.toLocaleString() || 0} đ
-                      </td>
-                    </tr>
-                  ))
+                  orders.map((item, idx) => {
+                    // Flexible field mapping để support cả 2 API format
+                    const importPrice = item.price_import || item.import_price || item.cost || 0;
+                    const sellPrice = item.price_sell || item.sale_price || item.revenue || 0;
+                    const profit = sellPrice - importPrice;
+                    const saleDate = item.sold_date || item.sale_date;
+                    const formattedDate = saleDate ? new Date(saleDate).toLocaleDateString('vi-VN') : 'N/A';
+                    
+                    return (
+                      <tr key={item._id || idx} className="hover:bg-gray-50">
+                        <td className="border p-3 font-mono text-sm">{item.sku || 'N/A'}</td>
+                        <td className="border p-3">{item.product_name || item.tenSanPham || 'N/A'}</td>
+                        <td className="border p-3 font-mono text-xs">{item.imei || 'N/A'}</td>
+                        <td className="border p-3">{formattedDate}</td>
+                        <td className="border p-3">
+                          <div>{item.customer_name || item.buyer_name || 'Khách lẻ'}</div>
+                          <div className="text-xs text-gray-500">{item.customer_phone || item.buyer_phone || ''}</div>
+                        </td>
+                        <td className="border p-3 text-right font-semibold text-orange-600">
+                          {importPrice.toLocaleString()} đ
+                        </td>
+                        <td className="border p-3 text-right font-semibold text-green-600">
+                          {sellPrice.toLocaleString()} đ
+                        </td>
+                        <td className={`border p-3 text-right font-bold ${profit >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                          {profit >= 0 ? '+' : ''}{profit.toLocaleString()} đ
+                        </td>
+                        <td className="border p-3 text-center">
+                          <span className="bg-blue-100 text-blue-800 px-2 py-1 rounded-full text-xs">
+                            {item.branch || 'N/A'}
+                          </span>
+                        </td>
+                      </tr>
+                    );
+                  })
                 ) : (
                   <tr>
-                    <td className="border p-2 text-center" colSpan={7}>Không có dữ liệu đơn hàng nào.</td>
+                    <td className="border p-4 text-center text-gray-500" colSpan={9}>
+                      📭 Không có dữ liệu đơn hàng nào trong khoảng thời gian này
+                    </td>
                   </tr>
                 )}
               </tbody>
             </table>
           </div>
-        </div>
-      )}
+        )}
+        
+        {/* Summary row */}
+        {orders.length > 0 && showDetails && (
+          <div className="mt-4 p-4 bg-gray-100 rounded-lg">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-center">
+              <div>
+                <p className="text-gray-600 text-sm">Tổng đơn hàng</p>
+                <p className="font-bold text-lg">{orders.length}</p>
+              </div>
+              <div>
+                <p className="text-gray-600 text-sm">Tổng doanh thu</p>
+                <p className="font-bold text-lg text-green-600">
+                  {data.totalRevenue?.toLocaleString() || 0} đ
+                </p>
+              </div>
+              <div>
+                <p className="text-gray-600 text-sm">Tổng chi phí</p>
+                <p className="font-bold text-lg text-orange-600">
+                  {data.totalCost?.toLocaleString() || 0} đ
+                </p>
+              </div>
+              <div>
+                <p className="text-gray-600 text-sm">Tổng lợi nhuận</p>
+                <p className="font-bold text-lg text-purple-600">
+                  {data.totalProfit?.toLocaleString() || 0} đ
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

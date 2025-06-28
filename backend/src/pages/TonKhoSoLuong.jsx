@@ -11,6 +11,7 @@ function TonKhoSoLuong() {
   const [monthFilter, setMonthFilter] = useState("");
   const [selectedSKU, setSelectedSKU] = useState(null);
   const [imeiList, setImeiList] = useState([]);
+  const [imeiDetails, setImeiDetails] = useState([]); // ✅ Thêm state cho chi tiết IMEI
   const [showLowStockOnly, setShowLowStockOnly] = useState(false);
   const navigate = useNavigate();
 
@@ -85,9 +86,28 @@ function TonKhoSoLuong() {
     XLSX.writeFile(workbook, "TonKho.xlsx");
   };
 
-  const handleShowIMEI = (row) => {
+  // ✅ Cập nhật handleShowIMEI để fetch chi tiết
+  const handleShowIMEI = async (row) => {
     setSelectedSKU(row.sku);
     setImeiList(row.imeis);
+    
+    // Fetch detailed info for each IMEI
+    try {
+      const imeiDetailsPromises = row.imeis.map(async (imei) => {
+        const res = await fetch(`${import.meta.env.VITE_API_URL}/api/imei-detail/${imei}`);
+        if (res.ok) {
+          const data = await res.json();
+          return data.item;
+        }
+        return null;
+      });
+      
+      const details = await Promise.all(imeiDetailsPromises);
+      setImeiDetails(details.filter(item => item !== null));
+    } catch (err) {
+      console.error('Error fetching IMEI details:', err);
+      setImeiDetails([]);
+    }
   };
 
   return (
@@ -213,16 +233,98 @@ function TonKhoSoLuong() {
         </table>
       )}
 
-      {selectedSKU && imeiList.length > 0 && (
-        <div className="mt-6">
-          <h3 className="text-lg font-bold mb-2 text-blue-600">
-            IMEI còn trong kho của SKU: {selectedSKU}
-          </h3>
-          <ul className="list-disc pl-6">
-            {imeiList.map((imei, idx) => (
-              <li key={idx}>{imei}</li>
-            ))}
-          </ul>
+      {/* ✅ IMEI Detail Modal - COPY từ iphone-inventory */}
+      {selectedSKU && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-2xl p-8 max-w-6xl w-full mx-4 max-h-[80vh] overflow-y-auto">
+            <h3 className="text-xl font-bold text-gray-900 mb-6">📱 Chi tiết IMEI - SKU: {selectedSKU}</h3>
+            
+            {imeiDetails.length === 0 ? (
+              <div className="text-center py-8">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-purple-600 mx-auto mb-4"></div>
+                <p className="text-gray-500">Đang tải thông tin chi tiết...</p>
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="px-4 py-3 text-left text-xs font-bold text-gray-600 uppercase">IMEI</th>
+                      <th className="px-4 py-3 text-left text-xs font-bold text-gray-600 uppercase">Tên sản phẩm</th>
+                      <th className="px-4 py-3 text-left text-xs font-bold text-gray-600 uppercase">Giá nhập</th>
+                      <th className="px-4 py-3 text-left text-xs font-bold text-gray-600 uppercase">Ngày nhập</th>
+                      <th className="px-4 py-3 text-left text-xs font-bold text-gray-600 uppercase">Nhà cung cấp</th>
+                      <th className="px-4 py-3 text-left text-xs font-bold text-gray-600 uppercase">Nhập bởi</th>
+                      <th className="px-4 py-3 text-left text-xs font-bold text-gray-600 uppercase">Trạng thái</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {imeiDetails.map((item, index) => (
+                      <tr key={index} className="border-b border-gray-200 hover:bg-gray-50">
+                        <td className="px-4 py-3">
+                          <div className="font-mono text-sm font-semibold text-blue-600">{item.imei}</div>
+                        </td>
+                        <td className="px-4 py-3">
+                          <div className="text-sm font-semibold text-gray-900">{item.product_name}</div>
+                          <div className="text-xs text-gray-500">{item.category}</div>
+                        </td>
+                        <td className="px-4 py-3">
+                          <div className="text-sm font-semibold text-green-600">
+                            {item.price_import ? item.price_import.toLocaleString() : 0}đ
+                          </div>
+                        </td>
+                        <td className="px-4 py-3">
+                          <div className="text-sm text-gray-600">
+                            {item.import_date ? new Date(item.import_date).toLocaleDateString('vi-VN') : 'Không rõ'}
+                          </div>
+                        </td>
+                        <td className="px-4 py-3">
+                          <div className="text-sm text-gray-700">{item.supplier || 'Không rõ'}</div>
+                        </td>
+                        <td className="px-4 py-3">
+                          <div className="text-sm text-gray-700">{item.imported_by}</div>
+                        </td>
+                        <td className="px-4 py-3">
+                          <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
+                            item.status === 'sold' 
+                              ? 'bg-red-100 text-red-800' 
+                              : 'bg-green-100 text-green-800'
+                          }`}>
+                            {item.status === 'sold' ? '✅ Đã bán' : '📦 Tồn kho'}
+                          </span>
+                          {item.status === 'sold' && (
+                            <div className="text-xs text-gray-500 mt-1">
+                              Bán: {item.sold_date ? new Date(item.sold_date).toLocaleDateString('vi-VN') : ''}
+                              {item.customer_name && <br />}
+                              {item.customer_name && `KH: ${item.customer_name}`}
+                              {item.profit && (
+                                <div className="text-blue-600 font-semibold">
+                                  LN: +{item.profit.toLocaleString()}đ
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+            
+            <div className="mt-6 flex justify-end">
+              <button
+                onClick={() => {
+                  setSelectedSKU(null);
+                  setImeiList([]);
+                  setImeiDetails([]);
+                }}
+                className="bg-gray-500 hover:bg-gray-600 text-white px-6 py-3 rounded-xl transition-all"
+              >
+                ❌ Đóng
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

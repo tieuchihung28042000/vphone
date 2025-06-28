@@ -379,6 +379,17 @@ function NhapHang() {
       )
     },
     {
+      header: "Ghi chú",
+      key: "note",
+      render: (item) => (
+        <div className="text-sm text-gray-700 max-w-xs">
+          <div className="truncate" title={item.note}>
+            {item.note || <span className="text-gray-400 italic">Không có</span>}
+          </div>
+        </div>
+      )
+    },
+    {
       header: "Trạng thái",
       key: "status",
       render: (item) => (

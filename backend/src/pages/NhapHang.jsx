@@ -498,7 +498,7 @@ function NhapHang() {
               <th className="border p-2">Thư mục</th>
               <th className="border p-2">Nhà cung cấp</th>
               <th className="border p-2">Chi nhánh</th>
-              <th className="border p-2">Ghi chú</th>
+              <th className="border p-2" style={{minWidth: '120px'}}>Ghi chú</th>
               <th className="border p-2 text-center">Thao tác</th>
             </tr>
           </thead>
@@ -514,7 +514,11 @@ function NhapHang() {
                 <td className="border p-2">{item.category}</td>
                 <td className="border p-2">{item.supplier}</td>
                 <td className="border p-2">{item.branch}</td>
-                <td className="border p-2">{item.note}</td>
+                <td className="border p-2" style={{maxWidth: '150px'}}>
+                  <div title={item.note} className="truncate">
+                    {item.note || <span className="text-gray-400 italic">Không có</span>}
+                  </div>
+                </td>
                 <td className="border p-2 text-center space-x-1">
                   <button onClick={() => handleEdit(item)} className="bg-yellow-400 text-white px-2 py-1 rounded">✏️</button>
                   <button onClick={() => handleDelete(item._id)} className="bg-red-600 text-white px-2 py-1 rounded">🗑️</button>

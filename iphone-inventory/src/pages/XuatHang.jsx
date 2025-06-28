@@ -68,6 +68,10 @@ function XuatHang() {
   const itemsPerPage = 15;
   const [editingItemId, setEditingItemId] = useState(null);
 
+  // ✅ Thêm states cho autocomplete
+  const [suggestList, setSuggestList] = useState([]);
+  const [showSuggest, setShowSuggest] = useState(false);
+
   // Stats calculation
   const stats = {
     totalSold: soldItems.length,
@@ -141,11 +145,80 @@ function XuatHang() {
   };
 
   useEffect(() => {
-    fetchAvailableItems();
     fetchSoldItems();
+    fetchAvailableItems();
     fetchBranches();
     fetchCategories();
   }, []);
+
+  // ✅ Thêm function để fetch suggestion list cho autocomplete
+  const fetchSuggestList = async (query) => {
+    if (!query || query.length < 2) {
+      setSuggestList([]);
+      setShowSuggest(false);
+      return;
+    }
+    
+    try {
+      const res = await fetch(`${import.meta.env.VITE_API_URL}/api/ton-kho`);
+      const data = await res.json();
+      const lowerQuery = query.trim().toLowerCase();
+      
+      const filtered = (data.items || []).filter(
+        item =>
+          (item.product_name || item.tenSanPham || "")
+            .toLowerCase()
+            .includes(lowerQuery) ||
+          (item.sku || "").toLowerCase().includes(lowerQuery)
+      );
+      
+      // Gom nhóm sản phẩm
+      const group = {};
+      filtered.forEach(item => {
+        const key = (item.product_name || item.tenSanPham || "Không rõ") + "_" + (item.sku || "Không rõ");
+        if (!group[key]) {
+          group[key] = {
+            name: item.product_name || item.tenSanPham || "Không rõ",
+            sku: item.sku || "",
+            imeis: [],
+            soLuong: 0,
+            isAccessory: !item.imei,
+            price_import: item.price_import || 0
+          };
+        }
+        if (item.imei) {
+          group[key].imeis.push(item.imei);
+        } else {
+          group[key].soLuong += Number(item.soLuongConLai || item.quantity || 1);
+        }
+      });
+      
+      setSuggestList(Object.values(group));
+      setShowSuggest(true);
+    } catch (err) {
+      console.error("Error fetching suggestions:", err);
+      setSuggestList([]);
+      setShowSuggest(false);
+    }
+  };
+
+  // ✅ Thêm function để handle khi nhập tên sản phẩm
+  const handleProductNameChange = (e) => {
+    const value = e.target.value;
+    setFormData(prev => ({ ...prev, product_name: value }));
+    fetchSuggestList(value);
+  };
+
+  // ✅ Thêm function để chọn suggestion
+  const handleSelectSuggest = (item) => {
+    setFormData(prev => ({
+      ...prev,
+      product_name: item.name,
+      sku: item.sku,
+      imei: item.isAccessory ? "" : (item.imeis.length === 1 ? item.imeis[0] : ""),
+    }));
+    setShowSuggest(false);
+  };
 
   const handleChange = async (e) => {
     const { name, value } = e.target;
@@ -222,6 +295,17 @@ function XuatHang() {
         sale_date: formData.sale_date
       };
 
+      // ✅ Debug logging
+      if (editingItemId) {
+        console.log('🔄 EDIT mode - Submitting PUT request');
+        console.log('EditingID:', editingItemId);
+        console.log('API URL:', url);
+        console.log('API Data:', apiData);
+      } else {
+        console.log('🆕 CREATE mode - Submitting POST request');
+        console.log('API Data:', apiData);
+      }
+
       const res = await fetch(url, {
         method,
         headers: { "Content-Type": "application/json" },
@@ -230,12 +314,14 @@ function XuatHang() {
 
       const data = await res.json();
       if (res.ok) {
+        console.log('✅ API Response success:', data);
         setMessage(`✅ ${data.message}`);
         resetForm();
-        fetchSoldItems();
+        fetchSoldItems(); // This should refresh the list with updated data
         fetchAvailableItems();
         setTimeout(() => setMessage(""), 3000);
       } else {
+        console.error('❌ API Response error:', data);
         setMessage(`❌ ${data.message}`);
         setTimeout(() => setMessage(""), 3000);
       }
@@ -246,7 +332,9 @@ function XuatHang() {
   };
 
   const handleEdit = (item) => {
-    setFormData({
+    console.log('✏️ EDIT clicked - Item data:', item); // Debug
+    
+    const editFormData = {
       item_id: item.item_id || "",
       imei: item.item?.imei || "",
       product_name: item.item?.product_name || item.item?.tenSanPham || "",
@@ -260,8 +348,13 @@ function XuatHang() {
       branch: item.branch || "",
       note: item.note || "",
       source: item.source || "tien_mat"
-    });
+    };
+    
+    console.log('✏️ Setting form data for edit:', editFormData); // Debug
+    
+    setFormData(editFormData);
     setEditingItemId(item._id);
+    setMessage(""); // Clear any previous messages
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
@@ -471,14 +564,45 @@ function XuatHang() {
 
           <div>
             <label className="block text-sm font-semibold text-gray-700 mb-3">Tên sản phẩm *</label>
-            <input
-              name="product_name"
-              placeholder="Tên sản phẩm (tự động điền khi nhập IMEI)"
-              value={formData.product_name}
-              onChange={handleChange}
-              className="form-input"
-              required
-            />
+            <div className="relative">
+              <input
+                name="product_name"
+                placeholder="Nhập 2-4 chữ để tìm sản phẩm..."
+                value={formData.product_name}
+                onChange={handleProductNameChange}
+                className="form-input"
+                required
+                autoComplete="off"
+              />
+              
+              {/* ✅ Thêm dropdown gợi ý sản phẩm */}
+              {showSuggest && suggestList.length > 0 && (
+                <div className="absolute z-50 left-0 right-0 bg-white border border-gray-300 rounded-lg shadow-lg max-h-60 overflow-y-auto mt-1">
+                  {suggestList.map((item, idx) => (
+                    <div
+                      key={item.sku + idx}
+                      className="px-4 py-3 hover:bg-blue-50 cursor-pointer border-b border-gray-100 last:border-b-0"
+                      onClick={() => handleSelectSuggest(item)}
+                    >
+                      <div className="font-medium text-blue-600 text-sm">{item.name}</div>
+                      <div className="text-xs text-gray-500 mt-1">
+                        SKU: {item.sku} • 
+                        {item.isAccessory 
+                          ? ` SL còn: ${item.soLuong}` 
+                          : ` IMEI có sẵn: ${item.imeis.length}`
+                        }
+                        {item.price_import > 0 && ` • Giá nhập: ${formatCurrency(item.price_import)}`}
+                      </div>
+                      {!item.isAccessory && item.imeis.length > 0 && (
+                        <div className="text-xs text-gray-400 mt-1">
+                          IMEI: {item.imeis.slice(0, 3).join(", ")}{item.imeis.length > 3 ? "..." : ""}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
 
           <div>

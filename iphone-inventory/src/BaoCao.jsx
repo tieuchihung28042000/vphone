@@ -32,6 +32,7 @@ function BaoCao() {
   const [branch, setBranch] = useState("all");
   const [showDetails, setShowDetails] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [branches, setBranches] = useState([]);
   const navigate = useNavigate();
 
   // Predefined date ranges
@@ -47,6 +48,25 @@ function BaoCao() {
     ],
     "Tháng này": [new Date(new Date().getFullYear(), new Date().getMonth(), 1), new Date()],
     "Năm nay": [new Date(new Date().getFullYear(), 0, 1), new Date()],
+  };
+
+  // ✅ Load branches từ API
+  const loadBranches = async () => {
+    try {
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/branches`);
+      const data = await response.json();
+      
+      if (response.ok && data.length > 0) {
+        setBranches(data.map(branch => branch.name));
+      } else {
+        // Fallback nếu không load được
+        setBranches(['Dĩ An', 'Quận 9']);
+      }
+    } catch (error) {
+      console.error('Error loading branches:', error);
+      // Fallback nếu có lỗi
+      setBranches(['Dĩ An', 'Quận 9']);
+    }
   };
 
   // API call to fetch report data
@@ -68,6 +88,11 @@ function BaoCao() {
       setLoading(false);
     }
   };
+
+  // ✅ Load branches khi component mount
+  useEffect(() => {
+    loadBranches();
+  }, []);
 
   // Update dates and fetch data when filter or branch changes
   useEffect(() => {
@@ -262,9 +287,11 @@ function BaoCao() {
               className="form-input"
         >
               <option value="all">🏢 Tất cả chi nhánh</option>
-          <option value="Dĩ An">Chi nhánh Dĩ An</option>
-          <option value="Gò Vấp">Chi nhánh Gò Vấp</option>
-          <option value="Thủ Đức">Chi nhánh Thủ Đức</option>
+              {branches.map((branchName) => (
+                <option key={branchName} value={branchName}>
+                  📍 Chi nhánh {branchName}
+                </option>
+              ))}
         </select>
           </div>
 

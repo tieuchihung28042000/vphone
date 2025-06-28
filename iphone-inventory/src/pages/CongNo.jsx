@@ -32,6 +32,10 @@ function CongNo() {
   const [supplierDebts, setSupplierDebts] = useState([]);
   const [selectedCustomer, setSelectedCustomer] = useState(null);
   const [selectedSupplier, setSelectedSupplier] = useState(null);
+  
+  // ✅ Thêm loading states
+  const [loading, setLoading] = useState(false);
+  const [supplierLoading, setSupplierLoading] = useState(false);
   const [customerDebt, setCustomerDebt] = useState({ total_debt: 0, total_paid: 0, debt_history: [] });
   const [supplierDebt, setSupplierDebt] = useState({ total_debt: 0, total_paid: 0, debt_history: [] });
   const [payAmount, setPayAmount] = useState("");
@@ -57,7 +61,7 @@ function CongNo() {
 
   const supplierStats = {
     totalDebt: supplierDebts.reduce((sum, debt) => sum + debt.total_debt, 0),
-    totalSuppliers: supplierDebts.length,
+    totalCustomers: supplierDebts.length, // ✅ Changed from totalSuppliers to totalCustomers for consistency
     largestDebt: Math.max(...supplierDebts.map(debt => debt.total_debt), 0),
     averageDebt: supplierDebts.length > 0 ? supplierDebts.reduce((sum, debt) => sum + debt.total_debt, 0) / supplierDebts.length : 0
   };
@@ -66,13 +70,21 @@ function CongNo() {
 
   // API functions
   const fetchDebts = async () => {
-    const params = new URLSearchParams();
-    if (searchText.trim()) params.append('search', searchText.trim());
-    if (showAll) params.append('show_all', 'true');
-    
-    const res = await fetch(`${import.meta.env.VITE_API_URL}/api/cong-no/cong-no-list?${params}`);
-    const data = await res.json();
-    setDebts(data.items || []);
+    try {
+      setLoading(true);
+      const params = new URLSearchParams();
+      if (searchText.trim()) params.append('search', searchText.trim());
+      if (showAll) params.append('show_all', 'true');
+      
+      const res = await fetch(`${import.meta.env.VITE_API_URL}/api/cong-no/cong-no-list?${params}`);
+      const data = await res.json();
+      setDebts(data.items || []);
+    } catch (err) {
+      console.error('❌ Error fetching customer debts:', err);
+      setDebts([]);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const fetchSupplierDebts = async () => {
@@ -81,12 +93,26 @@ function CongNo() {
     if (showAll) params.append('show_all', 'true');
     
     try {
+      setSupplierLoading(true);
+      console.log('🔍 Fetching supplier debts...'); // Debug
       const res = await fetch(`${import.meta.env.VITE_API_URL}/api/cong-no/supplier-debt-list?${params}`);
+      
+      if (!res.ok) {
+        throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+      }
+      
       const data = await res.json();
-      setSupplierDebts(data.items || []);
+      console.log('📦 Supplier debts response:', data); // Debug
+      
+      // ✅ API trả về data.suppliers chứ không phải data.items
+      setSupplierDebts(data.suppliers || data.items || []);
     } catch (err) {
-      console.error('Error fetching supplier debts:', err);
+      console.error('❌ Error fetching supplier debts:', err);
       setSupplierDebts([]);
+      // Hiển thị error message thay vì white screen
+      alert(`❌ Lỗi tải dữ liệu nhà cung cấp: ${err.message}`);
+    } finally {
+      setSupplierLoading(false);
     }
   };
 
@@ -511,6 +537,24 @@ function CongNo() {
     }
   }, [activeTab, searchText, showAll]);
 
+  // ✅ Show loading spinner khi đang fetch
+  if ((activeTab === "khach_no" && loading) || (activeTab === "minh_no_ncc" && supplierLoading)) {
+    return (
+      <Layout 
+        activeTab="cong-no"
+        title="💳 Công Nợ"
+        subtitle="Đang tải dữ liệu..."
+      >
+        <div className="flex items-center justify-center py-20">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-purple-600 mx-auto mb-4"></div>
+            <p className="text-gray-600">Đang tải dữ liệu công nợ...</p>
+          </div>
+        </div>
+      </Layout>
+    );
+  }
+
   return (
     <Layout 
       activeTab="cong-no"
@@ -555,31 +599,31 @@ function CongNo() {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <StatsCard
           title="Tổng công nợ"
-          value={formatCurrency(stats.totalDebt)}
+          value={formatCurrency(stats.totalDebt || 0)}
           icon="💳"
           color="red"
           subtitle="Tổng tiền chưa thu"
             />
         <StatsCard
-          title="Số khách hàng"
-          value={stats.totalCustomers.toString()}
+          title={activeTab === "khach_no" ? "Số khách hàng" : "Số nhà cung cấp"}
+          value={(stats.totalCustomers || 0).toString()}
           icon="👥"
           color="blue"
-          subtitle="Khách hàng có nợ"
+          subtitle={activeTab === "khach_no" ? "Khách hàng có nợ" : "Nhà cung cấp có nợ"}
         />
         <StatsCard
           title="Nợ lớn nhất"
-          value={formatCurrency(stats.largestDebt)}
+          value={formatCurrency(stats.largestDebt || 0)}
           icon="⚠️"
           color="orange"
-          subtitle="Khách nợ nhiều nhất"
+          subtitle={activeTab === "khach_no" ? "Khách nợ nhiều nhất" : "NCC nhiều nhất"}
             />
         <StatsCard
           title="Nợ trung bình"
-          value={formatCurrency(stats.averageDebt)}
+          value={formatCurrency(stats.averageDebt || 0)}
           icon="📊"
           color="purple"
-          subtitle="Trung bình mỗi khách"
+          subtitle={activeTab === "khach_no" ? "Trung bình mỗi khách" : "Trung bình mỗi NCC"}
         />
       </div>
 
@@ -790,6 +834,11 @@ function CongNo() {
         totalPages={1}
         itemsPerPage={activeTab === "khach_no" ? debts.length : supplierDebts.length}
         totalItems={activeTab === "khach_no" ? debts.length : supplierDebts.length}
+        emptyMessage={
+          activeTab === "khach_no" 
+            ? "Chưa có khách hàng nào còn nợ" 
+            : "Chưa có nhà cung cấp nào mình đang nợ. Hãy nhập hàng với công nợ để tạo dữ liệu."
+        }
       />
 
       {/* History Modal */}

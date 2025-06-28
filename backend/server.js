@@ -26,22 +26,35 @@ const allowedOrigins = [
   'https://chinhthuc-jade.vercel.app',
   'http://app.vphone.vn',
   'https://app.vphone.vn',
+  'http://103.109.187.224',
+  'https://103.109.187.224',
 ];
 
 app.use(cors({
   origin: function(origin, callback) {
     // Cho phép các request không có origin (Postman, mobile apps)
     if (!origin) return callback(null, true);
-    if (!allowedOrigins.includes(origin)) {
-      console.log('⚠️ CORS warning - Origin not in allowlist:', origin);
-      // Trong development, cho phép tất cả origins
-      if (process.env.NODE_ENV !== 'production') {
-        return callback(null, true);
-      }
-      const msg = '❌ CORS bị chặn: ' + origin;
-      return callback(new Error(msg), false);
+    
+    // Kiểm tra nếu origin trong danh sách cho phép
+    if (allowedOrigins.includes(origin)) {
+      return callback(null, true);
     }
-    return callback(null, true);
+    
+    // Cho phép IP addresses trong production (VPS)
+    if (origin && origin.match(/^https?:\/\/\d+\.\d+\.\d+\.\d+(:\d+)?$/)) {
+      console.log('✅ CORS cho phép IP:', origin);
+      return callback(null, true);
+    }
+    
+    // Trong development, cho phép tất cả origins
+    if (process.env.NODE_ENV !== 'production') {
+      console.log('⚠️ CORS dev mode - allowing origin:', origin);
+      return callback(null, true);
+    }
+    
+    console.log('❌ CORS bị chặn origin:', origin);
+    const msg = '❌ CORS bị chặn: ' + origin;
+    return callback(new Error(msg), false);
   },
   credentials: true,
 }));
@@ -377,16 +390,37 @@ app.get('/api/xuat-hang-list', async (req, res) => {
   try {
     const rawItems = await Inventory.find({ status: 'sold' }).sort({ sold_date: -1 });
     
-    // Transform data để match với frontend expectation
+    // Debug: Log một sample để check field
+    if (rawItems.length > 0) {
+      console.log('Sample sold item fields:', {
+        price_sell: rawItems[0].price_sell,
+        giaBan: rawItems[0].giaBan,
+        all_keys: Object.keys(rawItems[0].toObject())
+      });
+    }
+    
+    // ✅ FIX: Flexible field mapping để support nhiều field name khác nhau  
     const items = rawItems.map(item => ({
       _id: item._id,
       sale_date: item.sold_date || item.createdAt,
-      sale_price: item.price_sell || item.price,
-      buyer_name: item.customer_name || '',
-      buyer_phone: item.customer_phone || '',
+      // ✅ Cải tiến mapping field giá bán - check nhiều field
+      sale_price: item.price_sell || item.giaBan || item.sale_price || 0,
+      price_sell: item.price_sell || item.giaBan || 0, // Backup field
+      buyer_name: item.customer_name || item.buyer_name || '',
+      buyer_phone: item.customer_phone || item.buyer_phone || '',
       branch: item.branch || '',
       note: item.note || '',
       source: item.source || 'tien_mat',
+      warranty: item.warranty || '',
+      // ✅ Thêm các field quan trọng khác  
+      price_import: item.price_import || item.giaNhap || 0,
+      profit: (item.price_sell || item.giaBan || 0) - (item.price_import || item.giaNhap || 0),
+      debt: item.debt || 0,
+      imei: item.imei || '',
+      sku: item.sku || '',
+      product_name: item.product_name || item.tenSanPham || '',
+      customer_name: item.customer_name || '',
+      customer_phone: item.customer_phone || '',
       item: {
         _id: item._id,
         product_name: item.product_name || item.tenSanPham,
@@ -397,25 +431,87 @@ app.get('/api/xuat-hang-list', async (req, res) => {
       }
     }));
     
-    res.status(200).json({ items });
+    res.status(200).json({ 
+      message: '✅ Danh sách xuất hàng',
+      total: items.length,
+      items 
+    });
   } catch (error) {
+    console.error('❌ Lỗi API xuat-hang-list:', error);
     res.status(500).json({ message: '❌ Lỗi lấy danh sách xuất hàng', error: error.message });
   }
 });
 
 app.put('/api/xuat-hang/:id', async (req, res) => {
   try {
+    const {
+      imei,
+      sku,
+      product_name,
+      price_sell,
+      customer_name,
+      customer_phone,
+      warranty,
+      note,
+      branch,
+      sold_date,
+      source,
+      debt
+    } = req.body;
+
+    console.log('PUT Request data:', req.body); // Debug
+
+    // ✅ Proper field mapping để consistent với POST API
     const updateFields = {
-      ...req.body,
       status: 'sold',
+      // Price fields - map to both formats for consistency
+      price_sell: parseFloat(price_sell) || 0,
+      giaBan: parseFloat(price_sell) || 0,
+      // Customer info
+      customer_name: customer_name || '',
+      customer_phone: customer_phone || '',
+      // Product info  
+      product_name: product_name || '',
+      sku: sku || '',
+      imei: imei || '',
+      // Other fields
+      warranty: warranty || '',
+      note: note || '',
+      branch: branch || '',
+      source: source || 'tien_mat',
+      sold_date: sold_date ? new Date(sold_date) : new Date(),
+      debt: parseFloat(debt) || 0,
+      // Update timestamp
+      updatedAt: new Date()
     };
 
-    const updated = await Inventory.findByIdAndUpdate(req.params.id, updateFields, { new: true });
+    // Remove undefined/empty fields
+    Object.keys(updateFields).forEach(key => {
+      if (updateFields[key] === undefined || updateFields[key] === '') {
+        delete updateFields[key];
+      }
+    });
+
+    console.log('Processed update fields:', updateFields); // Debug
+
+    const updated = await Inventory.findByIdAndUpdate(
+      req.params.id, 
+      { $set: updateFields }, 
+      { new: true, runValidators: true }
+    );
+    
     if (!updated) {
       return res.status(404).json({ message: '❌ Không tìm thấy đơn xuất để cập nhật.' });
     }
-    res.status(200).json({ message: '✅ Đã cập nhật đơn xuất!', item: updated });
+
+    console.log('Updated item price fields:', updated.price_sell, updated.giaBan); // Debug
+
+    res.status(200).json({ 
+      message: '✅ Đã cập nhật đơn xuất thành công!', 
+      item: updated 
+    });
   } catch (error) {
+    console.error('❌ Error updating xuat-hang:', error);
     res.status(500).json({ message: '❌ Lỗi khi cập nhật đơn xuất', error: error.message });
   }
 });
