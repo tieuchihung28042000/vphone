@@ -332,12 +332,88 @@ router.post('/send-reset-link', async (req, res) => {
 // ==================== API: Cập nhật đơn xuất ====================
 router.put('/xuat-hang/:id', async (req, res) => {
   try {
-    const id = req.params.id;
-    const updateData = req.body;
-    const updated = await ExportHistory.findByIdAndUpdate(id, updateData, { new: true });
-    if (!updated) return res.status(404).json({ message: "❌ Không tìm thấy đơn xuất để cập nhật." });
-    res.json({ message: "✅ Đã cập nhật đơn xuất", item: updated });
+    const {
+      imei,
+      sku,
+      product_name,
+      price_sell,
+      sale_price,    // ✅ Thêm field từ frontend
+      customer_name,
+      customer_phone,
+      buyer_name,    // ✅ Thêm field từ frontend  
+      buyer_phone,   // ✅ Thêm field từ frontend
+      warranty,
+      note,
+      branch,
+      sold_date,
+      sale_date,     // ✅ Thêm field từ frontend
+      source,
+      debt
+    } = req.body;
+
+    console.log('🔍 Routes PUT Request data:', req.body); // Debug
+
+    // ✅ FIX: Flexible field mapping để support cả frontend và backend fields
+    const finalSalePrice = parseFloat(sale_price || price_sell) || 0;
+    const finalCustomerName = buyer_name || customer_name || '';
+    const finalCustomerPhone = buyer_phone || customer_phone || '';
+    const finalSaleDate = sale_date || sold_date;
+
+    console.log('🔍 Field mapping debug:', {
+      sale_price, price_sell, finalSalePrice,
+      buyer_name, customer_name, finalCustomerName
+    }); // Debug
+
+    const updateFields = {
+      status: 'sold',
+      // Price fields - ưu tiên field từ frontend
+      price_sell: finalSalePrice,
+      giaBan: finalSalePrice,
+      // Customer info - ưu tiên field từ frontend
+      customer_name: finalCustomerName,
+      customer_phone: finalCustomerPhone,
+      // Product info  
+      product_name: product_name || '',
+      sku: sku || '',
+      imei: imei || '',
+      // Other fields
+      warranty: warranty || '',
+      note: note || '',
+      branch: branch || '',
+      source: source || 'tien_mat',
+      sold_date: finalSaleDate ? new Date(finalSaleDate) : new Date(),
+      debt: parseFloat(debt) || 0,
+      updatedAt: new Date()
+    };
+
+    // Remove empty fields
+    Object.keys(updateFields).forEach(key => {
+      if (updateFields[key] === undefined || updateFields[key] === '') {
+        delete updateFields[key];
+      }
+    });
+
+    // Ensure at least one field to update
+    if (Object.keys(updateFields).length === 0) {
+      updateFields.updatedAt = new Date();
+    }
+
+    console.log('🔍 Routes processed update fields:', updateFields); // Debug
+
+    const updated = await Inventory.findByIdAndUpdate(
+      req.params.id, 
+      { $set: updateFields }, 
+      { new: true }
+    );
+    
+    if (!updated) {
+      return res.status(404).json({ message: "❌ Không tìm thấy đơn xuất để cập nhật." });
+    }
+
+    console.log('✅ Routes PUT update successful:', updated.product_name); // Debug
+    res.json({ message: "✅ Đã cập nhật đơn xuất thành công!", item: updated });
   } catch (err) {
+    console.error('❌ Routes PUT error:', err);
     res.status(500).json({ message: "❌ Lỗi khi cập nhật đơn xuất", error: err.message });
   }
 });

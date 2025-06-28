@@ -5,6 +5,7 @@ require('dotenv').config();
 
 const Inventory = require('./models/Inventory');
 const Cashbook = require('./models/Cashbook'); // THÊM DÒNG NÀY
+const ExportHistory = require('./models/ExportHistory'); // THÊM MODEL EXPORT HISTORY
 const authRoutes = require('./routes/auth');
 const userRoutes = require('./routes/user');
 const reportRoutes = require('./routes/report');
@@ -71,6 +72,99 @@ app.use('/api/branches', branchRoutes);
 app.use('/api/categories', categoryRoutes);
 app.use('/api/cong-no', congNoRoutes);
 app.use('/api/cashbook', cashbookRoutes); // ROUTE SỔ QUỸ
+
+// ==================== API: SUPER DEBUG BACKEND ====================
+app.get('/api/super-debug/:id', async (req, res) => {
+  try {
+    const id = req.params.id;
+    console.log('🔍 BACKEND SUPER DEBUG for ID:', id);
+    
+    // Test trong Inventory
+    const inventoryItem = await Inventory.findById(id);
+    console.log('📦 Backend Inventory result:', inventoryItem ? {
+      _id: inventoryItem._id,
+      product_name: inventoryItem.product_name,
+      status: inventoryItem.status,
+      price_sell: inventoryItem.price_sell,
+      giaBan: inventoryItem.giaBan
+    } : 'NOT FOUND');
+    
+    // Test trong ExportHistory  
+    let exportItem = null;
+    try {
+      exportItem = await ExportHistory.findById(id);
+      console.log('📋 Backend ExportHistory result:', exportItem ? {
+        _id: exportItem._id,
+        product_name: exportItem.product_name,
+        price_sell: exportItem.price_sell
+      } : 'NOT FOUND');
+    } catch (err) {
+      console.log('📋 ExportHistory model error:', err.message);
+    }
+    
+    // Đếm records
+    const inventoryCount = await Inventory.countDocuments();
+    const soldCount = await Inventory.countDocuments({ status: 'sold' });
+    
+    res.status(200).json({
+      message: '🔍 BACKEND SUPER DEBUG RESULTS',
+      test_id: id,
+      inventory_item: inventoryItem ? {
+        found: true,
+        _id: inventoryItem._id,
+        product_name: inventoryItem.product_name,
+        status: inventoryItem.status,
+        price_sell: inventoryItem.price_sell,
+        giaBan: inventoryItem.giaBan
+      } : { found: false },
+      export_history_item: exportItem ? {
+        found: true,
+        _id: exportItem._id,
+        product_name: exportItem.product_name,
+        price_sell: exportItem.price_sell
+      } : { found: false },
+      collections_stats: {
+        total_inventory: inventoryCount,
+        inventory_sold: soldCount
+      }
+    });
+  } catch (error) {
+    console.error('❌ Backend super debug error:', error);
+    res.status(500).json({ message: '❌ Backend super debug failed', error: error.message });
+  }
+});
+
+// ==================== API: SIMPLE UPDATE TEST ====================
+app.put('/api/test-update/:id', async (req, res) => {
+  try {
+    console.log('🧪 SIMPLE UPDATE TEST for ID:', req.params.id);
+    console.log('🧪 Request body:', req.body);
+    
+    // Đơn giản: chỉ update 1 field
+    const updated = await Inventory.findByIdAndUpdate(
+      req.params.id,
+      { $set: { note: 'TEST UPDATE WORKED', updatedAt: new Date() } },
+      { new: true }
+    );
+    
+    if (!updated) {
+      return res.status(404).json({ message: '❌ Test update failed - record not found' });
+    }
+    
+    res.status(200).json({
+      message: '✅ TEST UPDATE SUCCESS!',
+      updated_fields: {
+        _id: updated._id,
+        note: updated.note,
+        product_name: updated.product_name,
+        status: updated.status
+      }
+    });
+  } catch (error) {
+    console.error('❌ Test update error:', error);
+    res.status(500).json({ message: '❌ Test update failed', error: error.message });
+  }
+});
 
 // API lấy danh sách nhập hàng
 app.get('/api/nhap-hang', async (req, res) => {
@@ -461,7 +555,7 @@ app.put('/api/xuat-hang/:id', async (req, res) => {
 
     console.log('PUT Request data:', req.body); // Debug
 
-    // ✅ Proper field mapping để consistent với POST API
+    // ✅ ROLLBACK: Proper field mapping để consistent với POST API
     const updateFields = {
       status: 'sold',
       // Price fields - map to both formats for consistency
@@ -485,22 +579,44 @@ app.put('/api/xuat-hang/:id', async (req, res) => {
       updatedAt: new Date()
     };
 
-    // Remove undefined/empty fields
+    // Remove undefined/empty fields - NHƯNG GIỮ LẠI ÍT NHẤT 1 FIELD
     Object.keys(updateFields).forEach(key => {
       if (updateFields[key] === undefined || updateFields[key] === '') {
         delete updateFields[key];
       }
     });
 
-    console.log('Processed update fields:', updateFields); // Debug
+    // ✅ Đảm bảo luôn có ít nhất 1 field để update
+    if (Object.keys(updateFields).length === 0) {
+      updateFields.updatedAt = new Date();
+    }
 
-    const updated = await Inventory.findByIdAndUpdate(
-      req.params.id, 
-      { $set: updateFields }, 
-      { new: true, runValidators: true }
-    );
+    console.log('Processed update fields:', updateFields); // Debug
+    console.log('Update fields count:', Object.keys(updateFields).length); // Debug
+
+    // ✅ Debug: Kiểm tra record trước khi update
+    const existingRecord = await Inventory.findById(req.params.id);
+    console.log('🔍 Existing record before update:', existingRecord ? {
+      _id: existingRecord._id,
+      status: existingRecord.status,
+      product_name: existingRecord.product_name
+    } : 'NOT FOUND');
+
+    let updated;
+    try {
+      updated = await Inventory.findByIdAndUpdate(
+        req.params.id, 
+        { $set: updateFields }, 
+        { new: true, runValidators: false } // ✅ TẮT VALIDATION để test
+      );
+      console.log('🔍 Update result:', updated ? 'SUCCESS' : 'FAILED');
+    } catch (updateError) {
+      console.error('❌ Update error:', updateError);
+      return res.status(500).json({ message: '❌ Lỗi database khi update', error: updateError.message });
+    }
     
     if (!updated) {
+      console.log('❌ findByIdAndUpdate returned null for ID:', req.params.id);
       return res.status(404).json({ message: '❌ Không tìm thấy đơn xuất để cập nhật.' });
     }
 
@@ -581,6 +697,8 @@ app.post('/api/thu-no-khach', async (req, res) => {
     res.status(500).json({ message: '❌ Lỗi khi ghi sổ thu nợ', error: error.message });
   }
 });
+
+
 
 mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/vphone')
 .then(() => console.log('✅ Kết nối MongoDB thành công'))
