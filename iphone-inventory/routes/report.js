@@ -1,5 +1,6 @@
 const express = require('express');
 const router = express.Router();
+const mongoose = require('mongoose'); // ✅ Thêm mongoose để validate ObjectId
 const Inventory = require('../models/Inventory');
 const ExportHistory = require('../models/ExportHistory');
 const { sendResetPasswordEmail } = require('../utils/mail');
@@ -414,6 +415,15 @@ router.get('/xuat-hang-list', async (req, res) => {
 // ==================== API: Cập nhật đơn xuất ====================
 router.put('/xuat-hang/:id', async (req, res) => {
   try {
+    const id = req.params.id;
+    console.log('🔍 PUT API called with ID:', id); // Debug
+    
+    // ✅ Kiểm tra ID format có hợp lệ không
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      console.log('❌ Invalid ObjectId format for PUT:', id);
+      return res.status(400).json({ message: '❌ ID không đúng định dạng.' });
+    }
+    
     const {
       imei,
       sku,
@@ -461,7 +471,7 @@ router.put('/xuat-hang/:id', async (req, res) => {
 
     // ✅ Cập nhật ExportHistory record
     const updatedExport = await ExportHistory.findByIdAndUpdate(
-      req.params.id, 
+      id, 
       { $set: updateFields }, 
       { new: true, runValidators: true }
     );
@@ -504,14 +514,41 @@ router.put('/xuat-hang/:id', async (req, res) => {
 router.delete('/xuat-hang/:id', async (req, res) => {
   try {
     const id = req.params.id;
+    console.log('🔍 DELETE API called with ID:', id); // Debug
+    
+    // ✅ Kiểm tra ID format có hợp lệ không
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      console.log('❌ Invalid ObjectId format:', id);
+      return res.status(400).json({ message: '❌ ID không đúng định dạng.' });
+    }
+    
+    // ✅ Debug: Kiểm tra tất cả records trong ExportHistory
+    const allExports = await ExportHistory.find({}).limit(10).sort({ createdAt: -1 });
+    const totalCount = await ExportHistory.countDocuments();
+    console.log('📋 Total ExportHistory records:', totalCount);
+    console.log('🔍 Recent ExportHistory records:');
+    allExports.forEach(r => {
+      console.log(`   - ID: ${r._id}, Product: ${r.product_name}, IMEI: ${r.imei || 'N/A'}, Date: ${r.sold_date}`);
+    });
     
     // ✅ Tìm record trong ExportHistory thay vì Inventory
     const exportRecord = await ExportHistory.findById(id);
+    console.log('🗑️ Found export record:', exportRecord); // Debug
+    
     if (!exportRecord) {
-      return res.status(404).json({ message: '❌ Không tìm thấy đơn xuất hàng.' });
+      console.log('❌ ExportHistory record not found for ID:', id);
+      
+      // ✅ DEBUG: Kiểm tra xem ID này có tồn tại trong Inventory collection cũ không
+      const oldInventoryRecord = await Inventory.findById(id);
+      if (oldInventoryRecord) {
+        console.log('⚠️ ID found in old Inventory collection:', oldInventoryRecord.product_name, oldInventoryRecord.status);
+        return res.status(400).json({ 
+          message: '❌ Đây là dữ liệu cũ, vui lòng refresh trang để cập nhật danh sách mới.' 
+        });
+      }
+      
+      return res.status(404).json({ message: '❌ Không tìm thấy đơn xuất hàng trong hệ thống.' });
     }
-
-    console.log('🗑️ Deleting export record:', exportRecord); // Debug
 
     // ===== Nếu là xuất iPhone (có IMEI) thì trả lại trạng thái in_stock =====
     if (exportRecord.imei) {
@@ -567,6 +604,63 @@ router.delete('/xuat-hang/:id', async (req, res) => {
   } catch (error) {
     console.error('❌ Error deleting export record:', error);
     res.status(500).json({ message: '❌ Lỗi khi xóa đơn xuất', error: error.message });
+  }
+});
+
+// ==================== API: Migration data từ Inventory cũ sang ExportHistory ====================
+router.post('/migrate-export-history', async (req, res) => {
+  try {
+    console.log('🔄 Starting migration from Inventory to ExportHistory...');
+    
+    // Lấy tất cả records đã bán từ Inventory mà chưa có trong ExportHistory
+    const soldInventoryItems = await Inventory.find({ status: 'sold' });
+    console.log(`📋 Found ${soldInventoryItems.length} sold items in Inventory`);
+    
+    let migratedCount = 0;
+    
+    for (const item of soldInventoryItems) {
+      // Kiểm tra xem đã có trong ExportHistory chưa
+      const existingExport = await ExportHistory.findOne({
+        imei: item.imei || null,
+        sku: item.sku,
+        product_name: item.product_name || item.tenSanPham,
+        sold_date: item.sold_date
+      });
+      
+      if (!existingExport) {
+        // Tạo record mới trong ExportHistory
+        await ExportHistory.create({
+          imei: item.imei || '',
+          sku: item.sku || '',
+          product_name: item.product_name || item.tenSanPham || '',
+          quantity: 1, // iPhone luôn là 1
+          price_import: item.price_import || 0,
+          price_sell: item.price_sell || item.giaBan || 0,
+          sold_date: item.sold_date || item.createdAt || new Date(),
+          customer_name: item.customer_name || '',
+          customer_phone: item.customer_phone || '',
+          warranty: item.warranty || '',
+          note: item.note || '',
+          debt: item.debt || 0,
+          branch: item.branch || '',
+          category: item.category || '',
+          export_type: item.imei ? 'normal' : 'accessory'
+        });
+        
+        migratedCount++;
+        console.log(`✅ Migrated: ${item.product_name || item.tenSanPham} (${item.imei || item.sku})`);
+      }
+    }
+    
+    console.log(`🎉 Migration completed: ${migratedCount} records migrated`);
+    res.status(200).json({ 
+      message: `✅ Migration thành công! Đã chuyển ${migratedCount} records từ Inventory sang ExportHistory.`,
+      migratedCount,
+      totalSoldInventory: soldInventoryItems.length
+    });
+  } catch (error) {
+    console.error('❌ Migration error:', error);
+    res.status(500).json({ message: '❌ Lỗi khi migration dữ liệu', error: error.message });
   }
 });
 

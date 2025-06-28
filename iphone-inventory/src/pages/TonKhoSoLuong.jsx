@@ -145,13 +145,13 @@ function TonKhoSoLuong() {
       
       const imeiDetailsPromises = row.imeis.map(async (imei) => {
         try {
-          const res = await fetch(`${import.meta.env.VITE_API_URL}/api/imei-detail/${imei}`);
+        const res = await fetch(`${import.meta.env.VITE_API_URL}/api/imei-detail/${imei}`);
           console.log(`📱 IMEI ${imei} response status:`, res.status); // Debug
           
-          if (res.ok) {
-            const data = await res.json();
+        if (res.ok) {
+          const data = await res.json();
             console.log(`📱 IMEI ${imei} data:`, data.item); // Debug
-            return data.item;
+          return data.item;
           } else {
             const errorData = await res.json();
             console.warn(`⚠️ IMEI ${imei} error:`, errorData.message);

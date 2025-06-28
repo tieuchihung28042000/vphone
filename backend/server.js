@@ -582,7 +582,7 @@ app.post('/api/thu-no-khach', async (req, res) => {
   }
 });
 
-mongoose.connect(process.env.MONGODB_URI)
+mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/vphone')
 .then(() => console.log('✅ Kết nối MongoDB thành công'))
 .catch(err => console.error('❌ Kết nối MongoDB lỗi:', err));
 
