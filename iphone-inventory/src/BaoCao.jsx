@@ -30,7 +30,7 @@ function BaoCao() {
   const [to, setTo] = useState("");
   const [filter, setFilter] = useState("Hôm nay");
   const [branch, setBranch] = useState("all");
-  const [showDetails, setShowDetails] = useState(false);
+
   const [loading, setLoading] = useState(false);
   const [branches, setBranches] = useState([]);
   const navigate = useNavigate();
@@ -130,7 +130,6 @@ function BaoCao() {
   const clearFilters = () => {
     setFilter("Hôm nay");
     setBranch("all");
-    setShowDetails(false);
   };
 
   // Table columns definition
@@ -157,8 +156,8 @@ function BaoCao() {
       key: "customer",
       render: (order) => (
         <div>
-          <div className="text-sm font-medium text-gray-900">{order.buyer_name || 'N/A'}</div>
-          <div className="text-sm text-gray-500">{order.buyer_phone || 'N/A'}</div>
+          <div className="text-sm font-medium text-gray-900">{order.buyer_name || order.customer_name || 'Khách lẻ'}</div>
+          <div className="text-sm text-gray-500">{order.buyer_phone || order.customer_phone || 'N/A'}</div>
         </div>
       )
     },
@@ -174,8 +173,8 @@ function BaoCao() {
       key: "import_price",
       render: (order) => (
         <div className="text-sm font-semibold text-orange-600">
-          {formatCurrency(order.import_price || order.cost || order.price_import || 0)}
-          {(!order.import_price && !order.cost && !order.price_import) && (
+          {formatCurrency(order.import_price || order.price_import || order.cost || 0)}
+          {(!order.import_price && !order.price_import && !order.cost) && (
             <div className="text-xs text-red-500 italic">Chưa có giá</div>
           )}
         </div>
@@ -186,8 +185,8 @@ function BaoCao() {
       key: "sale_price",
       render: (order) => (
         <div className="text-sm font-semibold text-green-600">
-          {formatCurrency(order.sale_price || order.revenue || order.selling_price || 0)}
-          {(!order.sale_price && !order.revenue && !order.selling_price) && (
+          {formatCurrency(order.sale_price || order.price_sell || order.revenue || order.selling_price || 0)}
+          {(!order.sale_price && !order.price_sell && !order.revenue && !order.selling_price) && (
             <div className="text-xs text-red-500 italic">Chưa có giá</div>
           )}
         </div>
@@ -197,8 +196,8 @@ function BaoCao() {
       header: "Lợi nhuận",
       key: "profit",
       render: (order) => {
-        const salePrice = order.sale_price || order.revenue || order.selling_price || 0;
-        const importPrice = order.import_price || order.cost || order.price_import || 0;
+        const salePrice = order.sale_price || order.price_sell || order.revenue || order.selling_price || 0;
+        const importPrice = order.import_price || order.price_import || order.cost || 0;
         const profit = salePrice - importPrice;
         
         // Kiểm tra nếu thiếu dữ liệu
@@ -314,7 +313,7 @@ function BaoCao() {
             value={formatCurrency(stats.totalProfit)}
             icon="📈"
             color="purple"
-            subtitle="Margin: ${stats.profitMargin}%"
+            subtitle={`Margin: ${stats.profitMargin}%`}
           />
       </div>
       )}
@@ -398,25 +397,8 @@ function BaoCao() {
       </div>
       )}
 
-      {/* Toggle Details Button */}
+      {/* Detailed Orders Table - Always Show */}
       {data && orders.length > 0 && (
-        <div className="flex justify-between items-center">
-          <div></div>
-              <button
-                onClick={() => setShowDetails(!showDetails)}
-            className={`px-6 py-3 rounded-xl font-medium transition-all ${
-              showDetails 
-                ? 'bg-gray-500 hover:bg-gray-600 text-white' 
-                : 'bg-purple-600 hover:bg-purple-700 text-white'
-            }`}
-              >
-            {showDetails ? '🔼 Ẩn chi tiết' : '🔽 Xem chi tiết đơn hàng'}
-              </button>
-        </div>
-      )}
-
-      {/* Detailed Orders Table */}
-      {showDetails && orders.length > 0 && (
         <DataTable
           title="📋 Chi tiết đơn hàng"
           data={orders.map((item, index) => ({ ...item, id: index }))}
