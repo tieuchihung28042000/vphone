@@ -45,6 +45,10 @@ bower_components
 # Logs
 logs
 *.log
+/logs/
+
+# SSH Scripts (contains sensitive info)
+scripts/ssh-*.sh
 
 # Optional npm cache directory
 .npm
