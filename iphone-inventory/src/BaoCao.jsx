@@ -173,36 +173,92 @@ function BaoCao() {
       header: "Giá nhập",
       key: "import_price",
       render: (order) => (
-        <div className="text-sm font-semibold text-orange-600">{formatCurrency(order.import_price || order.cost || 0)}</div>
+        <div className="text-sm font-semibold text-orange-600">
+          {formatCurrency(order.import_price || order.cost || order.price_import || 0)}
+          {(!order.import_price && !order.cost && !order.price_import) && (
+            <div className="text-xs text-red-500 italic">Chưa có giá</div>
+          )}
+        </div>
       )
     },
     {
       header: "Giá bán",
       key: "sale_price",
       render: (order) => (
-        <div className="text-sm font-semibold text-green-600">{formatCurrency(order.sale_price || order.revenue || 0)}</div>
+        <div className="text-sm font-semibold text-green-600">
+          {formatCurrency(order.sale_price || order.revenue || order.selling_price || 0)}
+          {(!order.sale_price && !order.revenue && !order.selling_price) && (
+            <div className="text-xs text-red-500 italic">Chưa có giá</div>
+          )}
+        </div>
       )
     },
     {
       header: "Lợi nhuận",
       key: "profit",
       render: (order) => {
-        const profit = (order.sale_price || order.revenue || 0) - (order.import_price || order.cost || 0);
+        const salePrice = order.sale_price || order.revenue || order.selling_price || 0;
+        const importPrice = order.import_price || order.cost || order.price_import || 0;
+        const profit = salePrice - importPrice;
+        
+        // Kiểm tra nếu thiếu dữ liệu
+        if (salePrice === 0 && importPrice === 0) {
+          return (
+            <div className="text-sm text-red-500 italic">
+              Thiếu dữ liệu giá
+            </div>
+          );
+        }
+        
+        const profitMargin = salePrice > 0 ? ((profit / salePrice) * 100).toFixed(1) : 0;
+        
         return (
           <div className={`text-sm font-bold ${profit >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-            {profit >= 0 ? '+' : ''}{formatCurrency(profit)}
+            <div>{profit >= 0 ? '+' : ''}{formatCurrency(profit)}</div>
+            <div className="text-xs font-normal text-gray-500">
+              Margin: {profitMargin}%
+            </div>
           </div>
         );
       }
     },
     {
       header: "Ngày bán",
-      key: "sale_date",
-      render: (order) => (
-        <div className="text-sm text-gray-600">
-          {order.sale_date ? new Date(order.sale_date).toLocaleDateString('vi-VN') : 'N/A'}
-        </div>
-      )
+      key: "sale_date", 
+      render: (order) => {
+        const saleDate = order.sale_date || order.sold_date || order.date;
+        if (!saleDate) {
+          return (
+            <div className="text-sm text-red-500 italic">
+              Chưa có ngày
+            </div>
+          );
+        }
+        
+        try {
+          const date = new Date(saleDate);
+          if (isNaN(date.getTime())) {
+            return (
+              <div className="text-sm text-red-500 italic">
+                Ngày không hợp lệ
+              </div>
+            );
+          }
+          
+          return (
+            <div className="text-sm text-gray-600">
+              <div className="font-medium">{date.toLocaleDateString('vi-VN')}</div>
+              <div className="text-xs text-gray-400">{date.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}</div>
+            </div>
+          );
+        } catch (err) {
+          return (
+            <div className="text-sm text-red-500 italic">
+              Lỗi hiển thị ngày
+            </div>
+          );
+        }
+      }
     }
   ];
 

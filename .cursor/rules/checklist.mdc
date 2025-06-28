@@ -1,5 +1,18 @@
 ---
-description:
-globs:
-alwaysApply: false
+description: 
+globs: 
+alwaysApply: true
 ---
+Trước khi triển khai code, hãy giúp tôi tạo một file checklist trong thư mục /logs.
+
+Tên file nên là: checklist_[thời gian hiện tại].md. Ví dụ: checklist_20250628_123456.md.
+
+Nội dung file bạn hãy phần tích và sắp xếp các hạng mục triển khai cho hợp lí và hiệu quả.
+
+Sau đó, trong quá trình triển khai, hãy cập nhật từng mục thành [x] khi hoàn thành.
+Ví dụ:
+- [x] Cập nhật tính năng bán hàng.
+
+Ghi chú thêm vào cuối file thời gian bắt đầu triển khai và thời gian hoàn tất khi xong.
+
+Nếu chưa có thư mục /logs thì hãy tạo thư mục đó trước khi ghi file.

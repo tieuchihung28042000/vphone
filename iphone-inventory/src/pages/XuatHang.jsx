@@ -71,6 +71,9 @@ function XuatHang() {
   // ✅ Thêm states cho autocomplete
   const [suggestList, setSuggestList] = useState([]);
   const [showSuggest, setShowSuggest] = useState(false);
+  
+  // ✅ Thêm state để track phụ kiện
+  const [isAccessory, setIsAccessory] = useState(false);
 
   // Stats calculation
   const stats = {
@@ -217,6 +220,10 @@ function XuatHang() {
       sku: item.sku,
       imei: item.isAccessory ? "" : (item.imeis.length === 1 ? item.imeis[0] : ""),
     }));
+    
+    // Set trạng thái phụ kiện
+    setIsAccessory(item.isAccessory);
+    
     setShowSuggest(false);
   };
 
@@ -225,7 +232,9 @@ function XuatHang() {
     if (name === "branch") localStorage.setItem('lastBranch', value);
     
     if (name === "sale_price") {
-      setFormData((prev) => ({ ...prev, [name]: parseNumber(value) }));
+      // Giữ nguyên giá trị đã format để hiển thị, nhưng lưu số nguyên vào state
+      const cleanNumber = parseNumber(value);
+      setFormData((prev) => ({ ...prev, [name]: cleanNumber }));
     } else if (name === "imei" && value.trim()) {
       // Auto-fill product info when IMEI is entered
       try {
@@ -269,6 +278,7 @@ function XuatHang() {
       source: "tien_mat"
     });
     setEditingItemId(null);
+    setIsAccessory(false); // Reset trạng thái phụ kiện
   };
 
   const handleSubmit = async (e) => {
@@ -280,20 +290,30 @@ function XuatHang() {
         : `${import.meta.env.VITE_API_URL}/api/xuat-hang`;
 
       // Prepare data for API
+      const salePriceNumber = parseInt(parseNumber(formData.sale_price)) || 0;
+      
       const apiData = {
-        imei: formData.imei,
+        imei: isAccessory ? "" : formData.imei, // Phụ kiện không cần IMEI
         sku: formData.sku,
         product_name: formData.product_name,
         quantity: parseInt(formData.quantity) || 1,
         warranty: formData.warranty,
-        sale_price: parseNumber(formData.sale_price),
+        sale_price: salePriceNumber,
         buyer_name: formData.buyer_name,
         buyer_phone: formData.buyer_phone,
         branch: formData.branch,
         note: formData.note,
         source: formData.source,
-        sale_date: formData.sale_date
+        sale_date: formData.sale_date,
+        is_accessory: isAccessory // Thêm flag để backend biết đây là phụ kiện
       };
+
+      // Debug logging cho giá bán
+      console.log('💰 Sale Price Debug:', {
+        formValue: formData.sale_price,
+        parsedNumber: parseNumber(formData.sale_price),
+        finalNumber: salePriceNumber
+      });
 
       // ✅ Debug logging
       if (editingItemId) {
@@ -334,14 +354,16 @@ function XuatHang() {
   const handleEdit = (item) => {
     console.log('✏️ EDIT clicked - Item data:', item); // Debug
     
+    // Cải thiện cách lấy dữ liệu để edit
+    const salePrice = item.sale_price || item.selling_price || "";
     const editFormData = {
-      item_id: item.item_id || "",
-      imei: item.item?.imei || "",
-      product_name: item.item?.product_name || item.item?.tenSanPham || "",
-      sku: item.item?.sku || "",
-      quantity: "1",
+      item_id: item.item_id || item.item?._id || "",
+      imei: item.item?.imei || item.imei || "",
+      product_name: item.item?.product_name || item.item?.tenSanPham || item.product_name || "",
+      sku: item.item?.sku || item.sku || "",
+      quantity: item.quantity || "1",
       warranty: item.warranty || "",
-      sale_price: item.sale_price || "",
+      sale_price: salePrice.toString(), // Đảm bảo là string để hiển thị đúng
       sale_date: item.sale_date?.slice(0, 10) || getToday(),
       buyer_name: item.buyer_name || "",
       buyer_phone: item.buyer_phone || "",
@@ -351,34 +373,61 @@ function XuatHang() {
     };
     
     console.log('✏️ Setting form data for edit:', editFormData); // Debug
+    console.log('✏️ Original sale_price:', item.sale_price, 'Formatted:', salePrice); // Debug
     
     setFormData(editFormData);
     setEditingItemId(item._id);
+    
+    // Set trạng thái phụ kiện dựa trên IMEI (nếu không có IMEI thì có thể là phụ kiện)
+    setIsAccessory(item.is_accessory || (!item.item?.imei && !item.imei));
+    
     setMessage(""); // Clear any previous messages
+    
+    // Scroll to form
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   const handleDelete = async (id) => {
-    if (!confirm("Bạn có chắc muốn xóa giao dịch này?")) return;
+    if (!window.confirm("Bạn có chắc chắn muốn xóa giao dịch này? Hành động này không thể hoàn tác.")) return;
+    
+    setMessage("🔄 Đang xóa giao dịch...");
     
     try {
+      console.log('🗑️ DELETE request for ID:', id); // Debug
+      
       const res = await fetch(`${import.meta.env.VITE_API_URL}/api/xuat-hang/${id}`, {
-        method: "DELETE"
+        method: "DELETE",
+        headers: {
+          "Content-Type": "application/json"
+        }
       });
+      
       const data = await res.json();
+      console.log('🗑️ DELETE response:', data); // Debug
       
       if (res.ok) {
-        setMessage("✅ Đã xóa thành công");
-        fetchSoldItems();
-        fetchAvailableItems();
+        setMessage("✅ Đã xóa giao dịch thành công");
+        
+        // Refresh data
+        await Promise.all([
+          fetchSoldItems(),
+          fetchAvailableItems()
+        ]);
+        
+        // Reset editing state if we're deleting the item being edited
+        if (editingItemId === id) {
+          resetForm();
+        }
+        
         setTimeout(() => setMessage(""), 3000);
       } else {
-        setMessage(`❌ ${data.message}`);
-        setTimeout(() => setMessage(""), 3000);
+        setMessage(`❌ Lỗi xóa: ${data.message || 'Không thể xóa giao dịch'}`);
+        setTimeout(() => setMessage(""), 5000);
       }
     } catch (err) {
-      setMessage("❌ Lỗi khi xóa");
-      setTimeout(() => setMessage(""), 3000);
+      console.error('❌ Delete error:', err);
+      setMessage("❌ Lỗi kết nối khi xóa giao dịch");
+      setTimeout(() => setMessage(""), 5000);
     }
   };
 
@@ -430,11 +479,22 @@ function XuatHang() {
     {
       header: "Giá bán",
       key: "sale_price",
-      render: (item) => (
-        <div className="text-sm font-bold text-green-600">
-          {formatCurrency(item.sale_price)}
-        </div>
-      )
+      render: (item) => {
+        const salePrice = item.sale_price || item.selling_price || 0;
+        return (
+          <div className="text-sm font-bold text-green-600">
+            {salePrice > 0 ? formatCurrency(salePrice) : (
+              <span className="text-red-500 italic">Chưa có giá</span>
+            )}
+            {/* Debug info - có thể xóa sau */}
+            {process.env.NODE_ENV === 'development' && (
+              <div className="text-xs text-gray-400">
+                Raw: {JSON.stringify(item.sale_price)}
+              </div>
+            )}
+          </div>
+        );
+      }
     },
     {
       header: "Ngày bán",
@@ -491,10 +551,18 @@ function XuatHang() {
       key: "actions",
       render: (item) => (
         <div className="flex gap-2">
-          <button onClick={() => handleEdit(item)} className="btn-action-edit">
+          <button 
+            onClick={() => handleEdit(item)} 
+            className="btn-action-edit text-xs px-2 py-1 bg-blue-500 hover:bg-blue-600 text-white rounded transition-colors"
+            title="Chỉnh sửa giao dịch"
+          >
             ✏️ Sửa
           </button>
-          <button onClick={() => handleDelete(item._id)} className="btn-action-delete">
+          <button 
+            onClick={() => handleDelete(item._id)} 
+            className="btn-action-delete text-xs px-2 py-1 bg-red-500 hover:bg-red-600 text-white rounded transition-colors"
+            title="Xóa giao dịch"
+          >
             🗑️ Xóa
           </button>
         </div>
@@ -550,15 +618,40 @@ function XuatHang() {
         message={message}
       >
         <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {/* Checkbox phụ kiện */}
+          <div className="lg:col-span-3">
+            <label className="flex items-center space-x-3 p-4 bg-blue-50 rounded-xl border border-blue-200">
+              <input
+                type="checkbox"
+                checked={isAccessory}
+                onChange={(e) => {
+                  setIsAccessory(e.target.checked);
+                  if (e.target.checked) {
+                    setFormData(prev => ({ ...prev, imei: "" }));
+                  }
+                }}
+                className="w-5 h-5 text-blue-600 rounded focus:ring-blue-500"
+              />
+              <div>
+                <span className="text-sm font-semibold text-blue-900">🔧 Đây là phụ kiện</span>
+                <p className="text-xs text-blue-700">Phụ kiện không cần IMEI (tai nghe, sạc, ốp lưng...)</p>
+              </div>
+            </label>
+          </div>
+
           <div>
-            <label className="block text-sm font-semibold text-gray-700 mb-3">IMEI *</label>
+            <label className="block text-sm font-semibold text-gray-700 mb-3">
+              IMEI {!isAccessory && "*"}
+              {isAccessory && <span className="text-blue-500 text-xs">(Không bắt buộc cho phụ kiện)</span>}
+            </label>
             <input
               name="imei"
-              placeholder="Nhập IMEI để tự động điền thông tin"
+              placeholder={isAccessory ? "Phụ kiện không cần IMEI" : "Nhập IMEI để tự động điền thông tin"}
               value={formData.imei}
               onChange={handleChange}
-              className="form-input"
-              required
+              className={`form-input ${isAccessory ? 'bg-gray-100 text-gray-500' : ''}`}
+              required={!isAccessory}
+              disabled={isAccessory}
             />
           </div>
 

@@ -69,6 +69,9 @@ function NhapHang() {
   const [page, setPage] = useState(1);
   const itemsPerPage = 15;
   const [editingItemId, setEditingItemId] = useState(null);
+  const [importing, setImporting] = useState(false);
+  const [branchModal, setBranchModal] = useState({ open: false, type: 'add', data: null });
+  const [branchForm, setBranchForm] = useState({ name: '', address: '', phone: '', note: '' });
 
   // Stats calculation
   const stats = {
@@ -294,6 +297,197 @@ function NhapHang() {
     } catch (err) {
       console.error("❌ Lỗi khi xuất Excel:", err);
       setMessage("❌ Lỗi khi xuất Excel");
+      setTimeout(() => setMessage(""), 3000);
+    }
+  };
+
+  // Import from Excel function
+  const handleImportExcel = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    setImporting(true);
+    setMessage("🔄 Đang xử lý file Excel...");
+
+    try {
+      const data = await file.arrayBuffer();
+      const workbook = XLSX.read(data);
+      const worksheet = workbook.Sheets[workbook.SheetNames[0]];
+      const jsonData = XLSX.utils.sheet_to_json(worksheet);
+
+      if (jsonData.length === 0) {
+        setMessage("❌ File Excel không có dữ liệu");
+        setImporting(false);
+        setTimeout(() => setMessage(""), 3000);
+        return;
+      }
+
+      let successCount = 0;
+      let errorCount = 0;
+      const errors = [];
+
+      for (let i = 0; i < jsonData.length; i++) {
+        const row = jsonData[i];
+        
+        // Map Excel columns to form data
+        const importData = {
+          imei: row['IMEI'] || row['imei'] || "",
+          product_name: row['Tên sản phẩm'] || row['Ten san pham'] || row['product_name'] || "",
+          sku: row['SKU'] || row['sku'] || "",
+          price_import: row['Giá nhập'] || row['Gia nhap'] || row['price_import'] || "",
+          import_date: row['Ngày nhập'] || row['Ngay nhap'] || row['import_date'] || getToday(),
+          supplier: row['Nhà cung cấp'] || row['Nha cung cap'] || row['supplier'] || "",
+          branch: row['Chi nhánh'] || row['Chi nhanh'] || row['branch'] || formData.branch,
+          note: row['Ghi chú'] || row['Ghi chu'] || row['note'] || "",
+          quantity: row['Số lượng'] || row['So luong'] || row['quantity'] || "1",
+          category: row['Thư mục'] || row['Thu muc'] || row['category'] || formData.category,
+          source: row['Nguồn tiền'] || row['Nguon tien'] || row['source'] || "tien_mat"
+        };
+
+        // Validate required fields
+        if (!importData.product_name || !importData.price_import || !importData.branch) {
+          errors.push(`Hàng ${i + 1}: Thiếu thông tin bắt buộc (Tên sản phẩm, Giá nhập, Chi nhánh)`);
+          errorCount++;
+          continue;
+        }
+
+        // Convert date format if needed
+        if (importData.import_date && typeof importData.import_date === 'number') {
+          const excelDate = new Date((importData.import_date - 25569) * 86400 * 1000);
+          importData.import_date = excelDate.toISOString().slice(0, 10);
+        } else if (importData.import_date && typeof importData.import_date === 'string') {
+          // Try to parse different date formats
+          const dateObj = new Date(importData.import_date);
+          if (!isNaN(dateObj.getTime())) {
+            importData.import_date = dateObj.toISOString().slice(0, 10);
+          } else {
+            importData.import_date = getToday();
+          }
+        }
+
+        try {
+          const res = await fetch(`${import.meta.env.VITE_API_URL}/api/nhap-hang`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ ...importData, tenSanPham: importData.product_name })
+          });
+
+          if (res.ok) {
+            successCount++;
+          } else {
+            const errorData = await res.json();
+            errors.push(`Hàng ${i + 1}: ${errorData.message || 'Lỗi không xác định'}`);
+            errorCount++;
+          }
+        } catch (err) {
+          errors.push(`Hàng ${i + 1}: Lỗi kết nối server`);
+          errorCount++;
+        }
+      }
+
+      // Show results
+      let resultMessage = `✅ Nhập thành công ${successCount} sản phẩm`;
+      if (errorCount > 0) {
+        resultMessage += `, ${errorCount} lỗi`;
+        console.log("Chi tiết lỗi:", errors);
+      }
+      
+      setMessage(resultMessage);
+      fetchItems(); // Reload data
+      setTimeout(() => setMessage(""), 5000);
+
+    } catch (err) {
+      console.error("❌ Lỗi khi xử lý file Excel:", err);
+      setMessage("❌ Lỗi khi xử lý file Excel");
+      setTimeout(() => setMessage(""), 3000);
+    } finally {
+      setImporting(false);
+      // Reset file input
+      e.target.value = '';
+    }
+  };
+
+  // Branch management functions
+  const handleOpenBranchModal = (type, branch = null) => {
+    setBranchModal({ open: true, type, data: branch });
+    if (branch) {
+      setBranchForm({
+        name: branch.name || '',
+        address: branch.address || '',
+        phone: branch.phone || '',
+        note: branch.note || ''
+      });
+    } else {
+      setBranchForm({ name: '', address: '', phone: '', note: '' });
+    }
+  };
+
+  const handleCloseBranchModal = () => {
+    setBranchModal({ open: false, type: 'add', data: null });
+    setBranchForm({ name: '', address: '', phone: '', note: '' });
+  };
+
+  const handleBranchFormChange = (e) => {
+    const { name, value } = e.target;
+    setBranchForm(prev => ({ ...prev, [name]: value }));
+  };
+
+  const handleSaveBranch = async (e) => {
+    e.preventDefault();
+    if (!branchForm.name.trim()) {
+      setMessage("❌ Vui lòng nhập tên chi nhánh");
+      setTimeout(() => setMessage(""), 3000);
+      return;
+    }
+
+    try {
+      const url = branchModal.type === 'edit' 
+        ? `${import.meta.env.VITE_API_URL}/api/branches/${branchModal.data._id}`
+        : `${import.meta.env.VITE_API_URL}/api/branches`;
+      
+      const method = branchModal.type === 'edit' ? 'PUT' : 'POST';
+
+      const res = await fetch(url, {
+        method,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(branchForm)
+      });
+
+      const data = await res.json();
+      if (res.ok) {
+        setMessage(`✅ ${branchModal.type === 'edit' ? 'Cập nhật' : 'Thêm'} chi nhánh thành công`);
+        fetchBranches(); // Reload branches
+        handleCloseBranchModal();
+        setTimeout(() => setMessage(""), 3000);
+      } else {
+        setMessage(`❌ ${data.message || 'Có lỗi xảy ra'}`);
+        setTimeout(() => setMessage(""), 3000);
+      }
+    } catch (err) {
+      setMessage("❌ Lỗi kết nối tới server");
+      setTimeout(() => setMessage(""), 3000);
+    }
+  };
+
+  const handleDeleteBranch = async (branchId) => {
+    if (!window.confirm('Bạn có chắc chắn muốn xóa chi nhánh này?')) return;
+
+    try {
+      const res = await fetch(`${import.meta.env.VITE_API_URL}/api/branches/${branchId}`, {
+        method: 'DELETE'
+      });
+
+      const data = await res.json();
+      if (res.ok) {
+        setMessage("✅ Xóa chi nhánh thành công");
+        fetchBranches(); // Reload branches
+        setTimeout(() => setMessage(""), 3000);
+      } else {
+        setMessage(`❌ ${data.message || 'Không thể xóa chi nhánh'}`);
+        setTimeout(() => setMessage(""), 3000);
+      }
+    } catch (err) {
+      setMessage("❌ Lỗi kết nối tới server");
       setTimeout(() => setMessage(""), 3000);
     }
   };
@@ -537,18 +731,28 @@ function NhapHang() {
 
           <div>
             <label className="block text-sm font-semibold text-gray-700 mb-3">Chi nhánh *</label>
-            <select 
-              name="branch" 
-              value={formData.branch} 
-              onChange={handleChange} 
-              className="form-input"
-              required
-            >
-              <option value="">Chọn chi nhánh</option>
-              {branches.map((b) => (
-                <option key={b._id} value={b.name}>{b.name}</option>
-              ))}
-            </select>
+            <div className="flex gap-2">
+              <select 
+                name="branch" 
+                value={formData.branch} 
+                onChange={handleChange} 
+                className="form-input flex-1"
+                required
+              >
+                <option value="">Chọn chi nhánh</option>
+                {branches.map((b) => (
+                  <option key={b._id} value={b.name}>{b.name}</option>
+                ))}
+              </select>
+              <button
+                type="button"
+                onClick={() => handleOpenBranchModal('add')}
+                className="bg-purple-600 hover:bg-purple-700 text-white px-3 py-2 rounded-lg transition-colors duration-200 text-sm"
+                title="Quản lý chi nhánh"
+              >
+                🏢
+              </button>
+            </div>
           </div>
 
           <div>
@@ -620,7 +824,7 @@ function NhapHang() {
 
       {/* Filters */}
       <FilterCard onClearFilters={clearFilters}>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-7 gap-4">
           <div className="lg:col-span-2">
             <input
               type="text"
@@ -674,7 +878,21 @@ function NhapHang() {
               ))}
             </select>
           </div>
-          <div>
+          <div className="lg:col-span-2 grid grid-cols-2 gap-2">
+            <input
+              type="file"
+              accept=".xlsx,.xls"
+              onChange={handleImportExcel}
+              className="hidden"
+              id="excel-import"
+              disabled={importing}
+            />
+            <label
+              htmlFor="excel-import"
+              className={`w-full ${importing ? 'bg-gray-400' : 'bg-blue-600 hover:bg-blue-700'} text-white px-4 py-2 rounded-lg font-medium transition-colors duration-200 flex items-center justify-center gap-2 cursor-pointer`}
+            >
+              {importing ? '⏳ Đang nhập...' : '📥 Nhập Excel'}
+            </label>
             <button
               onClick={exportToExcel}
               className="w-full bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg font-medium transition-colors duration-200 flex items-center justify-center gap-2"
@@ -696,6 +914,119 @@ function NhapHang() {
         totalItems={filteredItems.length}
         onPageChange={setPage}
       />
+
+      {/* Branch Management Modal */}
+      {branchModal.open && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-2xl p-8 max-w-md w-full mx-4">
+            <h3 className="text-xl font-bold text-gray-900 mb-6">
+              {branchModal.type === 'edit' ? '✏️ Chỉnh sửa chi nhánh' : '➕ Thêm chi nhánh mới'}
+            </h3>
+            
+            <form onSubmit={handleSaveBranch} className="space-y-4">
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">Tên chi nhánh *</label>
+                <input
+                  type="text"
+                  name="name"
+                  value={branchForm.name}
+                  onChange={handleBranchFormChange}
+                  className="form-input"
+                  placeholder="Nhập tên chi nhánh"
+                  required
+                />
+              </div>
+              
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">Địa chỉ</label>
+                <input
+                  type="text"
+                  name="address"
+                  value={branchForm.address}
+                  onChange={handleBranchFormChange}
+                  className="form-input"
+                  placeholder="Nhập địa chỉ chi nhánh"
+                />
+              </div>
+              
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">Số điện thoại</label>
+                <input
+                  type="text"
+                  name="phone"
+                  value={branchForm.phone}
+                  onChange={handleBranchFormChange}
+                  className="form-input"
+                  placeholder="Nhập số điện thoại"
+                />
+              </div>
+              
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">Ghi chú</label>
+                <textarea
+                  name="note"
+                  value={branchForm.note}
+                  onChange={handleBranchFormChange}
+                  className="form-input"
+                  placeholder="Ghi chú thêm"
+                  rows="3"
+                />
+              </div>
+              
+              <div className="flex gap-3 pt-4">
+                <button
+                  type="button"
+                  onClick={handleCloseBranchModal}
+                  className="flex-1 bg-gray-500 hover:bg-gray-600 text-white py-3 px-4 rounded-xl font-medium transition-colors"
+                >
+                  ❌ Hủy
+                </button>
+                <button
+                  type="submit"
+                  className="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-3 px-4 rounded-xl font-medium transition-colors"
+                >
+                  {branchModal.type === 'edit' ? '💾 Cập nhật' : '➕ Thêm mới'}
+                </button>
+              </div>
+            </form>
+
+            {/* Branch List for Management */}
+            {branchModal.type === 'add' && branches.length > 0 && (
+              <div className="mt-6 pt-6 border-t border-gray-200">
+                <h4 className="text-lg font-semibold text-gray-900 mb-4">📋 Danh sách chi nhánh hiện tại</h4>
+                <div className="space-y-2 max-h-48 overflow-y-auto">
+                  {branches.map((branch) => (
+                    <div key={branch._id} className="flex items-center justify-between bg-gray-50 p-3 rounded-lg">
+                      <div>
+                        <div className="font-medium text-gray-900">{branch.name}</div>
+                        {branch.address && (
+                          <div className="text-sm text-gray-500">{branch.address}</div>
+                        )}
+                      </div>
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          onClick={() => handleOpenBranchModal('edit', branch)}
+                          className="bg-blue-500 hover:bg-blue-600 text-white px-2 py-1 rounded text-xs"
+                        >
+                          ✏️
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteBranch(branch._id)}
+                          className="bg-red-500 hover:bg-red-600 text-white px-2 py-1 rounded text-xs"
+                        >
+                          🗑️
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </Layout>
   );
 }

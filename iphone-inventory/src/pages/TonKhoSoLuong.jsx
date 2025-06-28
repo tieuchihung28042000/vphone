@@ -389,7 +389,12 @@ function TonKhoSoLuong() {
       {selectedSKU && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded-2xl p-8 max-w-6xl w-full mx-4 max-h-[80vh] overflow-y-auto">
-            <h3 className="text-xl font-bold text-gray-900 mb-6">📱 Chi tiết IMEI - SKU: {selectedSKU}</h3>
+            <div className="flex items-center justify-between mb-6">
+              <h3 className="text-xl font-bold text-gray-900">📱 Chi tiết IMEI - SKU: {selectedSKU}</h3>
+              <div className="text-sm text-gray-600">
+                Tổng cộng: <span className="font-semibold text-blue-600">{imeiList.length}</span> IMEI
+              </div>
+            </div>
             
             {imeiDetails.length === 0 ? (
               <div className="text-center py-8">
@@ -403,10 +408,10 @@ function TonKhoSoLuong() {
                     <tr>
                       <th className="px-4 py-3 text-left text-xs font-bold text-gray-600 uppercase">IMEI</th>
                       <th className="px-4 py-3 text-left text-xs font-bold text-gray-600 uppercase">Tên sản phẩm</th>
+                      <th className="px-4 py-3 text-left text-xs font-bold text-gray-600 uppercase">Chi nhánh</th>
                       <th className="px-4 py-3 text-left text-xs font-bold text-gray-600 uppercase">Giá nhập</th>
                       <th className="px-4 py-3 text-left text-xs font-bold text-gray-600 uppercase">Ngày nhập</th>
                       <th className="px-4 py-3 text-left text-xs font-bold text-gray-600 uppercase">Nhà cung cấp</th>
-                      <th className="px-4 py-3 text-left text-xs font-bold text-gray-600 uppercase">Nhập bởi</th>
                       <th className="px-4 py-3 text-left text-xs font-bold text-gray-600 uppercase">Trạng thái</th>
                     </tr>
                   </thead>
@@ -415,26 +420,38 @@ function TonKhoSoLuong() {
                       <tr key={index} className="border-b border-gray-200 hover:bg-gray-50">
                         <td className="px-4 py-3">
                           <div className="font-mono text-sm font-semibold text-blue-600">{item.imei}</div>
+                          <div className="text-xs text-gray-400 mt-1">#{item._id?.slice(-6) || 'N/A'}</div>
                         </td>
                         <td className="px-4 py-3">
-                          <div className="text-sm font-semibold text-gray-900">{item.product_name}</div>
+                          <div className="text-sm font-semibold text-gray-900">{item.product_name || item.tenSanPham}</div>
                           <div className="text-xs text-gray-500">{item.category}</div>
+                          {item.sku && <div className="text-xs text-blue-500">SKU: {item.sku}</div>}
+                        </td>
+                        <td className="px-4 py-3">
+                          <span className="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-blue-100 text-blue-800">
+                            🏢 {item.branch || 'Không rõ'}
+                          </span>
                         </td>
                         <td className="px-4 py-3">
                           <div className="text-sm font-semibold text-green-600">
-                            {formatNumber(item.price_import)}đ
+                            {formatNumber(item.price_import || 0)}đ
                           </div>
                         </td>
                         <td className="px-4 py-3">
                           <div className="text-sm text-gray-600">
                             {item.import_date ? new Date(item.import_date).toLocaleDateString('vi-VN') : 'Không rõ'}
                           </div>
+                          {item.import_date && (
+                            <div className="text-xs text-gray-400">
+                              {new Date(item.import_date).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}
+                            </div>
+                          )}
                         </td>
                         <td className="px-4 py-3">
                           <div className="text-sm text-gray-700">{item.supplier || 'Không rõ'}</div>
-                        </td>
-                        <td className="px-4 py-3">
-                          <div className="text-sm text-gray-700">{item.imported_by}</div>
+                          {item.note && (
+                            <div className="text-xs text-gray-500 italic">{item.note}</div>
+                          )}
                         </td>
                         <td className="px-4 py-3">
                           <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
@@ -445,15 +462,28 @@ function TonKhoSoLuong() {
                             {item.status === 'sold' ? '✅ Đã bán' : '📦 Tồn kho'}
                           </span>
                           {item.status === 'sold' && (
-                            <div className="text-xs text-gray-500 mt-1">
-                              Bán: {item.sold_date ? new Date(item.sold_date).toLocaleDateString('vi-VN') : ''}
-                              {item.customer_name && <br />}
-                              {item.customer_name && `KH: ${item.customer_name}`}
-                              {item.profit && (
-                                <div className="text-blue-600 font-semibold">
-                                  LN: +{formatNumber(item.profit)}đ
+                            <div className="text-xs text-gray-500 mt-1 space-y-1">
+                              {item.sold_date && (
+                                <div>📅 Bán: {new Date(item.sold_date).toLocaleDateString('vi-VN')}</div>
+                              )}
+                              {item.customer_name && (
+                                <div>👤 KH: {item.customer_name}</div>
+                              )}
+                              {item.sale_price && (
+                                <div className="text-green-600 font-semibold">
+                                  💰 Giá bán: {formatNumber(item.sale_price)}đ
                                 </div>
                               )}
+                              {item.sale_price && item.price_import && (
+                                <div className="text-blue-600 font-semibold">
+                                  📈 Lợi nhuận: +{formatNumber(item.sale_price - item.price_import)}đ
+                                </div>
+                              )}
+                            </div>
+                          )}
+                          {item.status !== 'sold' && (
+                            <div className="text-xs text-green-600 mt-1">
+                              🏪 Có sẵn tại {item.branch || 'cửa hàng'}
                             </div>
                           )}
                         </td>

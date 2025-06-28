@@ -238,13 +238,20 @@ export default function Cashbook() {
   };
 
   // Chỉnh sửa tổng quỹ
-  const handleAdjustBalance = async () => {
+  const handleAdjustBalance = async (e) => {
+    e.preventDefault();
+    
+    if (!balanceForm.branch) {
+      alert('❌ Vui lòng chọn chi nhánh');
+      return;
+    }
+    
     try {
       const response = await fetch(`${import.meta.env.VITE_API_URL}/api/cashbook/adjust-balance`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          branch: selectedBranch,
+          branch: balanceForm.branch, // Sử dụng chi nhánh từ form
           tien_mat: balanceForm.tien_mat ? Number(unformatNumberInput(balanceForm.tien_mat)) : undefined,
           the: balanceForm.the ? Number(unformatNumberInput(balanceForm.the)) : undefined,
           vi_dien_tu: balanceForm.vi_dien_tu ? Number(unformatNumberInput(balanceForm.vi_dien_tu)) : undefined,
@@ -256,11 +263,15 @@ export default function Cashbook() {
       const result = await response.json();
       
       if (response.ok) {
-        alert('✅ ' + result.message);
+        alert(`✅ Đã cập nhật số dư cho chi nhánh ${balanceForm.branch}: ${result.message}`);
         setEditBalanceModal(false);
-        setBalanceForm({ tien_mat: '', the: '', vi_dien_tu: '', note: '' });
-        loadBalanceBySource();
-        loadTransactions();
+        setBalanceForm({ branch: '', tien_mat: '', the: '', vi_dien_tu: '', note: '' });
+        
+        // Reload dữ liệu nếu đang xem chi nhánh vừa cập nhật
+        if (selectedBranch === balanceForm.branch) {
+          loadBalanceBySource();
+          loadTransactions();
+        }
       } else {
         alert('❌ ' + result.message);
       }
@@ -273,6 +284,7 @@ export default function Cashbook() {
   // Mở modal chỉnh sửa tổng quỹ
   const handleOpenEditBalance = () => {
     setBalanceForm({
+      branch: selectedBranch || '', // Sử dụng chi nhánh đang chọn làm mặc định
       tien_mat: balanceBySource.tien_mat.toString(),
       the: balanceBySource.the.toString(),
       vi_dien_tu: balanceBySource.vi_dien_tu.toString(),
@@ -569,15 +581,86 @@ export default function Cashbook() {
           </button>
         </div>
       </div>
+
+      {/* Branch Selector - chỉ hiển thị khi view chi nhánh */}
+      {viewMode === 'branch' && (
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6 mb-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className="text-lg font-bold text-gray-900 mb-2">📍 Chọn chi nhánh</h3>
+              <p className="text-sm text-gray-600">Xem sổ quỹ theo từng chi nhánh cụ thể</p>
+            </div>
+            <div className="flex-1 max-w-xs ml-6">
+              {loadingBranches ? (
+                <div className="flex items-center justify-center py-3">
+                  <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-blue-600"></div>
+                  <span className="ml-2 text-sm text-gray-600">Đang tải...</span>
+                </div>
+              ) : (
+                <select
+                  value={selectedBranch}
+                  onChange={(e) => {
+                    setSelectedBranch(e.target.value);
+                    // Reload data khi chọn chi nhánh mới
+                    setTimeout(() => {
+                      loadTransactions();
+                      loadBalanceBySource();
+                    }, 100);
+                  }}
+                  className="form-input text-lg font-semibold"
+                >
+                  <option value="">-- Chọn chi nhánh --</option>
+                  {branches.map((branch) => (
+                    <option key={branch} value={branch}>
+                      🏢 Chi nhánh {branch}
+                    </option>
+                  ))}
+                </select>
+              )}
+            </div>
+          </div>
+          
+          {/* Hiển thị thông tin chi nhánh đang chọn */}
+          {selectedBranch && (
+            <div className="mt-4 p-4 bg-blue-50 rounded-xl border border-blue-200">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-blue-600 rounded-full flex items-center justify-center">
+                  <span className="text-white font-bold">🏢</span>
+                </div>
+                <div>
+                  <h4 className="text-lg font-bold text-blue-900">Chi nhánh {selectedBranch}</h4>
+                  <p className="text-sm text-blue-700">Đang xem sổ quỹ của chi nhánh này</p>
+                </div>
+              </div>
+            </div>
+          )}
+          
+          {/* Cảnh báo nếu chưa chọn chi nhánh */}
+          {!selectedBranch && (
+            <div className="mt-4 p-4 bg-orange-50 rounded-xl border border-orange-200">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-orange-500 rounded-full flex items-center justify-center">
+                  <span className="text-white font-bold">⚠️</span>
+                </div>
+                <div>
+                  <h4 className="text-lg font-bold text-orange-900">Chưa chọn chi nhánh</h4>
+                  <p className="text-sm text-orange-700">Vui lòng chọn chi nhánh để xem sổ quỹ</p>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
       {/* Stats Dashboard */}
       {viewMode === 'branch' ? (
+        selectedBranch && (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <StatsCard
           title="Tổng số dư"
           value={`${formatMoney(totalBalance)}`}
           icon="💰"
           color="blue"
-          subtitle="Tất cả nguồn tiền"
+          subtitle="👆 Nhấn để chỉnh sửa số dư"
           onClick={handleOpenEditBalance}
         />
         <StatsCard
@@ -602,6 +685,7 @@ export default function Cashbook() {
           subtitle={todayIncome - todayExpense >= 0 ? "Tích cực" : "Tiêu cực"}
         />
         </div>
+        )
       ) : (
         // Sổ quỹ tổng - Hiển thị tổng hợp tất cả chi nhánh
         <div className="space-y-6">
@@ -670,8 +754,8 @@ export default function Cashbook() {
         </div>
       )}
 
-      {/* Balance by Source - chỉ hiển thị khi view chi nhánh */}
-      {viewMode === 'branch' && (
+      {/* Balance by Source - chỉ hiển thị khi view chi nhánh và đã chọn chi nhánh */}
+      {viewMode === 'branch' && selectedBranch && (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           <StatsCard
             title="💵 Tiền mặt"
@@ -697,8 +781,8 @@ export default function Cashbook() {
         </div>
       )}
 
-      {/* Form Card - chỉ hiển thị khi view chi nhánh */}
-      {viewMode === 'branch' && (
+      {/* Form Card - chỉ hiển thị khi view chi nhánh và đã chọn chi nhánh */}
+      {viewMode === 'branch' && selectedBranch && (
         <FormCard
           title={modal.type === 'edit' ? '✏️ Chỉnh sửa giao dịch' : '➕ Thêm giao dịch mới'}
           subtitle="Ghi chép thu chi và quản lý tài chính"
@@ -893,71 +977,109 @@ export default function Cashbook() {
         </div>
       </FilterCard>
 
-      {/* Data Table */}
-      <DataTable
-        title="📋 Lịch sử giao dịch"
-        data={transactions.map(item => ({ ...item, id: item._id }))}
-        columns={tableColumns}
-        currentPage={pagination.page}
-        totalPages={Math.ceil(pagination.total / pagination.limit)}
-        itemsPerPage={pagination.limit}
-        totalItems={pagination.total}
-        onPageChange={(newPage) => {
-          setPagination(prev => ({ ...prev, page: newPage }));
-        }}
-      />
+      {/* Data Table - chỉ hiển thị khi view tổng hoặc đã chọn chi nhánh */}
+      {(viewMode === 'total' || (viewMode === 'branch' && selectedBranch)) && (
+        <DataTable
+          title={viewMode === 'branch' ? `📋 Lịch sử giao dịch - Chi nhánh ${selectedBranch}` : "📋 Lịch sử giao dịch - Tất cả chi nhánh"}
+          data={transactions.map(item => ({ ...item, id: item._id }))}
+          columns={tableColumns}
+          currentPage={pagination.page}
+          totalPages={Math.ceil(pagination.total / pagination.limit)}
+          itemsPerPage={pagination.limit}
+          totalItems={pagination.total}
+          onPageChange={(newPage) => {
+            setPagination(prev => ({ ...prev, page: newPage }));
+          }}
+        />
+      )}
 
       {/* Edit Balance Modal */}
       {editBalanceModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-2xl p-8 max-w-md w-full mx-4">
-            <h3 className="text-xl font-bold text-gray-900 mb-6">🔧 Chỉnh sửa số dư</h3>
-            <form onSubmit={handleAdjustBalance} className="space-y-4">
+          <div className="bg-white rounded-2xl p-8 max-w-lg w-full mx-4">
+            <h3 className="text-xl font-bold text-gray-900 mb-6">🔧 Chỉnh sửa số dư theo chi nhánh</h3>
+            <form onSubmit={handleAdjustBalance} className="space-y-6">
+              {/* Dropdown chọn chi nhánh */}
               <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">💵 Tiền mặt</label>
-              <input
-                  type="text"
-                  value={formatNumberInput(balanceForm.tien_mat)}
-                  onChange={(e) => setBalanceForm(prev => ({ ...prev, tien_mat: unformatNumberInput(e.target.value) }))}
+                <label className="block text-sm font-semibold text-gray-700 mb-3">🏢 Chi nhánh *</label>
+                <select
+                  value={balanceForm.branch || ''}
+                  onChange={(e) => setBalanceForm(prev => ({ ...prev, branch: e.target.value }))}
                   className="form-input"
-                  placeholder="0"
-              />
-            </div>
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">💳 Thẻ</label>
-              <input
-                  type="text"
-                  value={formatNumberInput(balanceForm.the)}
-                  onChange={(e) => setBalanceForm(prev => ({ ...prev, the: unformatNumberInput(e.target.value) }))}
-                  className="form-input"
-                  placeholder="0"
-              />
-            </div>
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">📱 Ví điện tử</label>
-                <input
-                  type="text"
-                  value={formatNumberInput(balanceForm.vi_dien_tu)}
-                  onChange={(e) => setBalanceForm(prev => ({ ...prev, vi_dien_tu: unformatNumberInput(e.target.value) }))}
-                  className="form-input"
-                  placeholder="0"
-              />
-            </div>
+                  required
+                >
+                  <option value="">-- Chọn chi nhánh để chỉnh sửa số dư --</option>
+                  {branches.map((branch) => (
+                    <option key={branch} value={branch}>{branch}</option>
+                  ))}
+                </select>
+                <p className="text-xs text-gray-500 mt-2">
+                  💡 Mỗi chi nhánh sẽ có số dư riêng biệt
+                </p>
+              </div>
+
+              {/* Các trường số dư chỉ hiển thị khi đã chọn chi nhánh */}
+              {balanceForm.branch && (
+                <>
+                  <div className="bg-blue-50 p-4 rounded-xl border border-blue-200">
+                    <h4 className="font-semibold text-blue-900 mb-3">
+                      💰 Chỉnh sửa số dư cho chi nhánh: {balanceForm.branch}
+                    </h4>
+                    
+                    <div className="space-y-4">
+                      <div>
+                        <label className="block text-sm font-semibold text-gray-700 mb-2">💵 Tiền mặt</label>
+                        <input
+                          type="text"
+                          value={formatNumberInput(balanceForm.tien_mat)}
+                          onChange={(e) => setBalanceForm(prev => ({ ...prev, tien_mat: unformatNumberInput(e.target.value) }))}
+                          className="form-input"
+                          placeholder="0"
+                        />
+                      </div>
+                      
+                      <div>
+                        <label className="block text-sm font-semibold text-gray-700 mb-2">💳 Thẻ</label>
+                        <input
+                          type="text"
+                          value={formatNumberInput(balanceForm.the)}
+                          onChange={(e) => setBalanceForm(prev => ({ ...prev, the: unformatNumberInput(e.target.value) }))}
+                          className="form-input"
+                          placeholder="0"
+                        />
+                      </div>
+                      
+                      <div>
+                        <label className="block text-sm font-semibold text-gray-700 mb-2">📱 Ví điện tử</label>
+                        <input
+                          type="text"
+                          value={formatNumberInput(balanceForm.vi_dien_tu)}
+                          onChange={(e) => setBalanceForm(prev => ({ ...prev, vi_dien_tu: unformatNumberInput(e.target.value) }))}
+                          className="form-input"
+                          placeholder="0"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </>
+              )}
+              
               <div className="flex gap-3 pt-4">
-              <button
+                <button
                   type="button"
                   onClick={() => setEditBalanceModal(false)}
                   className="flex-1 bg-gray-500 hover:bg-gray-600 text-white py-3 rounded-xl transition-all"
-              >
-                ❌ Hủy
-              </button>
+                >
+                  ❌ Hủy
+                </button>
                 <button
                   type="submit"
-                  className="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-3 rounded-xl transition-all"
+                  disabled={!balanceForm.branch}
+                  className="flex-1 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed text-white py-3 rounded-xl transition-all"
                 >
                   ✅ Cập nhật
                 </button>
-            </div>
+              </div>
             </form>
           </div>
         </div>
