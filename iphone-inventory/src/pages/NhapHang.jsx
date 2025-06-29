@@ -72,6 +72,10 @@ function NhapHang() {
   const [importing, setImporting] = useState(false);
   const [branchModal, setBranchModal] = useState({ open: false, type: 'add', data: null });
   const [branchForm, setBranchForm] = useState({ name: '', address: '', phone: '', note: '' });
+  
+  // ✅ Thêm state cho quản lý danh mục
+  const [categoryModal, setCategoryModal] = useState({ open: false, type: 'add', data: null });
+  const [categoryForm, setCategoryForm] = useState({ name: '', description: '' });
 
   // ✅ Filter and pagination - Moved up to use in stats
   const filteredItems = items.filter((item) => {
@@ -101,12 +105,16 @@ function NhapHang() {
     return matchSearch && matchDate && matchBranch && matchCategory && matchSupplier;
   });
 
-  // ✅ Stats calculation - Cập nhật theo bộ lọc
+  // ✅ Stats calculation - Cập nhật theo bộ lọc và hiển thị số liệu chính xác
   const stats = {
     totalItems: filteredItems.length,
     totalValue: filteredItems.reduce((sum, item) => sum + (item.price_import * (item.quantity || 1)), 0),
     soldItems: filteredItems.filter(item => item.status === 'sold').length,
-    inStock: filteredItems.filter(item => item.status !== 'sold').length
+    inStock: filteredItems.filter(item => item.status !== 'sold').length,
+    // ✅ Thêm stats so sánh với xuất hàng
+    totalItemsAll: items.length, // Tổng tất cả items không filter
+    totalSoldAll: items.filter(item => item.status === 'sold').length,
+    totalInStockAll: items.filter(item => item.status !== 'sold').length
   };
 
   // API functions
@@ -520,6 +528,83 @@ function NhapHang() {
     }
   };
 
+  // ✅ Thêm các function quản lý danh mục
+  const handleOpenCategoryModal = (type, category = null) => {
+    setCategoryModal({ open: true, type, data: category });
+    if (type === 'edit' && category) {
+      setCategoryForm({
+        name: category.name || '',
+        description: category.description || ''
+      });
+    } else {
+      setCategoryForm({ name: '', description: '' });
+    }
+  };
+
+  const handleCloseCategoryModal = () => {
+    setCategoryModal({ open: false, type: 'add', data: null });
+    setCategoryForm({ name: '', description: '' });
+  };
+
+  const handleCategoryFormChange = (e) => {
+    const { name, value } = e.target;
+    setCategoryForm(prev => ({ ...prev, [name]: value }));
+  };
+
+  const handleSaveCategory = async (e) => {
+    e.preventDefault();
+    
+    try {
+      const method = categoryModal.type === 'edit' ? 'PUT' : 'POST';
+      const url = categoryModal.type === 'edit' 
+        ? `${import.meta.env.VITE_API_URL}/api/categories/${categoryModal.data._id}`
+        : `${import.meta.env.VITE_API_URL}/api/categories`;
+      
+      const res = await fetch(url, {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(categoryForm),
+      });
+      
+      if (res.ok) {
+        setMessage(`✅ ${categoryModal.type === 'edit' ? 'Cập nhật' : 'Thêm'} danh mục thành công`);
+        await fetchCategories();
+        handleCloseCategoryModal();
+        setTimeout(() => setMessage(''), 3000);
+      } else {
+        setMessage('❌ Lỗi khi lưu danh mục');
+        setTimeout(() => setMessage(''), 5000);
+      }
+    } catch (err) {
+      console.error('Save category error:', err);
+      setMessage('❌ Lỗi kết nối khi lưu danh mục');
+      setTimeout(() => setMessage(''), 5000);
+    }
+  };
+
+  const handleDeleteCategory = async (categoryId) => {
+    if (!window.confirm('Bạn có chắc chắn muốn xóa danh mục này?')) return;
+    
+    try {
+      const res = await fetch(`${import.meta.env.VITE_API_URL}/api/categories/${categoryId}`, {
+        method: 'DELETE',
+      });
+      
+      if (res.ok) {
+        setMessage('✅ Đã xóa danh mục thành công');
+        await fetchCategories();
+        setTimeout(() => setMessage(''), 3000);
+      } else {
+        setMessage('❌ Lỗi khi xóa danh mục');
+        setTimeout(() => setMessage(''), 5000);
+      }
+    } catch (err) {
+      console.error('Delete category error:', err);
+      setMessage('❌ Lỗi kết nối khi xóa danh mục');
+      setTimeout(() => setMessage(''), 5000);
+    }
+  };
+
   // Pagination
   const paginatedItems = filteredItems.slice((page - 1) * itemsPerPage, page * itemsPerPage);
   const totalPages = Math.ceil(filteredItems.length / itemsPerPage);
@@ -648,28 +733,28 @@ function NhapHang() {
           value={stats.totalItems.toLocaleString()}
           icon="📦"
           color="blue"
-          subtitle="Tất cả sản phẩm nhập"
+          subtitle={`${stats.totalItemsAll.toLocaleString()} tổng (${filteredItems.length !== items.length ? 'đã lọc' : 'tất cả'})`}
         />
         <StatsCard
           title="Giá trị nhập"
           value={formatCurrency(stats.totalValue)}
           icon="💰"
           color="green"
-          subtitle="Tổng tiền đã nhập"
+          subtitle="Theo bộ lọc hiện tại"
         />
         <StatsCard
           title="Đã bán"
           value={stats.soldItems.toLocaleString()}
           icon="✅"
           color="purple"
-          subtitle="Sản phẩm đã xuất"
+          subtitle={`${stats.totalSoldAll.toLocaleString()} tổng đã bán`}
         />
         <StatsCard
           title="Tồn kho"
           value={stats.inStock.toLocaleString()}
           icon="📋"
           color="orange"
-          subtitle="Còn lại trong kho"
+          subtitle={`${stats.totalInStockAll.toLocaleString()} tổng còn lại`}
         />
       </div>
 
@@ -782,18 +867,28 @@ function NhapHang() {
 
           <div>
             <label className="block text-sm font-semibold text-gray-700 mb-3">Thư mục *</label>
-            <select 
-              name="category" 
-              value={formData.category} 
-              onChange={handleChange} 
-              className="form-input"
-              required
-            >
-              <option value="">Chọn thư mục</option>
-              {categories.map((c) => (
-                <option key={c._id} value={c.name}>{c.name}</option>
-              ))}
-            </select>
+            <div className="flex gap-2">
+              <select 
+                name="category" 
+                value={formData.category} 
+                onChange={handleChange} 
+                className="form-input flex-1"
+                required
+              >
+                <option value="">Chọn thư mục</option>
+                {categories.map((c) => (
+                  <option key={c._id} value={c.name}>{c.name}</option>
+                ))}
+              </select>
+              <button
+                type="button"
+                onClick={() => handleOpenCategoryModal('add')}
+                className="bg-orange-600 hover:bg-orange-700 text-white px-3 py-2 rounded-lg transition-colors duration-200 text-sm"
+                title="Quản lý danh mục"
+              >
+                📁
+              </button>
+            </div>
           </div>
 
           <div>
@@ -1039,6 +1134,95 @@ function NhapHang() {
                         <button
                           type="button"
                           onClick={() => handleDeleteBranch(branch._id)}
+                          className="bg-red-500 hover:bg-red-600 text-white px-2 py-1 rounded text-xs"
+                        >
+                          🗑️
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Category Management Modal */}
+      {categoryModal.open && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-2xl p-8 max-w-md w-full mx-4">
+            <h3 className="text-xl font-bold text-gray-900 mb-6">
+              {categoryModal.type === 'edit' ? '✏️ Chỉnh sửa danh mục' : '➕ Thêm danh mục mới'}
+            </h3>
+            
+            <form onSubmit={handleSaveCategory} className="space-y-4">
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">Tên danh mục *</label>
+                <input
+                  type="text"
+                  name="name"
+                  value={categoryForm.name}
+                  onChange={handleCategoryFormChange}
+                  className="form-input"
+                  placeholder="Nhập tên danh mục"
+                  required
+                />
+              </div>
+              
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">Mô tả</label>
+                <textarea
+                  name="description"
+                  value={categoryForm.description}
+                  onChange={handleCategoryFormChange}
+                  className="form-input"
+                  placeholder="Mô tả danh mục"
+                  rows="3"
+                />
+              </div>
+              
+              <div className="flex gap-3 pt-4">
+                <button
+                  type="button"
+                  onClick={handleCloseCategoryModal}
+                  className="flex-1 bg-gray-500 hover:bg-gray-600 text-white py-3 px-4 rounded-xl font-medium transition-colors"
+                >
+                  ❌ Hủy
+                </button>
+                <button
+                  type="submit"
+                  className="flex-1 bg-orange-600 hover:bg-orange-700 text-white py-3 px-4 rounded-xl font-medium transition-colors"
+                >
+                  {categoryModal.type === 'edit' ? '💾 Cập nhật' : '➕ Thêm mới'}
+                </button>
+              </div>
+            </form>
+
+            {/* Category List for Management */}
+            {categoryModal.type === 'add' && categories.length > 0 && (
+              <div className="mt-6 pt-6 border-t border-gray-200">
+                <h4 className="text-lg font-semibold text-gray-900 mb-4">📁 Danh sách danh mục hiện tại</h4>
+                <div className="space-y-2 max-h-48 overflow-y-auto">
+                  {categories.map((category) => (
+                    <div key={category._id} className="flex items-center justify-between bg-gray-50 p-3 rounded-lg">
+                      <div>
+                        <div className="font-medium text-gray-900">{category.name}</div>
+                        {category.description && (
+                          <div className="text-sm text-gray-500">{category.description}</div>
+                        )}
+                      </div>
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          onClick={() => handleOpenCategoryModal('edit', category)}
+                          className="bg-orange-500 hover:bg-orange-600 text-white px-2 py-1 rounded text-xs"
+                        >
+                          ✏️
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteCategory(category._id)}
                           className="bg-red-500 hover:bg-red-600 text-white px-2 py-1 rounded text-xs"
                         >
                           🗑️

@@ -28,7 +28,7 @@ function BaoCao() {
   const [data, setData] = useState(null);
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
-  const [filter, setFilter] = useState("Hôm nay");
+  const [filter, setFilter] = useState("Tất cả"); // Đổi mặc định thành "Tất cả" để hiển thị dữ liệu
   const [branch, setBranch] = useState("all");
 
   const [loading, setLoading] = useState(false);
@@ -48,6 +48,7 @@ function BaoCao() {
     ],
     "Tháng này": [new Date(new Date().getFullYear(), new Date().getMonth(), 1), new Date()],
     "Năm nay": [new Date(new Date().getFullYear(), 0, 1), new Date()],
+    "Tất cả": [new Date("2020-01-01"), new Date("2030-12-31")], // Khoảng thời gian rất rộng để lấy tất cả
   };
 
   // ✅ Load branches từ API
@@ -60,44 +61,28 @@ function BaoCao() {
       if (response.ok && data.length > 0) {
         const branchNames = data.map(branch => branch.name);
         setBranches(branchNames);
-        
-        // ✅ Thiết lập chi nhánh mặc định là chi nhánh đầu tiên
-        if (branch === 'all') {
-          const defaultBranch = branchNames[0];
-          setBranch(defaultBranch);
-          console.log('📊 Set default branch to:', defaultBranch); // Debug
-        }
+        console.log('📊 Loaded branches:', branchNames); // Debug
       } else {
         // Fallback nếu không load được
         const fallbackBranches = ['Dĩ An', 'Quận 9'];
         setBranches(fallbackBranches);
-        
-        // ✅ Thiết lập chi nhánh mặc định
-        if (branch === 'all') {
-          setBranch(fallbackBranches[0]);
-          console.log('📊 Set fallback branch to:', fallbackBranches[0]); // Debug
-        }
+        console.log('📊 Using fallback branches:', fallbackBranches); // Debug
       }
     } catch (error) {
       console.error('Error loading branches:', error);
       // Fallback nếu có lỗi
       const fallbackBranches = ['Dĩ An', 'Quận 9'];
       setBranches(fallbackBranches);
-      
-      // ✅ Thiết lập chi nhánh mặc định
-      if (branch === 'all') {
-        setBranch(fallbackBranches[0]);
-        console.log('📊 Set error fallback branch to:', fallbackBranches[0]); // Debug
-      }
+      console.log('📊 Using error fallback branches:', fallbackBranches); // Debug
     }
   };
 
   // API call to fetch report data
   const fetchData = async (fromDate, toDate, branchParam) => {
-    // ✅ Tránh load nhiều lần khi branch chưa được set
-    if (!branchParam || branchParam === 'all') {
-      console.log('⚠️ Skipping fetchData - branch not set or is "all":', branchParam);
-      return;
+    // ✅ Cho phép lọc tất cả chi nhánh - bỏ điều kiện này vì nó ngăn load dữ liệu
+    if (!branchParam) {
+      console.log('⚠️ Branch not set, using "all":', branchParam);
+      branchParam = "all"; // Đặt mặc định là "all"
     }
     
     console.log('📊 Fetching report data:', { fromDate, toDate, branch: branchParam }); // Debug
@@ -130,7 +115,7 @@ function BaoCao() {
   useEffect(() => {
     // ✅ Thêm timeout nhỏ để tránh load nhiều lần khi chuyển chi nhánh
     const timeoutId = setTimeout(() => {
-      if (filter !== "Tùy chọn" && branch && branch !== 'all') {
+      if (filter !== "Tùy chọn" && branch && predefined[filter]) {
         console.log('📊 useEffect triggered:', { filter, branch }); // Debug
         const [f, t] = predefined[filter];
         const fromDate = f.toISOString().slice(0, 10);
@@ -166,9 +151,11 @@ function BaoCao() {
 
   // Clear filters function
   const clearFilters = () => {
-    setFilter("Hôm nay");
+    setFilter("Tất cả"); // Đổi về "Tất cả" để hiển thị dữ liệu
     setBranch("all");
   };
+
+
 
   // Table columns definition
   const tableColumns = [
@@ -366,7 +353,7 @@ function BaoCao() {
           onChange={(e) => setFilter(e.target.value)}
               className="form-input"
         >
-          {["Hôm nay", "Hôm qua", "Tuần này", "Tháng này", "Năm nay", "Tùy chọn"].map((option) => (
+          {["Hôm nay", "Hôm qua", "Tuần này", "Tháng này", "Năm nay", "Tất cả", "Tùy chọn"].map((option) => (
                 <option key={option} value={option}>{option}</option>
           ))}
         </select>
@@ -424,7 +411,11 @@ function BaoCao() {
             </button>
           </div>
         )}
+
+
       </FilterCard>
+
+
 
       {/* No Data State */}
       {!data && !loading && (

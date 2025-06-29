@@ -18,12 +18,8 @@ router.get('/bao-cao-loi-nhuan', async (req, res) => {
     };
     if (branch && branch !== 'all') query.branch = branch;
 
-    // LẤY TỪ Inventory với status = 'sold', KHÔNG PHẢI ExportHistory!
-    const soldItems = await Inventory.find({ 
-      status: 'sold',
-      sold_date: query.sold_date,
-      ...(query.branch ? { branch: query.branch } : {})
-    });
+    // ✅ LẤY TỪ ExportHistory để có đầy đủ 153 records
+    const soldItems = await ExportHistory.find(query);
 
     const totalDevicesSold = soldItems.length;
     const totalRevenue = soldItems.reduce(
@@ -35,12 +31,13 @@ router.get('/bao-cao-loi-nhuan', async (req, res) => {
     const totalProfit = totalRevenue - totalCost;
 
     res.status(200).json({
-      message: '✅ Báo cáo lợi nhuận',
+      message: '✅ Báo cáo lợi nhuận (từ ExportHistory)',
       totalDevicesSold,
       totalRevenue,
       totalCost,
       totalProfit,
-      orders: soldItems
+      orders: soldItems,
+      data_source: 'export_history'
     });
   } catch (err) {
     console.error('❌ Lỗi khi lấy báo cáo lợi nhuận:', err);

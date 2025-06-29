@@ -78,8 +78,19 @@ router.get('/bao-cao-loi-nhuan', async (req, res) => {
       sold_date: { $gte: fromDate, $lt: toDate }
     };
 
+    // ✅ Xử lý branch filter - bao gồm cả branch rỗng
     if (branch && branch !== 'all') {
-      query.branch = branch;
+      if (branch === 'empty' || branch === 'Mặc định') {
+        // Lọc các record có branch rỗng hoặc null
+        query.$or = [
+          { branch: { $exists: false } },
+          { branch: null },
+          { branch: "" },
+          { branch: "Mặc định" }
+        ];
+      } else {
+        query.branch = branch;
+      }
     }
 
     console.log('📊 Generating profit report with query:', query); // Debug
@@ -997,6 +1008,194 @@ router.get('/debug-specific-id/:id', async (req, res) => {
       message: '❌ Debug failed', 
       error: error.message,
       test_id: req.params.id
+    });
+  }
+});
+
+// ==================== API: FIX SYNC ISSUE - Kiểm tra và sửa vấn đề đồng bộ ====================
+router.get('/fix-sync-issue', async (req, res) => {
+  try {
+    console.log('🔧 Starting sync issue fix check...');
+    
+    // 1. Kiểm tra tổng số records trong ExportHistory
+    const totalExportHistory = await ExportHistory.countDocuments();
+    console.log(`📋 Total ExportHistory records: ${totalExportHistory}`);
+    
+    // 2. Lấy danh sách 20 records gần nhất để kiểm tra
+    const recentRecords = await ExportHistory.find({})
+      .sort({ createdAt: -1 })
+      .limit(20);
+    
+    console.log(`📋 Recent ${recentRecords.length} records found`);
+    
+    // 3. Kiểm tra xem có records nào bị lỗi format không
+    const invalidRecords = [];
+    const validRecords = [];
+    
+    for (const record of recentRecords) {
+      try {
+        // Kiểm tra các field cần thiết
+        const hasValidData = record.product_name && 
+                           (record.price_sell || record.price_sell === 0) &&
+                           record.sold_date;
+        
+        if (hasValidData) {
+          validRecords.push({
+            _id: record._id,
+            product_name: record.product_name,
+            imei: record.imei || 'N/A',
+            customer_name: record.customer_name || 'N/A',
+            price_sell: record.price_sell,
+            sold_date: record.sold_date,
+            branch: record.branch
+          });
+        } else {
+          invalidRecords.push({
+            _id: record._id,
+            issues: {
+              no_product_name: !record.product_name,
+              no_price_sell: !record.price_sell && record.price_sell !== 0,
+              no_sold_date: !record.sold_date
+            }
+          });
+        }
+      } catch (checkError) {
+        console.error('❌ Error checking record:', record._id, checkError);
+        invalidRecords.push({
+          _id: record._id,
+          error: checkError.message
+        });
+      }
+    }
+    
+    // 4. Kiểm tra cache và refresh suggestions
+    const refreshSuggestions = [
+      '🔄 Làm mới trang báo cáo (Ctrl+F5 hoặc Cmd+Shift+R)',
+      '🔄 Xóa cache trình duyệt',
+      '🔄 Kiểm tra lại filter ngày tháng và chi nhánh',
+      '🔄 Thử chuyển sang chế độ ẩn danh (Incognito) để test'
+    ];
+    
+    // 5. Tạo báo cáo tóm tắt
+    const summary = {
+      total_export_records: totalExportHistory,
+      recent_records_checked: recentRecords.length,
+      valid_records: validRecords.length,
+      invalid_records: invalidRecords.length,
+      sync_status: invalidRecords.length === 0 ? 'HEALTHY' : 'NEEDS_ATTENTION',
+      database_connection: 'OK'
+    };
+    
+    console.log('🔧 Sync check completed:', summary);
+    
+    res.status(200).json({
+      message: '🔧 Sync Issue Fix Check Completed',
+      summary,
+      valid_sample_records: validRecords.slice(0, 5),
+      invalid_records: invalidRecords,
+      refresh_suggestions: refreshSuggestions,
+      next_steps: invalidRecords.length > 0 ? [
+        'Có records không hợp lệ được tìm thấy',
+        'Kiểm tra dữ liệu nhập vào',
+        'Có thể cần chạy migration để fix'
+      ] : [
+        'Dữ liệu trong database trông ổn',
+        'Vấn đề có thể là cache frontend',
+        'Thử refresh browser cache'
+      ]
+    });
+    
+  } catch (error) {
+    console.error('❌ Fix sync issue error:', error);
+    res.status(500).json({
+      message: '❌ Lỗi khi kiểm tra sync issue',
+      error: error.message,
+      suggestion: 'Kiểm tra kết nối database và thử lại'
+    });
+  }
+});
+
+// ==================== API: FORCE REFRESH DATA - Buộc làm mới dữ liệu ====================
+router.get('/force-refresh-report-data', async (req, res) => {
+  try {
+    const { from, to, branch } = req.query;
+    
+    if (!from || !to) {
+      return res.status(400).json({
+        message: '❌ Thiếu tham số from và to',
+        example: '/force-refresh-report-data?from=2024-01-01&to=2024-12-31&branch=Dĩ An'
+      });
+    }
+    
+    console.log('🔄 Force refreshing report data with params:', { from, to, branch });
+    
+    const fromDate = new Date(from);
+    const toDate = new Date(to);
+    toDate.setDate(toDate.getDate() + 1);
+    
+    const query = {
+      sold_date: { $gte: fromDate, $lt: toDate }
+    };
+    
+    if (branch && branch !== 'all') {
+      query.branch = branch;
+    }
+    
+    // Lấy dữ liệu trực tiếp từ database với query rõ ràng
+    const freshData = await ExportHistory.find(query)
+      .sort({ sold_date: -1, createdAt: -1 })
+      .lean(); // Sử dụng lean() để tăng performance
+    
+    console.log(`📊 Fresh data found: ${freshData.length} records`);
+    
+    // Tính toán lại stats
+    const totalRevenue = freshData.reduce((sum, item) => 
+      sum + (item.price_sell * (item.quantity || 1)), 0
+    );
+    const totalCost = freshData.reduce((sum, item) => 
+      sum + (item.price_import * (item.quantity || 1)), 0
+    );
+    
+    const result = {
+      message: '🔄 Force refresh completed - Dữ liệu mới nhất từ database',
+      timestamp: new Date().toISOString(),
+      query_used: query,
+      total_records: freshData.length,
+      total_revenue: totalRevenue,
+      total_cost: totalCost,
+      total_profit: totalRevenue - totalCost,
+      records: freshData.map(item => ({
+        _id: item._id,
+        product_name: item.product_name,
+        imei: item.imei || 'N/A',
+        customer_name: item.customer_name || 'Khách lẻ',
+        price_sell: item.price_sell,
+        sold_date: item.sold_date,
+        branch: item.branch,
+        is_deleted: false // Nếu có trong ExportHistory thì chưa bị xóa
+      })),
+      cache_headers: {
+        'Cache-Control': 'no-cache, no-store, must-revalidate',
+        'Pragma': 'no-cache',
+        'Expires': '0'
+      }
+    };
+    
+    // Set headers để tránh cache
+    res.set({
+      'Cache-Control': 'no-cache, no-store, must-revalidate',
+      'Pragma': 'no-cache',
+      'Expires': '0'
+    });
+    
+    res.status(200).json(result);
+    
+  } catch (error) {
+    console.error('❌ Force refresh error:', error);
+    res.status(500).json({
+      message: '❌ Lỗi khi force refresh data',
+      error: error.message,
+      timestamp: new Date().toISOString()
     });
   }
 });
