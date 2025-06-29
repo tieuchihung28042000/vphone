@@ -30,32 +30,64 @@ function BaoCao() {
   // ✅ Load branches từ API
   const loadBranches = async () => {
     try {
+      console.log('📊 Loading branches for backend report...'); // Debug
       const response = await fetch(`${import.meta.env.VITE_API_URL}/api/branches`);
       const data = await response.json();
       
       if (response.ok && data.length > 0) {
-        setBranches(data.map(branch => branch.name));
+        const branchNames = data.map(branch => branch.name);
+        setBranches(branchNames);
+        
+        // ✅ Thiết lập chi nhánh mặc định là chi nhánh đầu tiên
+        if (branch === 'all') {
+          const defaultBranch = branchNames[0];
+          setBranch(defaultBranch);
+          console.log('📊 Backend set default branch to:', defaultBranch); // Debug
+        }
       } else {
         // Fallback nếu không load được
-        setBranches(['Dĩ An', 'Quận 9']);
+        const fallbackBranches = ['Dĩ An', 'Quận 9'];
+        setBranches(fallbackBranches);
+        
+        // ✅ Thiết lập chi nhánh mặc định
+        if (branch === 'all') {
+          setBranch(fallbackBranches[0]);
+          console.log('📊 Backend set fallback branch to:', fallbackBranches[0]); // Debug
+        }
       }
     } catch (error) {
       console.error('Error loading branches:', error);
       // Fallback nếu có lỗi
-      setBranches(['Dĩ An', 'Quận 9']);
+      const fallbackBranches = ['Dĩ An', 'Quận 9'];
+      setBranches(fallbackBranches);
+      
+      // ✅ Thiết lập chi nhánh mặc định
+      if (branch === 'all') {
+        setBranch(fallbackBranches[0]);
+        console.log('📊 Backend set error fallback branch to:', fallbackBranches[0]); // Debug
+      }
     }
   };
 
   // Gọi API lấy dữ liệu báo cáo
-  const fetchData = async (fromDate, toDate, branch) => {
+  const fetchData = async (fromDate, toDate, branchParam) => {
+    // ✅ Tránh load nhiều lần khi branch chưa được set
+    if (!branchParam || branchParam === 'all') {
+      console.log('⚠️ Backend skipping fetchData - branch not set or is "all":', branchParam);
+      return;
+    }
+    
+    console.log('📊 Backend fetching report data:', { fromDate, toDate, branch: branchParam }); // Debug
     try {
       let api = `${import.meta.env.VITE_API_URL}/api/bao-cao-loi-nhuan`;
       if (fromDate && toDate) {
-        api += `?from=${fromDate}&to=${toDate}&branch=${branch}`;
+        api += `?from=${fromDate}&to=${toDate}&branch=${branchParam}`;
       }
+      
+      console.log('📊 Backend API URL:', api); // Debug
       const res = await fetch(api);
       const json = await res.json();
-      console.log("Dữ liệu báo cáo trả về:", json); // DEBUG XEM API TRẢ VỀ
+      console.log("📊 Backend dữ liệu báo cáo trả về:", json); // DEBUG XEM API TRẢ VỀ
       setData(json);
     } catch (err) {
       console.error("❌ Lỗi khi fetch báo cáo:", err);
@@ -68,16 +100,22 @@ function BaoCao() {
     loadBranches();
   }, []);
 
-  // Khi đổi filter hoặc chi nhánh thì cập nhật ngày và gọi API luôn
+  // ✅ Khi đổi filter hoặc chi nhánh thì cập nhật ngày và gọi API (với debounce nhẹ)
   useEffect(() => {
-    if (filter !== "Tùy chọn") {
-      const [f, t] = predefined[filter];
-      const fromDate = f.toISOString().slice(0, 10);
-      const toDate = t.toISOString().slice(0, 10);
-      setFrom(fromDate);
-      setTo(toDate);
-      fetchData(fromDate, toDate, branch);
-    }
+    // ✅ Thêm timeout nhỏ để tránh load nhiều lần khi chuyển chi nhánh
+    const timeoutId = setTimeout(() => {
+      if (filter !== "Tùy chọn" && branch && branch !== 'all') {
+        console.log('📊 Backend useEffect triggered:', { filter, branch }); // Debug
+        const [f, t] = predefined[filter];
+        const fromDate = f.toISOString().slice(0, 10);
+        const toDate = t.toISOString().slice(0, 10);
+        setFrom(fromDate);
+        setTo(toDate);
+        fetchData(fromDate, toDate, branch);
+      }
+    }, 50); // Giảm xuống 50ms để responsive hơn
+
+    return () => clearTimeout(timeoutId);
   }, [filter, branch]);
 
   // Khi chọn filter "Tùy chọn", nhấn áp dụng sẽ chạy hàm này

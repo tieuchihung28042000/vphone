@@ -447,11 +447,18 @@ function XuatHang() {
       item.item?.imei?.toLowerCase().includes(search.toLowerCase()) ||
       item.item?.product_name?.toLowerCase().includes(search.toLowerCase()) ||
       item.item?.sku?.toLowerCase().includes(search.toLowerCase()) ||
-      item.buyer_name?.toLowerCase().includes(search.toLowerCase());
+      item.buyer_name?.toLowerCase().includes(search.toLowerCase()) ||
+      item.buyer_phone?.toLowerCase().includes(search.toLowerCase()) ||
+      item.customer_name?.toLowerCase().includes(search.toLowerCase()) ||
+      item.customer_phone?.toLowerCase().includes(search.toLowerCase());
     const matchDate = filterDate ? item.sale_date?.slice(0, 10) === filterDate : true;
     const matchBranch = filterBranch ? item.branch === filterBranch : true;
     const matchCategory = filterCategory ? item.item?.category === filterCategory : true;
-    const matchBuyer = filterBuyer ? item.buyer_name?.toLowerCase().includes(filterBuyer.toLowerCase()) : true;
+    const matchBuyer = filterBuyer ? 
+      (item.buyer_name?.toLowerCase().includes(filterBuyer.toLowerCase()) ||
+       item.buyer_phone?.toLowerCase().includes(filterBuyer.toLowerCase()) ||
+       item.customer_name?.toLowerCase().includes(filterBuyer.toLowerCase()) ||
+       item.customer_phone?.toLowerCase().includes(filterBuyer.toLowerCase())) : true;
     return matchSearch && matchDate && matchBranch && matchCategory && matchBuyer;
   });
 
@@ -500,6 +507,15 @@ function XuatHang() {
       render: (item) => (
         <div className="text-sm text-gray-500">
           {item.sale_date?.slice(0, 10)}
+        </div>
+      )
+    },
+    {
+      header: "Số lượng",
+      key: "quantity",
+      render: (item) => (
+        <div className="text-sm font-bold text-center">
+          {item.quantity || 1}
         </div>
       )
     },

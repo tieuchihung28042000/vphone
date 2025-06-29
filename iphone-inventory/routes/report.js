@@ -75,7 +75,6 @@ router.get('/bao-cao-loi-nhuan', async (req, res) => {
     toDate.setDate(toDate.getDate() + 1); // Bao gồm cả ngày cuối cùng
 
     const query = {
-      status: 'sold',
       sold_date: { $gte: fromDate, $lt: toDate }
     };
 
@@ -83,56 +82,71 @@ router.get('/bao-cao-loi-nhuan', async (req, res) => {
       query.branch = branch;
     }
 
-    const soldItems = await Inventory.find(query);
+    console.log('📊 Generating profit report with query:', query); // Debug
+
+    // ✅ CHỈ lấy từ ExportHistory vì đây là nguồn dữ liệu chính thức
+    // Inventory chỉ là kho, ExportHistory là lịch sử bán hàng thực tế
+    const exportHistory = await ExportHistory.find(query);
+    
+    console.log(`📋 Found ${exportHistory.length} records in ExportHistory`); // Debug
+
+    // ✅ Chuẩn hóa dữ liệu từ ExportHistory
+    const soldItems = exportHistory.map(item => ({
+      _id: item._id,
+      imei: item.imei || '',
+      sku: item.sku || '',
+      product_name: item.product_name || '',
+      branch: item.branch || '',
+      category: item.category || '',
+      sold_date: item.sold_date,
+      price_import: item.price_import || 0,
+      price_sell: item.price_sell || 0,
+      customer_name: item.customer_name || "",
+      customer_phone: item.customer_phone || "",
+      warranty: item.warranty || '',
+      note: item.note || '',
+      debt: item.debt || 0,
+      supplier: item.supplier || '',
+      quantity: item.quantity || 1,
+      source: 'export_history',
+      // Thêm các field tương thích với frontend
+      tenSanPham: item.product_name,
+      import_price: item.price_import || 0,
+      sale_price: item.price_sell || 0,
+      cost: item.price_import || 0,
+      revenue: item.price_sell || 0,
+      buyer_name: item.customer_name || "",
+      buyer_phone: item.customer_phone || ""
+    }));
 
     const totalDevicesSold = soldItems.length;
-    // Ưu tiên field mới từ schema: price_sell và price_import
+    
+    // ✅ Tính toán với quantity (quan trọng cho phụ kiện)
     const totalRevenue = soldItems.reduce(
-      (sum, item) => sum + (item.price_sell || item.giaBan || 0), 0
+      (sum, item) => sum + (item.price_sell * (item.quantity || 1)), 0
     );
     const totalCost = soldItems.reduce(
-      (sum, item) => sum + (item.price_import || item.giaNhap || 0), 0
+      (sum, item) => sum + (item.price_import * (item.quantity || 1)), 0
     );
     const totalProfit = totalRevenue - totalCost;
 
-    // Format orders để đảm bảo frontend hiển thị đúng
-    const formattedOrders = soldItems.map(item => ({
-      _id: item._id,
-      imei: item.imei,
-      sku: item.sku,
-      tenSanPham: item.tenSanPham || item.product_name,
-      product_name: item.product_name || item.tenSanPham,
-      branch: item.branch,
-      category: item.category,
-      sold_date: item.sold_date,
-      // Mapping các field giá cho frontend (ưu tiên schema mới)
-      import_price: item.price_import || item.giaNhap || 0,
-      sale_price: item.price_sell || item.giaBan || 0,
-      cost: item.price_import || item.giaNhap || 0,
-      revenue: item.price_sell || item.giaBan || 0,
-      // Đảm bảo mapping ngược lại cho backward compatibility
-      price_import: item.price_import || item.giaNhap || 0,
-      price_sell: item.price_sell || item.giaBan || 0,
-      // Thông tin khách hàng (ưu tiên field mới từ schema)
-      buyer_name: item.customer_name || "",
-      buyer_phone: item.customer_phone || "",
-      customer_name: item.customer_name || "",
-      customer_phone: item.customer_phone || "",
-      // Thông tin khác
-      warranty: item.warranty,
-      note: item.note,
-      debt: item.debt || 0,
-      supplier: item.supplier
-    }));
+    console.log('💰 Report summary:', {
+      totalDevicesSold,
+      totalRevenue,
+      totalCost,
+      totalProfit
+    }); // Debug
 
     res.status(200).json({
-      message: '✅ Báo cáo lợi nhuận',
+      message: '✅ Báo cáo lợi nhuận (chỉ từ ExportHistory - đã loại trừ đơn đã xóa)',
       totalDevicesSold,
       totalRevenue,
       totalCost,
       totalProfit,
-      orders: formattedOrders,
-      items: formattedOrders // Backup field name
+      orders: soldItems,
+      items: soldItems, // Backup field name
+      data_source: 'export_history_only',
+      note: 'Báo cáo này chỉ tính các đơn hàng còn tồn tại trong ExportHistory, đã loại trừ các đơn đã bị xóa'
     });
   } catch (err) {
     console.error('❌ Lỗi khi lấy báo cáo lợi nhuận:', err);
@@ -603,39 +617,98 @@ router.put('/xuat-hang/:id', async (req, res) => {
 // ==================== API: Xóa đơn xuất (trả hàng về kho) ====================
 router.delete('/xuat-hang/:id', async (req, res) => {
   try {
+    console.log('🗑️ Deleting export record with ID:', req.params.id); // Debug
+    
     // ✅ Chuyển đổi: Xóa từ ExportHistory và rollback Inventory
     const exportRecord = await ExportHistory.findById(req.params.id);
     if (!exportRecord) {
+      console.log('❌ Export record not found in ExportHistory'); // Debug
       return res.status(404).json({ message: '❌ Không tìm thấy đơn xuất hàng.' });
     }
 
-    // Nếu có IMEI, khôi phục Inventory về in_stock
-    if (exportRecord.imei) {
+    console.log('📋 Found export record:', {
+      imei: exportRecord.imei,
+      sku: exportRecord.sku,
+      product_name: exportRecord.product_name,
+      quantity: exportRecord.quantity
+    }); // Debug
+
+    // ✅ Nếu có IMEI (iPhone), khôi phục Inventory về in_stock
+    if (exportRecord.imei && exportRecord.imei.trim() !== '') {
+      console.log('📱 Processing iPhone with IMEI:', exportRecord.imei); // Debug
+      
       const inventoryItem = await Inventory.findOne({ imei: exportRecord.imei });
       if (inventoryItem) {
+        console.log('✅ Found inventory item, restoring to in_stock'); // Debug
         inventoryItem.status = 'in_stock';
         inventoryItem.sold_date = undefined;
+        inventoryItem.customer_name = undefined;
+        inventoryItem.customer_phone = undefined;
+        inventoryItem.debt = 0;
         await inventoryItem.save();
+        console.log('✅ iPhone restored to inventory'); // Debug
+      } else {
+        console.log('⚠️ Inventory item not found for IMEI:', exportRecord.imei); // Debug
+        // Tạo lại record trong Inventory nếu không tìm thấy
+        await Inventory.create({
+          imei: exportRecord.imei,
+          sku: exportRecord.sku,
+          product_name: exportRecord.product_name,
+          price_import: exportRecord.price_import || 0,
+          status: 'in_stock',
+          branch: exportRecord.branch,
+          category: exportRecord.category || 'iPhone',
+          import_date: new Date()
+        });
+        console.log('✅ Created new inventory record for iPhone'); // Debug
       }
     }
     
-    // Nếu là phụ kiện, tăng lại số lượng trong Inventory
-    if (!exportRecord.imei && exportRecord.sku) {
+    // ✅ Nếu là phụ kiện (không có IMEI), tăng lại số lượng trong Inventory
+    if (!exportRecord.imei || exportRecord.imei.trim() === '') {
+      console.log('🔧 Processing accessory with SKU:', exportRecord.sku); // Debug
+      
       const inventoryItem = await Inventory.findOne({ 
-        sku: exportRecord.sku, 
-        status: { $in: ['in_stock', 'sold'] }
+        sku: exportRecord.sku,
+        $or: [
+          { imei: { $exists: false } },
+          { imei: null },
+          { imei: '' }
+        ]
       });
+      
       if (inventoryItem) {
+        console.log('✅ Found accessory inventory, increasing quantity'); // Debug
         inventoryItem.quantity = (inventoryItem.quantity || 0) + (exportRecord.quantity || 1);
         inventoryItem.status = 'in_stock';
         await inventoryItem.save();
+        console.log(`✅ Accessory quantity increased by ${exportRecord.quantity || 1}`); // Debug
+      } else {
+        console.log('⚠️ Accessory inventory not found, creating new record'); // Debug
+        // Tạo lại record phụ kiện nếu không tìm thấy
+        await Inventory.create({
+          sku: exportRecord.sku,
+          product_name: exportRecord.product_name,
+          price_import: exportRecord.price_import || 0,
+          quantity: exportRecord.quantity || 1,
+          status: 'in_stock',
+          branch: exportRecord.branch,
+          category: exportRecord.category || 'Phụ kiện',
+          import_date: new Date()
+        });
+        console.log('✅ Created new inventory record for accessory'); // Debug
       }
     }
 
-    // Xóa record khỏi ExportHistory
+    // ✅ Xóa record khỏi ExportHistory
     await ExportHistory.findByIdAndDelete(req.params.id);
+    console.log('✅ Deleted from ExportHistory'); // Debug
 
-    res.status(200).json({ message: '✅ Đã xóa đơn xuất hàng và khôi phục tồn kho!', item: exportRecord });
+    res.status(200).json({ 
+      message: '✅ Đã xóa đơn xuất hàng và khôi phục tồn kho!', 
+      item: exportRecord,
+      restored_type: exportRecord.imei ? 'iPhone' : 'Phụ kiện'
+    });
   } catch (error) {
     console.error('❌ Error deleting export record:', error);
     res.status(500).json({ message: '❌ Lỗi khi xoá đơn xuất', error: error.message });

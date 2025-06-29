@@ -50,6 +50,10 @@ function CongNo() {
   const [showAll, setShowAll] = useState(false);
   const [editModal, setEditModal] = useState({ open: false, customer: null });
   const [editForm, setEditForm] = useState({ name: "", phone: "" });
+  
+  // ✅ Thêm state cho modal thêm khách hàng mới
+  const [addCustomerModal, setAddCustomerModal] = useState(false);
+  const [newCustomerForm, setNewCustomerForm] = useState({ name: "", phone: "", initial_debt: "" });
 
   // Stats calculation - tách riêng cho 2 tab
   const customerStats = {
@@ -408,6 +412,12 @@ function CongNo() {
   const handleDeleteCustomer = async (customer) => {
     if (!window.confirm(`Bạn có chắc muốn xóa công nợ của khách hàng "${customer.customer_name}"?`)) return;
     
+    console.log('🗑️ Deleting customer:', {
+      customer_name: customer.customer_name,
+      customer_phone: customer.customer_phone,
+      total_debt: customer.total_debt
+    }); // Debug
+    
     const res = await fetch(`${import.meta.env.VITE_API_URL}/api/cong-no/delete-customer`, {
       method: "DELETE",
       headers: { "Content-Type": "application/json" },
@@ -418,10 +428,14 @@ function CongNo() {
     });
     
     const data = await res.json();
+    console.log('🗑️ Delete response:', data); // Debug
+    
     if (res.ok) {
       alert("✅ " + data.message);
-      fetchDebts();
+      console.log('🔄 Reloading customer list...'); // Debug
+      await fetchDebts(); // Đảm bảo await
     } else {
+      console.error('❌ Delete error:', data);
       alert("❌ " + (data.message || "Lỗi xóa"));
     }
   };
@@ -434,6 +448,48 @@ function CongNo() {
   const clearFilters = () => {
     setSearchText("");
     setShowAll(false);
+  };
+
+  // ✅ Thêm function tạo khách hàng mới
+  const handleAddNewCustomer = async () => {
+    if (!newCustomerForm.name.trim()) {
+      return alert("❌ Vui lòng nhập tên khách hàng");
+    }
+    
+    if (!newCustomerForm.phone.trim()) {
+      return alert("❌ Vui lòng nhập số điện thoại");
+    }
+    
+    const initialDebt = parseFloat(newCustomerForm.initial_debt) || 0;
+    
+    try {
+      console.log('🆕 Creating new customer:', newCustomerForm); // Debug
+      
+      const res = await fetch(`${import.meta.env.VITE_API_URL}/api/cong-no/create-customer`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          customer_name: newCustomerForm.name.trim(),
+          customer_phone: newCustomerForm.phone.trim(),
+          initial_debt: initialDebt,
+          note: `Khách hàng mới - Nợ ban đầu: ${formatNumber(initialDebt)}đ`
+        }),
+      });
+      
+      const data = await res.json();
+      
+      if (res.ok) {
+        alert("✅ Đã thêm khách hàng mới thành công!");
+        setNewCustomerForm({ name: "", phone: "", initial_debt: "" });
+        setAddCustomerModal(false);
+        await fetchDebts(); // Reload data
+      } else {
+        alert("❌ " + (data.message || "Thêm khách hàng thất bại!"));
+      }
+    } catch (err) {
+      console.error('❌ Error creating customer:', err);
+      alert("❌ Lỗi kết nối server");
+    }
   };
 
   // Table columns definition - Tự động switch theo tab
@@ -872,7 +928,7 @@ function CongNo() {
 
       {/* Filters */}
       <FilterCard onClearFilters={clearFilters}>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           <div>
             <input
               type="text"
@@ -893,6 +949,17 @@ function CongNo() {
               <span className="text-sm font-medium text-gray-700">Hiển thị cả khách đã trả hết nợ</span>
             </label>
           </div>
+          {/* ✅ Thêm nút tạo khách hàng mới */}
+          {activeTab === "khach_no" && (
+            <div className="md:col-span-2">
+              <button
+                onClick={() => setAddCustomerModal(true)}
+                className="w-full bg-blue-600 hover:bg-blue-700 text-white py-3 px-4 rounded-xl transition-all font-medium flex items-center justify-center gap-2"
+              >
+                ➕ Thêm khách hàng mới
+              </button>
+            </div>
+          )}
         </div>
       </FilterCard>
 
@@ -1033,6 +1100,67 @@ function CongNo() {
                   className="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-3 rounded-xl transition-all"
                 >
                   ✅ Lưu
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ✅ Add New Customer Modal */}
+      {addCustomerModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-2xl p-8 max-w-md w-full mx-4">
+            <h3 className="text-xl font-bold text-gray-900 mb-6">➕ Thêm khách hàng mới</h3>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">Tên khách hàng *</label>
+                <input
+                  type="text"
+                  value={newCustomerForm.name}
+                  onChange={(e) => setNewCustomerForm(prev => ({ ...prev, name: e.target.value }))}
+                  className="form-input"
+                  placeholder="Nhập tên khách hàng"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">Số điện thoại *</label>
+                <input
+                  type="text"
+                  value={newCustomerForm.phone}
+                  onChange={(e) => setNewCustomerForm(prev => ({ ...prev, phone: e.target.value }))}
+                  className="form-input"
+                  placeholder="Nhập số điện thoại"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">Nợ ban đầu (tùy chọn)</label>
+                <input
+                  type="number"
+                  value={newCustomerForm.initial_debt}
+                  onChange={(e) => setNewCustomerForm(prev => ({ ...prev, initial_debt: e.target.value }))}
+                  className="form-input"
+                  placeholder="Nhập số tiền nợ ban đầu (nếu có)"
+                />
+              </div>
+              <div className="text-sm text-gray-600 bg-blue-50 p-3 rounded-lg">
+                💡 <strong>Lưu ý:</strong> Nếu khách hàng đã có nợ từ trước, hãy nhập số tiền vào "Nợ ban đầu"
+              </div>
+              <div className="flex gap-3 pt-4">
+                <button
+                  onClick={() => {
+                    setAddCustomerModal(false);
+                    setNewCustomerForm({ name: "", phone: "", initial_debt: "" });
+                  }}
+                  className="flex-1 bg-gray-500 hover:bg-gray-600 text-white py-3 rounded-xl transition-all"
+                >
+                  ❌ Hủy
+                </button>
+                <button
+                  onClick={handleAddNewCustomer}
+                  className="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-3 rounded-xl transition-all"
+                >
+                  ✅ Thêm khách hàng
                 </button>
               </div>
             </div>

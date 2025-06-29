@@ -53,8 +53,9 @@ const DataTable = ({
 
       {/* Pagination */}
       {totalPages > 1 && (
-        <div className="bg-gray-50 px-6 py-4 flex items-center justify-between border-t border-gray-200">
-          <div className="flex-1 flex justify-between sm:hidden">
+        <div className="bg-gray-50 px-6 py-4 border-t border-gray-200">
+          {/* Mobile pagination */}
+          <div className="flex justify-between sm:hidden mb-4">
             <button
               onClick={() => onPageChange && onPageChange(currentPage - 1)}
               disabled={currentPage === 1}
@@ -70,31 +71,33 @@ const DataTable = ({
               Sau →
             </button>
           </div>
-          <div className="hidden sm:flex-1 sm:flex sm:items-center sm:justify-between">
-            <div>
-              <p className="text-sm text-gray-700">
-                Hiển thị <span className="font-semibold">{startItem}</span> đến{' '}
-                <span className="font-semibold">{endItem}</span> trong tổng{' '}
-                <span className="font-semibold">{totalItems}</span> kết quả
-              </p>
-            </div>
-            <div>
-              <nav className="relative z-0 inline-flex rounded-xl shadow-sm -space-x-px">
-                {Array.from({ length: totalPages }, (_, i) => (
-                  <button
-                    key={i + 1}
-                    onClick={() => onPageChange && onPageChange(i + 1)}
-                    className={`relative inline-flex items-center px-4 py-2 border text-sm font-medium transition-all ${
-                      currentPage === i + 1
-                        ? 'z-10 bg-purple-50 border-purple-500 text-purple-600'
-                        : 'bg-white border-gray-300 text-gray-500 hover:bg-gray-50'
-                    } ${i === 0 ? 'rounded-l-xl' : ''} ${i === totalPages - 1 ? 'rounded-r-xl' : ''}`}
-                  >
-                    {i + 1}
-                  </button>
-                ))}
-              </nav>
-            </div>
+
+          {/* Desktop pagination */}
+          <div className="hidden sm:flex justify-center mb-4">
+            <nav className="relative z-0 inline-flex rounded-xl shadow-sm -space-x-px">
+              {Array.from({ length: totalPages }, (_, i) => (
+                <button
+                  key={i + 1}
+                  onClick={() => onPageChange && onPageChange(i + 1)}
+                  className={`relative inline-flex items-center px-4 py-2 border text-sm font-medium transition-all ${
+                    currentPage === i + 1
+                      ? 'z-10 bg-purple-50 border-purple-500 text-purple-600'
+                      : 'bg-white border-gray-300 text-gray-500 hover:bg-gray-50'
+                  } ${i === 0 ? 'rounded-l-xl' : ''} ${i === totalPages - 1 ? 'rounded-r-xl' : ''}`}
+                >
+                  {i + 1}
+                </button>
+              ))}
+            </nav>
+          </div>
+
+          {/* Pagination info - Moved to bottom */}
+          <div className="text-center">
+            <p className="text-sm text-gray-700">
+              Hiển thị <span className="font-semibold">{startItem}</span> đến{' '}
+              <span className="font-semibold">{endItem}</span> trong tổng{' '}
+              <span className="font-semibold">{totalItems}</span> kết quả
+            </p>
           </div>
         </div>
       )}

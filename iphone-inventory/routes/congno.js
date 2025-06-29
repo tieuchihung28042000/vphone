@@ -2,6 +2,85 @@ const express = require('express');
 const router = express.Router();
 const Inventory = require('../models/Inventory');
 
+// ✅ API tạo khách hàng mới với công nợ ban đầu
+router.post('/create-customer', async (req, res) => {
+  try {
+    console.log('🆕 API create-customer received:', req.body); // Debug
+    
+    const { customer_name, customer_phone, initial_debt = 0, note } = req.body;
+    
+    if (!customer_name || typeof customer_name !== 'string' || customer_name.trim().length === 0) {
+      console.log('❌ Invalid customer_name:', customer_name);
+      return res.status(400).json({ message: "❌ Thiếu thông tin tên khách hàng" });
+    }
+    
+    if (!customer_phone || typeof customer_phone !== 'string' || customer_phone.trim().length === 0) {
+      console.log('❌ Invalid customer_phone:', customer_phone);
+      return res.status(400).json({ message: "❌ Thiếu thông tin số điện thoại" });
+    }
+    
+    // Kiểm tra khách hàng đã tồn tại chưa
+    const existingCustomer = await Inventory.findOne({
+      customer_name: customer_name.trim(),
+      customer_phone: customer_phone.trim(),
+      status: "sold"
+    });
+    
+    if (existingCustomer) {
+      return res.status(400).json({ 
+        message: "❌ Khách hàng này đã tồn tại trong hệ thống" 
+      });
+    }
+    
+    const debtAmount = parseFloat(initial_debt) || 0;
+    
+    // Tạo một record giả để quản lý công nợ khách hàng mới
+    const newCustomerRecord = new Inventory({
+      imei: `CUSTOMER_${Date.now()}`, // IMEI giả để phân biệt
+      sku: 'CUSTOMER_DEBT',
+      product_name: `Công nợ khách hàng: ${customer_name.trim()}`,
+      price_import: 0,
+      price_sell: debtAmount,
+      status: 'sold',
+      customer_name: customer_name.trim(),
+      customer_phone: customer_phone.trim(),
+      debt: debtAmount,
+      da_tra: 0,
+      sold_date: new Date(),
+      branch: 'Tất cả',
+      category: 'Công nợ',
+      note: note || `Khách hàng mới - Nợ ban đầu: ${debtAmount}đ`,
+      debt_history: debtAmount > 0 ? [{
+        type: "add",
+        amount: debtAmount,
+        date: new Date(),
+        note: note || "Nợ ban đầu khi tạo khách hàng mới"
+      }] : []
+    });
+    
+    await newCustomerRecord.save();
+    
+    console.log('✅ Created new customer record:', {
+      customer_name: newCustomerRecord.customer_name,
+      customer_phone: newCustomerRecord.customer_phone,
+      debt: newCustomerRecord.debt
+    });
+    
+    res.status(201).json({
+      message: "✅ Đã tạo khách hàng mới thành công!",
+      customer: {
+        customer_name: newCustomerRecord.customer_name,
+        customer_phone: newCustomerRecord.customer_phone,
+        total_debt: newCustomerRecord.debt,
+        total_paid: newCustomerRecord.da_tra
+      }
+    });
+  } catch (err) {
+    console.error('❌ Error creating customer:', err);
+    res.status(500).json({ message: '❌ Lỗi server khi tạo khách hàng', error: err.message });
+  }
+});
+
 // 1. Lấy danh sách khách hàng còn công nợ (Tổng hợp theo customer_name + customer_phone)
 router.get('/cong-no-list', async (req, res) => {
   try {
@@ -93,9 +172,20 @@ router.get('/cong-no-orders', async (req, res) => {
 
 // 3. Trừ nợ tổng cho từng khách (theo tên + sđt, cho phép trừ tổng nhiều đơn) -- CÓ GHI CHÚ
 router.put('/cong-no-pay-customer', async (req, res) => {
-  const { customer_name, customer_phone, amount, note } = req.body;
-  if (!customer_name || !amount || isNaN(amount)) return res.status(400).json({ message: "Thiếu thông tin hoặc số tiền trả" });
   try {
+    console.log('💰 API cong-no-pay-customer received:', req.body); // Debug
+    
+    const { customer_name, customer_phone, amount, note } = req.body;
+    
+    if (!customer_name || typeof customer_name !== 'string' || customer_name.trim().length === 0) {
+      console.log('❌ Invalid customer_name:', customer_name);
+      return res.status(400).json({ message: "❌ Thiếu thông tin tên khách hàng" });
+    }
+    
+    if (!amount || isNaN(amount) || Number(amount) <= 0) {
+      console.log('❌ Invalid amount:', amount);
+      return res.status(400).json({ message: "❌ Số tiền trả phải lớn hơn 0" });
+    }
     const query = { customer_name, status: "sold", debt: { $gt: 0 } };
     if (customer_phone) query.customer_phone = customer_phone;
     const orders = await Inventory.find(query).sort({ sold_date: 1 });
@@ -146,9 +236,20 @@ router.put('/cong-no-pay-customer', async (req, res) => {
 
 // 4. Cộng nợ tổng cho khách (theo tên + sđt, cộng vào đơn mới nhất) -- CÓ GHI CHÚ
 router.put('/cong-no-add-customer', async (req, res) => {
-  const { customer_name, customer_phone, amount, note } = req.body;
-  if (!customer_name || !amount || isNaN(amount)) return res.status(400).json({ message: "Thiếu thông tin hoặc số tiền cộng nợ" });
   try {
+    console.log('➕ API cong-no-add-customer received:', req.body); // Debug
+    
+    const { customer_name, customer_phone, amount, note } = req.body;
+    
+    if (!customer_name || typeof customer_name !== 'string' || customer_name.trim().length === 0) {
+      console.log('❌ Invalid customer_name:', customer_name);
+      return res.status(400).json({ message: "❌ Thiếu thông tin tên khách hàng" });
+    }
+    
+    if (!amount || isNaN(amount) || Number(amount) <= 0) {
+      console.log('❌ Invalid amount:', amount);
+      return res.status(400).json({ message: "❌ Số tiền cộng nợ phải lớn hơn 0" });
+    }
     // Cộng nợ vào đơn còn nợ nhiều nhất, hoặc đơn mới nhất
     const query = { customer_name, status: "sold" };
     if (customer_phone) query.customer_phone = customer_phone;
@@ -321,31 +422,92 @@ router.put('/update-customer', async (req, res) => {
 
 // 7. Xóa khách hàng khỏi công nợ (xóa tất cả debt và debt_history)
 router.delete('/delete-customer', async (req, res) => {
-  const { customer_name, customer_phone } = req.body;
-  if (!customer_name) return res.status(400).json({ message: "Thiếu tên khách hàng" });
   try {
-    const query = { customer_name, status: "sold" };
-    if (customer_phone) query.customer_phone = customer_phone;
-
-    const updateResult = await Inventory.updateMany(
-      query,
-      {
-        $set: {
-          debt: 0,
-          da_tra: 0
-        },
-        $unset: {
-          debt_history: ""
-        }
+    console.log('🗑️ API delete-customer received:', req.body); // Debug
+    
+    const { customer_name, customer_phone } = req.body;
+    
+    if (!customer_name || typeof customer_name !== 'string' || customer_name.trim().length === 0) {
+      console.log('❌ Invalid customer_name:', customer_name);
+      return res.status(400).json({ message: "❌ Thiếu thông tin tên khách hàng" });
+    }
+    
+    const query = { 
+      customer_name: customer_name.trim(), 
+      status: "sold" 
+    };
+    
+    // ✅ Xử lý customer_phone có thể là null, undefined, hoặc empty string
+    if (customer_phone && typeof customer_phone === 'string' && customer_phone.trim().length > 0) {
+      query.customer_phone = customer_phone.trim();
+    } else if (customer_phone === null || customer_phone === undefined || customer_phone === "") {
+      // Tìm khách hàng không có SĐT (null, undefined, hoặc empty string)
+      query.$or = [
+        { customer_phone: null },
+        { customer_phone: undefined },
+        { customer_phone: "" },
+        { customer_phone: { $exists: false } }
+      ];
+    }
+    
+    console.log('🔍 Searching for customer records with query:', query);
+    
+    // Tìm tất cả records của khách hàng này
+    const customerRecords = await Inventory.find(query);
+    console.log(`📋 Found ${customerRecords.length} records for customer`);
+    
+    if (customerRecords.length === 0) {
+      return res.status(404).json({ 
+        message: "❌ Không tìm thấy khách hàng để xóa" 
+      });
+    }
+    
+    let deletedCount = 0;
+    let updatedCount = 0;
+    
+    for (const record of customerRecords) {
+      // Nếu là record giả (CUSTOMER_DEBT) hoặc IMEI bắt đầu bằng CUSTOMER_ thì xóa hoàn toàn
+      if (record.sku === 'CUSTOMER_DEBT' || 
+          (record.imei && record.imei.startsWith('CUSTOMER_'))) {
+        console.log(`🗑️ Deleting fake customer record: ${record.imei}`);
+        await Inventory.deleteOne({ _id: record._id });
+        deletedCount++;
+      } else {
+        // Nếu là sản phẩm thực tế đã bán, chỉ reset debt về 0
+        console.log(`🔄 Resetting debt for real product: ${record.imei || record.product_name}`);
+        record.debt = 0;
+        record.da_tra = 0;
+        record.debt_history = [];
+        await record.save();
+        updatedCount++;
       }
-    );
+    }
+    
+    console.log(`✅ Delete operation completed: ${deletedCount} deleted, ${updatedCount} updated`);
+
+    // ✅ Nếu chỉ có records thực tế (không có record giả), thông báo rõ ràng
+    let message = '';
+    if (deletedCount > 0 && updatedCount > 0) {
+      message = `✅ Đã xóa khách hàng thành công! (${deletedCount} record giả đã xóa, ${updatedCount} sản phẩm thực đã reset nợ về 0)`;
+    } else if (deletedCount > 0) {
+      message = `✅ Đã xóa khách hàng hoàn toàn! (${deletedCount} record đã xóa)`;
+    } else if (updatedCount > 0) {
+      message = `✅ Đã reset công nợ về 0! (${updatedCount} sản phẩm thực đã thanh toán hết)`;
+    } else {
+      message = '⚠️ Không có thay đổi nào được thực hiện';
+    }
 
     res.json({ 
-      message: "✅ Đã xóa công nợ của khách hàng!",
-      modified_count: updateResult.modifiedCount
+      message: message,
+      deleted_count: deletedCount,
+      updated_count: updatedCount
     });
   } catch (err) {
-    res.status(500).json({ message: '❌ Lỗi server khi xóa công nợ khách hàng', error: err.message });
+    console.error('❌ Error deleting customer:', err);
+    res.status(500).json({ 
+      message: '❌ Lỗi server khi xóa khách hàng', 
+      error: err.message 
+    });
   }
 });
 

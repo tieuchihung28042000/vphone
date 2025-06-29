@@ -156,8 +156,12 @@ export default function Cashbook() {
   };
 
   const loadTransactions = async () => {
-    if (viewMode === 'branch' && !selectedBranch) return; // Không load nếu chưa có chi nhánh
+    if (viewMode === 'branch' && !selectedBranch) {
+      console.log('⚠️ No selectedBranch, skipping loadTransactions'); // Debug
+      return; // Không load nếu chưa có chi nhánh
+    }
     
+    console.log('🔄 loadTransactions called with:', { viewMode, selectedBranch }); // Debug
     setLoading(true);
     try {
       const params = new URLSearchParams({
@@ -166,8 +170,9 @@ export default function Cashbook() {
       });
       
       // Chỉ filter theo chi nhánh nếu đang ở view chi nhánh
-      if (viewMode === 'branch') {
+      if (viewMode === 'branch' && selectedBranch) {
         params.append('branch', selectedBranch);
+        console.log('📋 Adding branch filter:', selectedBranch); // Debug
       }
       
       Object.keys(filters).forEach(key => {
@@ -312,12 +317,18 @@ export default function Cashbook() {
 
   // Load transactions khi có selectedBranch và các filter thay đổi
   useEffect(() => {
-    if (viewMode === 'branch' && selectedBranch) {
-      loadTransactions();
-      loadBalanceBySource();
-    } else if (viewMode === 'total') {
-      loadTotalSummary();
-    }
+    // ✅ Thêm timeout để đảm bảo selectedBranch đã được set đúng
+    const timeoutId = setTimeout(() => {
+      if (viewMode === 'branch' && selectedBranch) {
+        console.log('🔄 Loading data for branch:', selectedBranch); // Debug
+        loadTransactions();
+        loadBalanceBySource();
+      } else if (viewMode === 'total') {
+        loadTotalSummary();
+      }
+    }, 100); // Delay nhỏ để đảm bảo state đã update
+
+    return () => clearTimeout(timeoutId);
   }, [filters, pagination.page, selectedBranch, viewMode]);
 
   // Cập nhật formData.branch khi selectedBranch thay đổi

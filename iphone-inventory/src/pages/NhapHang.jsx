@@ -73,12 +73,40 @@ function NhapHang() {
   const [branchModal, setBranchModal] = useState({ open: false, type: 'add', data: null });
   const [branchForm, setBranchForm] = useState({ name: '', address: '', phone: '', note: '' });
 
-  // Stats calculation
+  // ✅ Filter and pagination - Moved up to use in stats
+  const filteredItems = items.filter((item) => {
+    // ✅ Cải thiện tìm kiếm - xử lý null/undefined
+    const searchText = search.toLowerCase().trim();
+    const matchSearch = !searchText || 
+      (item.imei && item.imei.toLowerCase().includes(searchText)) ||
+      ((item.product_name || item.tenSanPham || '').toLowerCase().includes(searchText)) ||
+      (item.sku && item.sku.toLowerCase().includes(searchText));
+    
+    // ✅ Cải thiện filter ngày - xử lý format ngày
+    const matchDate = !filterDate || 
+      (item.import_date && item.import_date.slice(0, 10) === filterDate);
+    
+    // ✅ Cải thiện filter chi nhánh - xử lý empty string
+    const matchBranch = !filterBranch || 
+      (item.branch && item.branch.trim() === filterBranch.trim());
+    
+    // ✅ Cải thiện filter danh mục - xử lý empty string  
+    const matchCategory = !filterCategory || 
+      (item.category && item.category.trim() === filterCategory.trim());
+    
+    // ✅ Cải thiện filter nhà cung cấp - xử lý empty string
+    const matchSupplier = !filterSupplier || 
+      (item.supplier && item.supplier.trim() === filterSupplier.trim());
+    
+    return matchSearch && matchDate && matchBranch && matchCategory && matchSupplier;
+  });
+
+  // ✅ Stats calculation - Cập nhật theo bộ lọc
   const stats = {
-    totalItems: items.length,
-    totalValue: items.reduce((sum, item) => sum + (item.price_import * (item.quantity || 1)), 0),
-    soldItems: items.filter(item => item.status === 'sold').length,
-    inStock: items.filter(item => item.status !== 'sold').length
+    totalItems: filteredItems.length,
+    totalValue: filteredItems.reduce((sum, item) => sum + (item.price_import * (item.quantity || 1)), 0),
+    soldItems: filteredItems.filter(item => item.status === 'sold').length,
+    inStock: filteredItems.filter(item => item.status !== 'sold').length
   };
 
   // API functions
@@ -492,19 +520,7 @@ function NhapHang() {
     }
   };
 
-  // Filter and pagination
-  const filteredItems = items.filter((item) => {
-    const matchSearch =
-      item.imei?.toLowerCase().includes(search.toLowerCase()) ||
-      (item.product_name || item.tenSanPham)?.toLowerCase().includes(search.toLowerCase()) ||
-      item.sku?.toLowerCase().includes(search.toLowerCase());
-    const matchDate = filterDate ? item.import_date?.slice(0, 10) === filterDate : true;
-    const matchBranch = filterBranch ? item.branch === filterBranch : true;
-    const matchCategory = filterCategory ? item.category === filterCategory : true;
-    const matchSupplier = filterSupplier ? (item.supplier && item.supplier === filterSupplier) : true;
-    return matchSearch && matchDate && matchBranch && matchCategory && matchSupplier;
-  });
-
+  // Pagination
   const paginatedItems = filteredItems.slice((page - 1) * itemsPerPage, page * itemsPerPage);
   const totalPages = Math.ceil(filteredItems.length / itemsPerPage);
 
@@ -567,26 +583,15 @@ function NhapHang() {
       header: "Nhà cung cấp",
       key: "supplier",
       render: (item) => {
-        // ✅ Cải thiện hiển thị supplier để xử lý dữ liệu cũ
         const supplier = item.supplier || item.nha_cung_cap || '';
         const supplierDisplay = supplier.trim();
         
         return (
           <div className="text-sm text-gray-700">
             {supplierDisplay ? (
-              <span>{supplierDisplay}</span>
+              <span className="font-medium">{supplierDisplay}</span>
             ) : (
-              <span className="text-gray-400 italic">Chưa có nhà cung cấp</span>
-            )}
-            {/* ✅ Debug info để kiểm tra dữ liệu cũ */}
-            {process.env.NODE_ENV === 'development' && !supplierDisplay && (
-              <div className="text-xs text-red-400 mt-1">
-                Debug: {JSON.stringify({
-                  supplier: item.supplier,
-                  nha_cung_cap: item.nha_cung_cap,
-                  _id: item._id
-                })}
-              </div>
+              <span className="text-gray-400 italic">Chưa có NCC</span>
             )}
           </div>
         );
