@@ -69,7 +69,7 @@ router.get('/bao-cao-don-hang-chi-tiet', async (req, res) => {
     }
 
     // Lấy từ ExportHistory để có cả phụ kiện và iPhone
-    const orders = await ExportHistory.find(query).sort({ sold_date: -1 });
+    const orders = await ExportHistory.find(query).sort({ sold_date: -1, createdAt: -1 });
 
     res.status(200).json({
       message: "✅ Danh sách đơn hàng chi tiết",
@@ -351,7 +351,30 @@ router.put('/xuat-hang/:id', async (req, res) => {
       debt
     } = req.body;
 
-    console.log('🔍 Routes PUT Request data:', req.body); // Debug
+    console.log('🔄 Routes PUT Request data:', req.body); // Debug
+    console.log('🔍 Routes PUT Request ID:', req.params.id); // Debug
+
+    // ✅ Validate ObjectId format
+    const mongoose = require('mongoose');
+    if (!mongoose.isValidObjectId(req.params.id)) {
+      console.log('❌ Invalid ObjectId format:', req.params.id);
+      return res.status(400).json({ message: '❌ ID không hợp lệ.' });
+    }
+
+    // ✅ Debug: Kiểm tra record có tồn tại không trong ExportHistory TRƯỚC KHI UPDATE
+    const existingRecord = await ExportHistory.findById(req.params.id);
+    console.log('🔍 Found record for PUT in ExportHistory (backend/routes):', existingRecord ? {
+      _id: existingRecord._id,
+      product_name: existingRecord.product_name,
+      imei: existingRecord.imei || 'No IMEI (accessory)',
+      price_sell: existingRecord.price_sell,
+      customer_name: existingRecord.customer_name
+    } : 'NOT FOUND');
+    
+    if (!existingRecord) {
+      console.log('❌ Record not found in ExportHistory for ID:', req.params.id);
+      return res.status(404).json({ message: '❌ Không tìm thấy đơn xuất để cập nhật.' });
+    }
 
     // ✅ FIX: Flexible field mapping để support cả frontend và backend fields
     const finalSalePrice = parseFloat(sale_price || price_sell) || 0;
@@ -365,10 +388,8 @@ router.put('/xuat-hang/:id', async (req, res) => {
     }); // Debug
 
     const updateFields = {
-      status: 'sold',
       // Price fields - ưu tiên field từ frontend
       price_sell: finalSalePrice,
-      giaBan: finalSalePrice,
       // Customer info - ưu tiên field từ frontend
       customer_name: finalCustomerName,
       customer_phone: finalCustomerPhone,
@@ -398,19 +419,26 @@ router.put('/xuat-hang/:id', async (req, res) => {
       updateFields.updatedAt = new Date();
     }
 
-    console.log('🔍 Routes processed update fields:', updateFields); // Debug
+    console.log('🔄 Routes processed update fields:', updateFields); // Debug
 
-    const updated = await Inventory.findByIdAndUpdate(
+    // ✅ Cập nhật ExportHistory thay vì Inventory
+    const updated = await ExportHistory.findByIdAndUpdate(
       req.params.id, 
       { $set: updateFields }, 
-      { new: true }
+      { new: true, runValidators: false }
     );
     
     if (!updated) {
+      console.log('❌ findByIdAndUpdate returned null for ID:', req.params.id);
       return res.status(404).json({ message: "❌ Không tìm thấy đơn xuất để cập nhật." });
     }
 
-    console.log('✅ Routes PUT update successful:', updated.product_name); // Debug
+    console.log('✅ Routes PUT update successful:', {
+      _id: updated._id,
+      product_name: updated.product_name,
+      price_sell: updated.price_sell,
+      customer_name: updated.customer_name
+    }); // Debug
     res.json({ message: "✅ Đã cập nhật đơn xuất thành công!", item: updated });
   } catch (err) {
     console.error('❌ Routes PUT error:', err);
@@ -441,7 +469,7 @@ router.get('/find-by-imei', async (req, res) => {
 // ==================== API: Migration data từ Inventory cũ sang ExportHistory ====================
 router.post('/migrate-export-history', async (req, res) => {
   try {
-    console.log('�� Starting migration check from Inventory to ExportHistory...');
+    console.log(' Starting migration check from Inventory to ExportHistory...');
     
     // ✅ Lấy tất cả records từ ExportHistory để so sánh
     const exportHistoryItems = await ExportHistory.find({});

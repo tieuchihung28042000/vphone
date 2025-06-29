@@ -11,20 +11,41 @@ router.get('/super-debug/:id', async (req, res) => {
     const id = req.params.id;
     console.log('🔍 SUPER DEBUG for ID:', id);
     
+    // Test trong Inventory
+    const inventoryItem = await Inventory.findById(id);
+    console.log('📦 Inventory result:', inventoryItem ? {
+      _id: inventoryItem._id,
+      product_name: inventoryItem.product_name,
+      status: inventoryItem.status,
+      price_sell: inventoryItem.price_sell,
+      giaBan: inventoryItem.giaBan
+    } : 'NOT FOUND');
+    
     // Test trong ExportHistory  
     const exportItem = await ExportHistory.findById(id);
-    console.log('📦 ExportHistory result:', exportItem ? {
+    console.log('📋 ExportHistory result:', exportItem ? {
       _id: exportItem._id,
       product_name: exportItem.product_name,
       price_sell: exportItem.price_sell
     } : 'NOT FOUND');
     
-    // Đếm records trong ExportHistory
+    // Đếm records trong cả 2 collections
+    const inventoryCount = await Inventory.countDocuments();
     const exportHistoryCount = await ExportHistory.countDocuments();
+    const soldCount = await Inventory.countDocuments({ status: 'sold' });
     
     res.status(200).json({
       message: '🔍 SUPER DEBUG RESULTS',
       test_id: id,
+      inventory_item: inventoryItem ? {
+        found: true,
+        _id: inventoryItem._id,
+        product_name: inventoryItem.product_name,
+        status: inventoryItem.status,
+        price_sell: inventoryItem.price_sell,
+        giaBan: inventoryItem.giaBan,
+        customer_name: inventoryItem.customer_name
+      } : { found: false },
       export_history_item: exportItem ? {
         found: true,
         _id: exportItem._id,
@@ -33,7 +54,9 @@ router.get('/super-debug/:id', async (req, res) => {
         customer_name: exportItem.customer_name
       } : { found: false },
       collections_stats: {
-        total_export_history: exportHistoryCount
+        total_inventory: inventoryCount,
+        total_export_history: exportHistoryCount,
+        inventory_sold: soldCount
       }
     });
   } catch (error) {
@@ -137,7 +160,7 @@ router.get('/bao-cao-don-hang-chi-tiet', async (req, res) => {
       query.branch = branch;
     }
 
-    const orders = await Inventory.find(query).sort({ sold_date: -1 });
+    const orders = await Inventory.find(query).sort({ sold_date: -1, createdAt: -1 });
 
     // Chuẩn hóa field cho frontend
     const result = orders.map(item => ({
@@ -470,6 +493,113 @@ router.get('/xuat-hang-list', async (req, res) => {
   }
 });
 
+// ==================== API: Cập nhật đơn xuất ====================
+router.put('/xuat-hang/:id', async (req, res) => {
+  try {
+    const {
+      imei,
+      sku,
+      product_name,
+      sale_price,
+      buyer_name,
+      buyer_phone,
+      warranty,
+      note,
+      branch,
+      sale_date,
+      source,
+      debt
+    } = req.body;
+
+    console.log('🔄 PUT Request data:', req.body); // Debug
+    console.log('🔍 PUT Request ID:', req.params.id); // Debug
+
+    // ✅ Validate ObjectId format
+    if (!mongoose.isValidObjectId(req.params.id)) {
+      console.log('❌ Invalid ObjectId format:', req.params.id);
+      return res.status(400).json({ message: '❌ ID không hợp lệ.' });
+    }
+
+    // ✅ Debug: Kiểm tra record có tồn tại không trong ExportHistory TRƯỚC KHI UPDATE
+    const existingRecord = await ExportHistory.findById(req.params.id);
+    console.log('🔍 Found record for PUT in ExportHistory:', existingRecord ? {
+      _id: existingRecord._id,
+      product_name: existingRecord.product_name,
+      imei: existingRecord.imei || 'No IMEI (accessory)',
+      price_sell: existingRecord.price_sell,
+      customer_name: existingRecord.customer_name
+    } : 'NOT FOUND');
+    
+    if (!existingRecord) {
+      console.log('❌ Record not found in ExportHistory for ID:', req.params.id);
+      return res.status(404).json({ message: '❌ Không tìm thấy đơn xuất để cập nhật.' });
+    }
+
+    // ✅ ROLLBACK: Proper field mapping để consistent với POST API trên ExportHistory
+    const updateFields = {
+      // Price fields - map to both formats for consistency
+      price_sell: parseFloat(sale_price) || 0,
+      // Customer info
+      customer_name: buyer_name || '',
+      customer_phone: buyer_phone || '',
+      // Product info  
+      product_name: product_name || '',
+      sku: sku || '',
+      imei: imei || '',
+      // Other fields
+      warranty: warranty || '',
+      note: note || '',
+      branch: branch || '',
+      source: source || 'tien_mat',
+      sold_date: sale_date ? new Date(sale_date) : new Date(),
+      debt: parseFloat(debt) || 0,
+      // Update timestamp
+      updatedAt: new Date()
+    };
+
+    // Remove undefined/empty fields - NHƯNG GIỮ LẠI ÍT NHẤT 1 FIELD
+    Object.keys(updateFields).forEach(key => {
+      if (updateFields[key] === undefined || updateFields[key] === '') {
+        delete updateFields[key];
+      }
+    });
+
+    // ✅ Đảm bảo luôn có ít nhất 1 field để update
+    if (Object.keys(updateFields).length === 0) {
+      updateFields.updatedAt = new Date();
+    }
+
+    console.log('🔄 Processed update fields for ExportHistory:', updateFields); // Debug
+    console.log('🔄 Update fields count:', Object.keys(updateFields).length); // Debug
+    
+    const updated = await ExportHistory.findByIdAndUpdate(
+      req.params.id, 
+      { $set: updateFields }, 
+      { new: true, runValidators: false }
+    );
+    
+    if (!updated) {
+      console.log('❌ findByIdAndUpdate returned null for ID:', req.params.id);
+      return res.status(404).json({ message: '❌ Không tìm thấy đơn xuất để cập nhật.' });
+    }
+
+    console.log('✅ Updated item successfully:', {
+      _id: updated._id,
+      product_name: updated.product_name,
+      price_sell: updated.price_sell,
+      customer_name: updated.customer_name
+    }); // Debug
+
+    res.status(200).json({ 
+      message: '✅ Đã cập nhật đơn xuất thành công!', 
+      item: updated 
+    });
+  } catch (error) {
+    console.error('❌ Error updating xuat-hang:', error);
+    res.status(500).json({ message: '❌ Lỗi khi cập nhật đơn xuất', error: error.message });
+  }
+});
+
 // ==================== API: Xóa đơn xuất (trả hàng về kho) ====================
 router.delete('/xuat-hang/:id', async (req, res) => {
   try {
@@ -673,6 +803,128 @@ router.get('/imei-detail/:imei', async (req, res) => {
     res.json({ item: detail });
   } catch (err) {
     res.status(500).json({ message: '❌ Lỗi server khi lấy chi tiết IMEI', error: err.message });
+  }
+});
+
+// ==================== API: TEST FULL DEBUG - Kiểm tra tất cả ExportHistory records ====================
+router.get('/test-all-export-records', async (req, res) => {
+  try {
+    console.log('🔍 Testing all ExportHistory records...');
+    
+    const allRecords = await ExportHistory.find({}).limit(10).sort({ createdAt: -1 });
+    console.log(`📋 Found ${allRecords.length} recent records in ExportHistory`);
+    
+    const recordDetails = allRecords.map(record => ({
+      _id: record._id,
+      product_name: record.product_name,
+      imei: record.imei || 'No IMEI (accessory)',
+      price_sell: record.price_sell,
+      customer_name: record.customer_name,
+      sold_date: record.sold_date,
+      createdAt: record.createdAt,
+      all_fields: Object.keys(record.toObject())
+    }));
+    
+    // Test thử update 1 record đầu tiên
+    let testUpdateResult = null;
+    if (allRecords.length > 0) {
+      const testRecord = allRecords[0];
+      console.log('🧪 Testing update on first record:', testRecord._id);
+      
+      try {
+        const testUpdate = await ExportHistory.findByIdAndUpdate(
+          testRecord._id,
+          { $set: { updatedAt: new Date(), note: 'Test update from debug API' } },
+          { new: true, runValidators: false }
+        );
+        testUpdateResult = testUpdate ? 'SUCCESS' : 'FAILED';
+        console.log('🧪 Test update result:', testUpdateResult);
+      } catch (testError) {
+        testUpdateResult = 'ERROR: ' + testError.message;
+        console.log('🧪 Test update error:', testError);
+      }
+    }
+    
+    res.status(200).json({
+      message: '🔍 Full ExportHistory Debug Test',
+      total_records: allRecords.length,
+      test_update_result: testUpdateResult,
+      sample_records: recordDetails,
+      database_status: 'Connected'
+    });
+  } catch (error) {
+    console.error('❌ Test debug error:', error);
+    res.status(500).json({ 
+      message: '❌ Test debug failed', 
+      error: error.message,
+      database_status: 'Error'
+    });
+  }
+});
+
+// ==================== API: DEBUG SPECIFIC ID - Kiểm tra ID cụ thể ====================
+router.get('/debug-specific-id/:id', async (req, res) => {
+  try {
+    const testId = req.params.id;
+    console.log('🔍 DEBUG SPECIFIC ID:', testId);
+    
+    // Kiểm tra format ObjectId
+    const isValidId = mongoose.isValidObjectId(testId);
+    console.log('📋 Is valid ObjectId:', isValidId);
+    
+    if (!isValidId) {
+      return res.status(400).json({
+        message: '❌ Invalid ObjectId format',
+        id: testId,
+        is_valid: false
+      });
+    }
+    
+    // Tìm trong ExportHistory
+    const exportRecord = await ExportHistory.findById(testId);
+    console.log('📋 ExportHistory result:', exportRecord ? 'FOUND' : 'NOT FOUND');
+    
+    // Tìm trong Inventory
+    const inventoryRecord = await Inventory.findById(testId);
+    console.log('📋 Inventory result:', inventoryRecord ? 'FOUND' : 'NOT FOUND');
+    
+    // Tìm tất cả records có chứa ID này (trong trường hợp ID bị nhầm)
+    const allExportRecords = await ExportHistory.find({}).limit(5);
+    const allInventoryRecords = await Inventory.find({}).limit(5);
+    
+    console.log('📋 Sample ExportHistory IDs:', allExportRecords.map(r => r._id.toString()));
+    console.log('📋 Sample Inventory IDs:', allInventoryRecords.map(r => r._id.toString()));
+    
+    res.status(200).json({
+      message: '🔍 Debug Specific ID Results',
+      test_id: testId,
+      is_valid_objectid: isValidId,
+      found_in_export_history: !!exportRecord,
+      found_in_inventory: !!inventoryRecord,
+      export_record: exportRecord ? {
+        _id: exportRecord._id,
+        product_name: exportRecord.product_name,
+        imei: exportRecord.imei,
+        customer_name: exportRecord.customer_name
+      } : null,
+      inventory_record: inventoryRecord ? {
+        _id: inventoryRecord._id,
+        product_name: inventoryRecord.product_name || inventoryRecord.tenSanPham,
+        imei: inventoryRecord.imei,
+        status: inventoryRecord.status
+      } : null,
+      sample_export_ids: allExportRecords.map(r => r._id.toString()),
+      sample_inventory_ids: allInventoryRecords.map(r => r._id.toString()),
+      total_export_count: await ExportHistory.countDocuments(),
+      total_inventory_count: await Inventory.countDocuments()
+    });
+  } catch (error) {
+    console.error('❌ Debug specific ID error:', error);
+    res.status(500).json({ 
+      message: '❌ Debug failed', 
+      error: error.message,
+      test_id: req.params.id
+    });
   }
 });
 

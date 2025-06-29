@@ -83,13 +83,11 @@ function XuatHang() {
     availableStock: availableItems.length
   };
 
-  // Thay đổi toàn bộ các fetch API xuất hàng về đúng backend chính (cổng 4000)
-  const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:4000';
-
   // API functions
   const fetchAvailableItems = async () => {
     try {
-      const res = await fetch(`${API_BASE}/api/nhap-hang`);
+      const apiUrl = import.meta.env.VITE_API_URL || window.location.origin;
+      const res = await fetch(`${apiUrl}/api/nhap-hang`);
       
       if (!res.ok) throw new Error(`API Error: ${res.status}`);
       
@@ -105,14 +103,21 @@ function XuatHang() {
 
   const fetchSoldItems = async () => {
     try {
-      const res = await fetch(`${API_BASE}/api/xuat-hang-list`);
+      const apiUrl = import.meta.env.VITE_API_URL || window.location.origin;
+      const res = await fetch(`${apiUrl}/api/xuat-hang-list`);
       
       if (!res.ok) throw new Error(`API Error: ${res.status}`);
       
       const data = await res.json();
       if (!data.items) return;
       
-      const sorted = data.items.sort((a, b) => b._id.localeCompare(a._id));
+      const sorted = data.items.sort((a, b) => {
+        const dateA = a.sale_date || '';
+        const dateB = b.sale_date || '';
+        if (dateA > dateB) return -1;
+        if (dateA < dateB) return 1;
+        return b._id.localeCompare(a._id);
+      });
       
       setSoldItems(sorted);
     } catch (err) {
@@ -122,7 +127,8 @@ function XuatHang() {
 
   const fetchBranches = async () => {
     try {
-      const res = await fetch(`${API_BASE}/api/branches`);
+      const apiUrl = import.meta.env.VITE_API_URL || window.location.origin;
+      const res = await fetch(`${apiUrl}/api/branches`);
       const data = await res.json();
       setBranches(data);
     } catch (err) {
@@ -132,7 +138,8 @@ function XuatHang() {
 
   const fetchCategories = async () => {
     try {
-      const res = await fetch(`${API_BASE}/api/categories`);
+      const apiUrl = import.meta.env.VITE_API_URL || window.location.origin;
+      const res = await fetch(`${apiUrl}/api/categories`);
       const data = await res.json();
       setCategories(data);
     } catch (err) {
@@ -156,7 +163,7 @@ function XuatHang() {
     }
     
     try {
-      const res = await fetch(`${API_BASE}/api/ton-kho`);
+      const res = await fetch(`${import.meta.env.VITE_API_URL}/api/ton-kho`);
       const data = await res.json();
       const lowerQuery = query.trim().toLowerCase();
       
@@ -231,7 +238,7 @@ function XuatHang() {
     } else if (name === "imei" && value.trim()) {
       // Auto-fill product info when IMEI is entered
       try {
-        const res = await fetch(`${API_BASE}/api/find-by-imei?imei=${value.trim()}`);
+        const res = await fetch(`${import.meta.env.VITE_API_URL}/api/find-by-imei?imei=${value.trim()}`);
         if (res.ok) {
           const data = await res.json();
           setFormData((prev) => ({ 
@@ -279,8 +286,8 @@ function XuatHang() {
     try {
       const method = editingItemId ? "PUT" : "POST";
       const url = editingItemId
-        ? `${API_BASE}/api/xuat-hang/${editingItemId}`
-        : `${API_BASE}/api/xuat-hang`;
+        ? `${import.meta.env.VITE_API_URL}/api/xuat-hang/${editingItemId}`
+        : `${import.meta.env.VITE_API_URL}/api/xuat-hang`;
 
       // Prepare data for API
       const salePriceNumber = parseInt(parseNumber(formData.sale_price)) || 0;
@@ -331,7 +338,7 @@ function XuatHang() {
         console.log('✅ API Response success:', data);
         setMessage(`✅ ${data.message}`);
         resetForm();
-        fetchSoldItems(); // Luôn refresh lại danh sách sau khi cập nhật
+        fetchSoldItems(); // This should refresh the list with updated data
         fetchAvailableItems();
         setTimeout(() => setMessage(""), 3000);
       } else {
@@ -347,51 +354,79 @@ function XuatHang() {
 
   const handleEdit = (item) => {
     console.log('✏️ EDIT clicked - Item data:', item); // Debug
-    setFormData({
-      item_id: item._id,
+    
+    // Cải thiện cách lấy dữ liệu để edit (thêm price_sell từ ExportHistory)
+    const salePrice = item.sale_price || item.selling_price || item.price_sell || "";
+    const editFormData = {
+      item_id: item.item_id || item.item?._id || "",
       imei: item.item?.imei || item.imei || "",
       product_name: item.item?.product_name || item.item?.tenSanPham || item.product_name || "",
       sku: item.item?.sku || item.sku || "",
       quantity: item.quantity || "1",
       warranty: item.warranty || "",
-      sale_price: (item.sale_price || item.selling_price || item.price_sell || "").toString(),
+      sale_price: salePrice.toString(), // Đảm bảo là string để hiển thị đúng
       sale_date: item.sale_date?.slice(0, 10) || getToday(),
       buyer_name: item.buyer_name || "",
       buyer_phone: item.buyer_phone || "",
       branch: item.branch || "",
       note: item.note || "",
       source: item.source || "tien_mat"
-    });
-    setEditingItemId(item._id); // Luôn dùng _id của ExportHistory
+    };
+    
+    console.log('✏️ Setting form data for edit:', editFormData); // Debug
+    console.log('✏️ Original sale_price:', item.sale_price, 'Formatted:', salePrice); // Debug
+    
+    setFormData(editFormData);
+    setEditingItemId(item._id);
+    
+    // Set trạng thái phụ kiện dựa trên IMEI (nếu không có IMEI thì có thể là phụ kiện)
     setIsAccessory(item.is_accessory || (!item.item?.imei && !item.imei));
-    setMessage("");
+    
+    setMessage(""); // Clear any previous messages
+    
+    // Scroll to form
     window.scrollTo({ top: 0, behavior: 'smooth' });
-    // Debug: kiểm tra _id thực tế
-    console.log('🆔 Đang sửa đơn xuất với _id:', item._id);
   };
 
   const handleDelete = async (id) => {
     if (!window.confirm("Bạn có chắc chắn muốn xóa giao dịch này? Hành động này không thể hoàn tác.")) return;
+    
     setMessage("🔄 Đang xóa giao dịch...");
+    
     try {
-      const res = await fetch(`${API_BASE}/api/xuat-hang/${id}`, {
+      console.log('🗑️ DELETE request for ID:', id); // Debug
+      
+      const res = await fetch(`${import.meta.env.VITE_API_URL}/api/xuat-hang/${id}`, {
         method: "DELETE",
         headers: {
           "Content-Type": "application/json"
         }
       });
+      
       const data = await res.json();
+      console.log('🗑️ DELETE response:', data); // Debug
+      
       if (res.ok) {
         setMessage("✅ Đã xóa giao dịch thành công");
-        resetForm();
-        fetchSoldItems(); // Luôn refresh lại danh sách sau khi xóa
-        fetchAvailableItems();
+        
+        // Refresh data
+        await Promise.all([
+          fetchSoldItems(),
+          fetchAvailableItems()
+        ]);
+        
+        // Reset editing state if we're deleting the item being edited
+        if (editingItemId === id) {
+          resetForm();
+        }
+        
         setTimeout(() => setMessage(""), 3000);
       } else {
         setMessage(`❌ Lỗi xóa: ${data.message || 'Không thể xóa giao dịch'}`);
         setTimeout(() => setMessage(""), 5000);
       }
     } catch (err) {
+      console.error('❌ Delete error:', err);
       setMessage("❌ Lỗi kết nối khi xóa giao dịch");
       setTimeout(() => setMessage(""), 5000);
     }
@@ -477,15 +512,15 @@ function XuatHang() {
         const buyerPhone = item.buyer_phone || item.customer_phone || '';
         
         return (
-          <div>
-            <div className="text-sm font-medium text-gray-900">
+        <div>
+          <div className="text-sm font-medium text-gray-900">
               {buyerName || <span className="text-gray-400 italic">Chưa có</span>}
-            </div>
-            <div className="text-sm text-gray-500">
-              {buyerPhone || <span className="text-gray-400 italic">Chưa có SĐT</span>}
-            </div>
-            {/* Debug info đã tắt để tránh hiển thị thông tin nhạy cảm */}
           </div>
+          <div className="text-sm text-gray-500">
+              {buyerPhone || <span className="text-gray-400 italic">Chưa có SĐT</span>}
+          </div>
+            {/* Debug info đã tắt để tránh hiển thị thông tin nhạy cảm */}
+        </div>
         );
       }
     },

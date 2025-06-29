@@ -341,9 +341,25 @@ function CongNo() {
   };
 
   const handleSaveCustomer = async () => {
-    // ✅ Kiểm tra validation kỹ hơn
-    if (!editForm.name || !editForm.name.trim()) {
-      alert("Tên khách hàng không được để trống");
+    // ✅ Kiểm tra validation chi tiết hơn
+    console.log('🔍 Validation check:', {
+      editForm: editForm,
+      name: editForm.name,
+      nameLength: editForm.name ? editForm.name.length : 0,
+      nameTrimmed: editForm.name ? editForm.name.trim() : '',
+      nameAfterTrimLength: editForm.name ? editForm.name.trim().length : 0
+    });
+    
+    if (!editForm.name || typeof editForm.name !== 'string' || editForm.name.trim().length === 0) {
+      alert("❌ Tên khách hàng không được để trống");
+      return;
+    }
+    
+    const trimmedName = editForm.name.trim();
+    const trimmedPhone = editForm.phone ? editForm.phone.trim() : '';
+    
+    if (trimmedName.length < 1) {
+      alert("❌ Tên khách hàng phải có ít nhất 1 ký tự");
       return;
     }
     
@@ -352,27 +368,32 @@ function CongNo() {
         editForm: editForm,
         old_customer_name: editModal.customer.customer_name,
         old_customer_phone: editModal.customer.customer_phone,
-        new_customer_name: editForm.name.trim(),
-        new_customer_phone: editForm.phone.trim()
+        new_customer_name: trimmedName,
+        new_customer_phone: trimmedPhone
       }); // Debug
+      
+      const requestBody = {
+        old_customer_name: editModal.customer.customer_name,
+        old_customer_phone: editModal.customer.customer_phone || '',
+        new_customer_name: trimmedName,
+        new_customer_phone: trimmedPhone
+      };
+      
+      console.log('📤 Request body:', requestBody); // Debug
       
       const res = await fetch(`${import.meta.env.VITE_API_URL}/api/cong-no/update-customer`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          old_customer_name: editModal.customer.customer_name,
-          old_customer_phone: editModal.customer.customer_phone,
-          new_customer_name: editForm.name.trim(),
-          new_customer_phone: editForm.phone.trim()
-        })
+        body: JSON.stringify(requestBody)
       });
       
       const data = await res.json();
-      console.log('📝 Update customer response:', data); // Debug
+      console.log('📝 Update customer response:', { status: res.status, data }); // Debug
       
       if (res.ok) {
         alert("✅ " + data.message);
         setEditModal({ open: false, customer: null });
+        setEditForm({ name: "", phone: "" }); // Reset form
         await fetchDebts(); // ✅ Đảm bảo chờ refresh
       } else {
         console.error('❌ Update customer error:', data);
@@ -380,7 +401,7 @@ function CongNo() {
       }
     } catch (error) {
       console.error('❌ Network error updating customer:', error);
-      alert("❌ Lỗi kết nối khi cập nhật khách hàng");
+      alert("❌ Lỗi kết nối khi cập nhật khách hàng: " + error.message);
     }
   };
 

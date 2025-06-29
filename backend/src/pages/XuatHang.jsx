@@ -214,8 +214,10 @@ function XuatHang() {
       return searchOK && dateOK;
     })
     .sort((a, b) => {
-      // ✅ Cải thiện sắp xếp: ưu tiên theo ID (mới nhất trước) - đảm bảo luôn có giá trị
-      return b._id.localeCompare(a._id);
+      // Sắp xếp mới nhất lên trên
+      const dateA = new Date(a.sold_date || "");
+      const dateB = new Date(b.sold_date || "");
+      return dateB - dateA;
     });
 
   return (

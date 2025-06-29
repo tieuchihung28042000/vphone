@@ -220,29 +220,101 @@ router.put('/cong-no-pay/:id', async (req, res) => {
 
 // 6. Sửa thông tin khách hàng (tên, sđt)
 router.put('/update-customer', async (req, res) => {
-  const { old_customer_name, old_customer_phone, new_customer_name, new_customer_phone } = req.body;
-  if (!old_customer_name || !new_customer_name) {
-    return res.status(400).json({ message: "Thiếu thông tin tên khách hàng" });
-  }
   try {
-    const query = { customer_name: old_customer_name };
-    if (old_customer_phone) query.customer_phone = old_customer_phone;
+    console.log('🔄 API update-customer received RAW:', JSON.stringify(req.body, null, 2)); // Debug chi tiết
+    console.log('🔄 Request headers:', req.headers); // Debug headers
+    
+    const { old_customer_name, old_customer_phone, new_customer_name, new_customer_phone } = req.body;
+    
+    console.log('🔍 Destructured values:', {
+      old_customer_name: `"${old_customer_name}"`,
+      old_customer_phone: `"${old_customer_phone}"`,
+      new_customer_name: `"${new_customer_name}"`,
+      new_customer_phone: `"${new_customer_phone}"`
+    }); // Debug
+    
+    // ✅ Validation chi tiết hơn
+    if (!old_customer_name || typeof old_customer_name !== 'string' || old_customer_name.trim().length === 0) {
+      console.log('❌ Validation failed: old_customer_name invalid:', { 
+        value: old_customer_name, 
+        type: typeof old_customer_name,
+        length: old_customer_name ? old_customer_name.length : 'N/A'
+      });
+      return res.status(400).json({ message: "❌ Thiếu thông tin tên khách hàng cũ" });
+    }
+    
+    if (!new_customer_name || typeof new_customer_name !== 'string' || new_customer_name.trim().length === 0) {
+      console.log('❌ Validation failed: new_customer_name invalid:', {
+        value: new_customer_name,
+        type: typeof new_customer_name,
+        length: new_customer_name ? new_customer_name.length : 'N/A'
+      });
+      return res.status(400).json({ message: "❌ Tên khách hàng mới không được để trống" });
+    }
+
+    const trimmedOldName = old_customer_name.trim();
+    const trimmedOldPhone = old_customer_phone ? old_customer_phone.trim() : '';
+    const trimmedNewName = new_customer_name.trim();
+    const trimmedNewPhone = new_customer_phone ? new_customer_phone.trim() : '';
+
+    console.log('🔍 Processed data:', {
+      trimmedOldName: `"${trimmedOldName}"`,
+      trimmedOldPhone: `"${trimmedOldPhone}"`,
+      trimmedNewName: `"${trimmedNewName}"`,
+      trimmedNewPhone: `"${trimmedNewPhone}"`
+    }); // Debug
+
+    // Tìm kiếm với điều kiện chính xác
+    const query = { customer_name: trimmedOldName };
+    if (trimmedOldPhone) {
+      query.customer_phone = trimmedOldPhone;
+    }
+
+    console.log('🔍 Query for update:', JSON.stringify(query, null, 2)); // Debug
+
+    // Kiểm tra xem có record nào để update không
+    const existingRecords = await Inventory.find(query);
+    console.log(`🔍 Found ${existingRecords.length} records to update`); // Debug
+    
+    if (existingRecords.length > 0) {
+      console.log('📋 First record sample:', {
+        customer_name: existingRecords[0].customer_name,
+        customer_phone: existingRecords[0].customer_phone,
+        product_name: existingRecords[0].product_name
+      });
+    }
+
+    if (existingRecords.length === 0) {
+      return res.status(404).json({ 
+        message: "❌ Không tìm thấy khách hàng để cập nhật",
+        search_criteria: query,
+        debug_info: {
+          old_customer_name_received: old_customer_name,
+          old_customer_phone_received: old_customer_phone,
+          trimmed_values: { trimmedOldName, trimmedOldPhone }
+        }
+      });
+    }
 
     const updateResult = await Inventory.updateMany(
       query,
       {
         $set: {
-          customer_name: new_customer_name,
-          customer_phone: new_customer_phone || ""
+          customer_name: trimmedNewName,
+          customer_phone: trimmedNewPhone
         }
       }
     );
 
+    console.log('✅ Update result:', updateResult); // Debug
+
     res.json({ 
       message: "✅ Đã cập nhật thông tin khách hàng!",
-      modified_count: updateResult.modifiedCount
+      modified_count: updateResult.modifiedCount,
+      found_records: existingRecords.length
     });
   } catch (err) {
+    console.error('❌ Error in update-customer API:', err);
     res.status(500).json({ message: '❌ Lỗi server khi cập nhật thông tin khách hàng', error: err.message });
   }
 });
@@ -469,6 +541,58 @@ router.get('/supplier-orders', async (req, res) => {
     res.json({ orders: formatted_orders });
   } catch (err) {
     res.status(500).json({ message: '❌ Lỗi server khi lấy chi tiết đơn hàng', error: err.message });
+  }
+});
+
+// ==================== API: TEST - Kiểm tra tất cả khách hàng trong database ====================
+router.get('/test-all-customers', async (req, res) => {
+  try {
+    console.log('🔍 Testing all customers in database...');
+    
+    // Lấy tất cả khách hàng có status = sold
+    const allCustomers = await Inventory.find({ 
+      status: "sold", 
+      customer_name: { $ne: null, $ne: "" } 
+    }).limit(20).sort({ sold_date: -1 });
+    
+    console.log(`📋 Found ${allCustomers.length} customer records`);
+    
+    const customerDetails = allCustomers.map(record => ({
+      _id: record._id,
+      customer_name: record.customer_name,
+      customer_phone: record.customer_phone || 'NO_PHONE',
+      product_name: record.product_name,
+      sold_date: record.sold_date,
+      debt: record.debt || 0,
+      da_tra: record.da_tra || 0
+    }));
+    
+    // Gom nhóm theo tên khách hàng
+    const grouped = {};
+    allCustomers.forEach(customer => {
+      const key = customer.customer_name + '|' + (customer.customer_phone || '');
+      if (!grouped[key]) {
+        grouped[key] = {
+          customer_name: customer.customer_name,
+          customer_phone: customer.customer_phone || '',
+          count: 0,
+          total_debt: 0
+        };
+      }
+      grouped[key].count++;
+      grouped[key].total_debt += customer.debt || 0;
+    });
+    
+    res.json({
+      message: '✅ Debug all customers',
+      total_records: allCustomers.length,
+      customer_details: customerDetails,
+      grouped_customers: Object.values(grouped),
+      sample_customer_for_test: customerDetails[0] || null
+    });
+  } catch (err) {
+    console.error('❌ Error testing customers:', err);
+    res.status(500).json({ message: '❌ Lỗi khi test customers', error: err.message });
   }
 });
 
