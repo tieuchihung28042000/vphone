@@ -48,9 +48,12 @@ print_status "Current branch: $(git branch --show-current)"
 print_status "Current commit: $(git rev-parse --short HEAD)"
 echo ""
 
-# Reset hard to discard local changes
+# Reset hard to discard local changes and remove untracked files
 print_status "Resetting local changes..."
 git reset --hard
+
+print_status "Removing untracked files..."
+git clean -fd
 
 # Pull latest changes
 print_status "Pulling latest changes..."
