@@ -352,10 +352,51 @@ app.post('/api/xuat-hang', async (req, res) => {
       sold_date,
       debt,
       branch,
-      source // Nguồn tiền (frontend truyền lên)
+      source, // Nguồn tiền (frontend truyền lên)
+      is_accessory,
+      quantity // Số lượng (cho phụ kiện)
     } = req.body;
 
-    const item = await Inventory.findOne({ imei });
+    let item;
+    
+    // ✅ Xử lý phụ kiện và sản phẩm có IMEI khác nhau
+    if (is_accessory || !imei) {
+      // Phụ kiện: tìm theo SKU và product_name, status in_stock
+      const query = {
+        status: 'in_stock',
+        $or: [
+          { sku: sku },
+          { product_name: product_name },
+          { tenSanPham: product_name }
+        ]
+      };
+      
+      const availableItems = await Inventory.find(query);
+      
+      if (availableItems.length === 0) {
+        return res.status(404).json({ message: '❌ Không tìm thấy phụ kiện trong kho.' });
+      }
+      
+      // Lấy item đầu tiên có số lượng > 0
+      item = availableItems.find(i => (i.quantity || 0) > 0) || availableItems[0];
+      
+      if (!item) {
+        return res.status(404).json({ message: '❌ Phụ kiện đã hết hàng.' });
+      }
+      
+      // Kiểm tra số lượng
+      const currentQuantity = item.quantity || 0;
+      const sellQuantity = parseInt(quantity) || 1;
+      
+      if (currentQuantity < sellQuantity) {
+        return res.status(400).json({ 
+          message: `❌ Không đủ số lượng. Còn lại: ${currentQuantity}, yêu cầu: ${sellQuantity}` 
+        });
+      }
+      
+    } else {
+      // Sản phẩm có IMEI: tìm theo IMEI
+      item = await Inventory.findOne({ imei });
     if (!item) {
       return res.status(404).json({ message: '❌ Không tìm thấy IMEI trong kho.' });
     }
@@ -363,36 +404,96 @@ app.post('/api/xuat-hang', async (req, res) => {
     if (item.status === 'sold') {
       return res.status(400).json({ message: '⚠️ Máy này đã được bán trước đó.' });
     }
-
-    item.status = 'sold';
-    item.giaBan = price_sell;
-    item.price_sell = price_sell;
-    item.sold_date = sold_date ? new Date(sold_date) : new Date();
-    item.customer_name = customer_name || '';
-    item.customer_phone = customer_phone || '';
-    item.warranty = warranty || '';
-    item.note = note || '';
-    item.sku = sku || item.sku;
-    item.product_name = product_name || item.product_name;
-    item.branch = branch || item.branch;
-
-    if (debt !== undefined && debt !== null && debt !== "") {
-      item.debt = Number(debt);
-      item.da_tra = Number(item.price_sell) - Number(debt);
-    } else {
-      item.debt = 0;
-      item.da_tra = Number(item.price_sell);
     }
 
-    await item.save();
+    // ✅ Xử lý khác nhau cho phụ kiện và sản phẩm IMEI
+    if (is_accessory || !imei) {
+      // Phụ kiện: giảm số lượng, không đổi status
+      const sellQuantity = parseInt(quantity) || 1;
+      item.quantity = (item.quantity || 0) - sellQuantity;
+      
+      // Nếu hết hàng thì chuyển status
+      if (item.quantity <= 0) {
+        item.status = 'sold';
+        item.quantity = 0;
+      }
+      
+      // ✅ Ghi vào ExportHistory thay vì Inventory
+      const soldAccessory = new ExportHistory({
+        imei: '', // Phụ kiện không có IMEI
+        sku: item.sku,
+        product_name: item.product_name,
+        tenSanPham: item.tenSanPham,
+        category: item.category,
+        price_import: item.price_import,
+        giaBan: price_sell,
+        price_sell: price_sell,
+        sold_date: sold_date ? new Date(sold_date) : new Date(),
+        customer_name: customer_name || '',
+        customer_phone: customer_phone || '',
+        warranty: warranty || '',
+        note: note || '',
+        branch: branch || item.branch,
+        source: source || 'tien_mat',
+        status: 'sold',
+        quantity: sellQuantity,
+        is_accessory: true
+      });
+      
+      await soldAccessory.save();
+      await item.save();
+      
+      // Đặt item thành soldAccessory để ghi sổ quỹ
+      item = soldAccessory;
+      
+    } else {
+      // ✅ Sản phẩm IMEI: Tạo record mới trong ExportHistory + cập nhật Inventory
+      
+      // 1. Cập nhật Inventory (chuyển status sang sold)
+    item.status = 'sold';
+    item.sold_date = sold_date ? new Date(sold_date) : new Date();
+      await item.save();
+      
+      // 2. Tạo record mới trong ExportHistory
+      const soldItem = new ExportHistory({
+        imei: item.imei,
+        sku: sku || item.sku,
+        product_name: product_name || item.product_name,
+        category: item.category,
+        price_import: item.price_import,
+        price_sell: price_sell,
+        sold_date: sold_date ? new Date(sold_date) : new Date(),
+        customer_name: customer_name || '',
+        customer_phone: customer_phone || '',
+        warranty: warranty || '',
+        note: note || '',
+        branch: branch || item.branch,
+        export_type: 'normal'
+      });
+
+    if (debt !== undefined && debt !== null && debt !== "") {
+        soldItem.debt = Number(debt);
+    } else {
+        soldItem.debt = 0;
+      }
+      
+      await soldItem.save();
+      
+      // Cập nhật item để sử dụng cho phần ghi sổ quỹ phía dưới
+      item = soldItem;
+    }
 
     const profit = (item.giaBan || 0) - (item.price_import || 0);
 
     // --- Ghi SỔ QUỸ: THU TIỀN ---
+    const productDescription = item.imei 
+      ? `${item.product_name} (IMEI: ${item.imei})`
+      : `${item.product_name} (Phụ kiện - SL: ${item.quantity || 1})`;
+      
     await Cashbook.create({
       type: 'thu',
-      amount: Number(item.da_tra),
-      content: `Bán hàng: ${item.product_name} (IMEI: ${item.imei})`,
+      amount: Number(item.da_tra || item.price_sell || 0),
+      content: `Bán hàng: ${productDescription}`,
       note: note || '',
       date: sold_date || new Date(),
       branch: branch || '',
@@ -406,7 +507,7 @@ app.post('/api/xuat-hang', async (req, res) => {
       await Cashbook.create({
         type: 'thu',
         amount: Number(item.debt),
-        content: `Công nợ khách hàng khi bán: ${item.product_name} (IMEI: ${item.imei})`,
+        content: `Công nợ khách hàng khi bán: ${productDescription}`,
         note: `Công nợ khách: ${customer_name}`,
         date: sold_date || new Date(),
         branch: branch || '',
@@ -420,6 +521,26 @@ app.post('/api/xuat-hang', async (req, res) => {
   } catch (error) {
     console.error('❌ Lỗi khi xuất hàng:', error.message);
     res.status(500).json({ message: '❌ Lỗi server khi xuất hàng', error: error.message });
+  }
+});
+
+// API chi tiết IMEI
+app.get('/api/imei-detail/:imei', async (req, res) => {
+  try {
+    const { imei } = req.params;
+    const item = await Inventory.findOne({ imei });
+    
+    if (!item) {
+      return res.status(404).json({ message: '❌ Không tìm thấy IMEI này' });
+    }
+
+    res.status(200).json({
+      message: '✅ Thông tin chi tiết IMEI',
+      item
+    });
+  } catch (error) {
+    console.error('❌ Lỗi khi lấy chi tiết IMEI:', error.message);
+    res.status(500).json({ message: '❌ Lỗi server khi lấy chi tiết IMEI', error: error.message });
   }
 });
 
@@ -482,13 +603,26 @@ app.get('/api/canh-bao-ton-kho', async (req, res) => {
 // API danh sách xuất hàng
 app.get('/api/xuat-hang-list', async (req, res) => {
   try {
-    const rawItems = await Inventory.find({ status: 'sold' }).sort({ sold_date: -1 });
+    // ✅ Lấy từ ExportHistory thay vì Inventory (vì dữ liệu thực tế ở đây)
+    const rawItems = await ExportHistory.find({})
+      .sort({ 
+        _id: -1            // Ưu tiên theo ID (mới nhất trước) - đảm bảo luôn có giá trị
+      });
     
-    // Debug: Log một sample để check field
-    if (rawItems.length > 0) {
-      console.log('Sample sold item fields:', {
-        price_sell: rawItems[0].price_sell,
-        giaBan: rawItems[0].giaBan,
+    console.log(`✅ Found ${rawItems.length} export records from ExportHistory (including accessories)`);
+    
+    // Debug: Log một sample để check field (chỉ trong development)
+    if (rawItems.length > 0 && process.env.NODE_ENV === 'development') {
+      console.log('Sample export record fields:', {
+        product_name: rawItems[0].product_name,
+        imei: rawItems[0].imei || 'No IMEI (accessory)',
+        sale_price: rawItems[0].sale_price,
+        selling_price: rawItems[0].selling_price,
+        customer_name: rawItems[0].customer_name,
+        customer_phone: rawItems[0].customer_phone,
+        sold_date: rawItems[0].sold_date || rawItems[0].export_date,
+        createdAt: rawItems[0].createdAt,
+        _id: rawItems[0]._id,
         all_keys: Object.keys(rawItems[0].toObject())
       });
     }
@@ -515,6 +649,7 @@ app.get('/api/xuat-hang-list', async (req, res) => {
       product_name: item.product_name || item.tenSanPham || '',
       customer_name: item.customer_name || '',
       customer_phone: item.customer_phone || '',
+      createdAt: item.createdAt, // Thêm thời gian tạo để frontend có thể sắp xếp
       item: {
         _id: item._id,
         product_name: item.product_name || item.tenSanPham,
@@ -553,108 +688,84 @@ app.put('/api/xuat-hang/:id', async (req, res) => {
       debt
     } = req.body;
 
-    console.log('PUT Request data:', req.body); // Debug
-
-    // ✅ ROLLBACK: Proper field mapping để consistent với POST API
     const updateFields = {
       status: 'sold',
-      // Price fields - map to both formats for consistency
       price_sell: parseFloat(price_sell) || 0,
       giaBan: parseFloat(price_sell) || 0,
-      // Customer info
       customer_name: customer_name || '',
       customer_phone: customer_phone || '',
-      // Product info  
       product_name: product_name || '',
       sku: sku || '',
       imei: imei || '',
-      // Other fields
       warranty: warranty || '',
       note: note || '',
       branch: branch || '',
       source: source || 'tien_mat',
       sold_date: sold_date ? new Date(sold_date) : new Date(),
       debt: parseFloat(debt) || 0,
-      // Update timestamp
       updatedAt: new Date()
     };
-
-    // Remove undefined/empty fields - NHƯNG GIỮ LẠI ÍT NHẤT 1 FIELD
     Object.keys(updateFields).forEach(key => {
       if (updateFields[key] === undefined || updateFields[key] === '') {
         delete updateFields[key];
       }
     });
-
-    // ✅ Đảm bảo luôn có ít nhất 1 field để update
     if (Object.keys(updateFields).length === 0) {
       updateFields.updatedAt = new Date();
     }
-
-    console.log('Processed update fields:', updateFields); // Debug
-    console.log('Update fields count:', Object.keys(updateFields).length); // Debug
-
-    // ✅ Debug: Kiểm tra record trước khi update
-    const existingRecord = await Inventory.findById(req.params.id);
-    console.log('🔍 Existing record before update:', existingRecord ? {
-      _id: existingRecord._id,
-      status: existingRecord.status,
-      product_name: existingRecord.product_name
-    } : 'NOT FOUND');
-
-    let updated;
-    try {
-      updated = await Inventory.findByIdAndUpdate(
-        req.params.id, 
-        { $set: updateFields }, 
-        { new: true, runValidators: false } // ✅ TẮT VALIDATION để test
-      );
-      console.log('🔍 Update result:', updated ? 'SUCCESS' : 'FAILED');
-    } catch (updateError) {
-      console.error('❌ Update error:', updateError);
-      return res.status(500).json({ message: '❌ Lỗi database khi update', error: updateError.message });
-    }
-    
-    if (!updated) {
-      console.log('❌ findByIdAndUpdate returned null for ID:', req.params.id);
+    // Sửa lại findOne thay cho findById
+    const existingRecord = await ExportHistory.findOne({ _id: req.params.id });
+    if (!existingRecord) {
       return res.status(404).json({ message: '❌ Không tìm thấy đơn xuất để cập nhật.' });
     }
-
-    console.log('Updated item price fields:', updated.price_sell, updated.giaBan); // Debug
-
+    let updated;
+    try {
+      updated = await ExportHistory.findOneAndUpdate(
+        { _id: req.params.id },
+        { $set: updateFields },
+        { new: true, runValidators: false }
+      );
+    } catch (updateError) {
+      return res.status(500).json({ message: '❌ Lỗi database khi update', error: updateError.message });
+    }
     res.status(200).json({ 
       message: '✅ Đã cập nhật đơn xuất thành công!', 
       item: updated 
     });
   } catch (error) {
-    console.error('❌ Error updating xuat-hang:', error);
     res.status(500).json({ message: '❌ Lỗi khi cập nhật đơn xuất', error: error.message });
   }
 });
 
 app.delete('/api/xuat-hang/:id', async (req, res) => {
   try {
-    const item = await Inventory.findById(req.params.id);
-    if (!item || item.status !== 'sold') {
+    const exportRecord = await ExportHistory.findOne({ _id: req.params.id });
+    if (!exportRecord) {
       return res.status(404).json({ message: '❌ Không tìm thấy đơn xuất hàng.' });
     }
-
-    item.status = 'in_stock';
-    item.giaBan = undefined;
-    item.price_sell = undefined;
-    item.sold_date = undefined;
-    item.customer_name = undefined;
-    item.customer_phone = undefined;
-    item.warranty = undefined;
-    item.note = undefined;
-    item.debt = 0;
-    item.da_tra = 0;
-
-    await item.save();
-
-    res.status(200).json({ message: '✅ Đã chuyển máy về tồn kho!', item });
+    if (exportRecord.imei) {
+      const inventoryItem = await Inventory.findOne({ imei: exportRecord.imei });
+      if (inventoryItem) {
+        inventoryItem.status = 'in_stock';
+        inventoryItem.sold_date = undefined;
+        await inventoryItem.save();
+      }
+    }
+    if (!exportRecord.imei && exportRecord.sku) {
+      const inventoryItem = await Inventory.findOne({ 
+        sku: exportRecord.sku, 
+        status: { $in: ['in_stock', 'sold'] }
+      });
+      if (inventoryItem) {
+        inventoryItem.quantity = (inventoryItem.quantity || 0) + 1;
+        inventoryItem.status = 'in_stock';
+        await inventoryItem.save();
+      }
+    }
+    await ExportHistory.deleteOne({ _id: req.params.id });
+    res.status(200).json({ message: '✅ Đã xóa đơn xuất hàng và khôi phục tồn kho!', item: exportRecord });
   } catch (error) {
-    res.status(500).json({ message: '❌ Lỗi khi xoá đơn xuất', error: error.message });
+    res.status(500).json({ message: '❌ Lỗi khi xóa đơn xuất', error: error.message });
   }
 });
 
@@ -698,7 +809,29 @@ app.post('/api/thu-no-khach', async (req, res) => {
   }
 });
 
-
+app.get('/api/debug-record/:id', async (req, res) => {
+  try {
+    const item = await ExportHistory.findOne({ _id: req.params.id });
+    if (!item) {
+      return res.status(404).json({ message: '❌ Không tìm thấy record trong ExportHistory.' });
+    }
+    res.status(200).json({
+      message: '✅ Thông tin record từ ExportHistory',
+      item: {
+        _id: item._id,
+        status: item.status,
+        imei: item.imei,
+        product_name: item.product_name,
+        price_sell: item.price_sell,
+        giaBan: item.giaBan,
+        customer_name: item.customer_name,
+        all_fields: Object.keys(item.toObject())
+      }
+    });
+  } catch (error) {
+    res.status(500).json({ message: '❌ Lỗi debug', error: error.message });
+  }
+});
 
 mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/vphone')
 .then(() => console.log('✅ Kết nối MongoDB thành công'))

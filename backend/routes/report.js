@@ -441,13 +441,18 @@ router.get('/find-by-imei', async (req, res) => {
 // ==================== API: Migration data từ Inventory cũ sang ExportHistory ====================
 router.post('/migrate-export-history', async (req, res) => {
   try {
-    console.log('🔄 Starting migration from Inventory to ExportHistory...');
+    console.log('�� Starting migration check from Inventory to ExportHistory...');
     
-    // Lấy tất cả records đã bán từ Inventory mà chưa có trong ExportHistory
+    // ✅ Lấy tất cả records từ ExportHistory để so sánh
+    const exportHistoryItems = await ExportHistory.find({});
+    console.log(`📋 Found ${exportHistoryItems.length} records in ExportHistory`);
+    
+    // Lấy tất cả records đã bán từ Inventory để so sánh
     const soldInventoryItems = await Inventory.find({ status: 'sold' });
     console.log(`📋 Found ${soldInventoryItems.length} sold items in Inventory`);
     
-    let migratedCount = 0;
+    // ✅ Kiểm tra xem có record nào trong Inventory mà chưa có trong ExportHistory không
+    let missingRecords = [];
     
     for (const item of soldInventoryItems) {
       // Kiểm tra xem đã có trong ExportHistory chưa
@@ -459,35 +464,47 @@ router.post('/migrate-export-history', async (req, res) => {
       });
       
       if (!existingExport) {
-        // Tạo record mới trong ExportHistory
-        await ExportHistory.create({
-          imei: item.imei || '',
-          sku: item.sku || '',
-          product_name: item.product_name || item.tenSanPham || '',
-          quantity: 1, // iPhone luôn là 1
-          price_import: item.price_import || 0,
-          price_sell: item.price_sell || item.giaBan || 0,
-          sold_date: item.sold_date || item.createdAt || new Date(),
-          customer_name: item.customer_name || '',
-          customer_phone: item.customer_phone || '',
-          warranty: item.warranty || '',
-          note: item.note || '',
-          debt: item.debt || 0,
-          branch: item.branch || '',
-          category: item.category || '',
-          export_type: item.imei ? 'normal' : 'accessory'
-        });
-        
-        migratedCount++;
-        console.log(`✅ Migrated: ${item.product_name || item.tenSanPham} (${item.imei || item.sku})`);
+        missingRecords.push(item);
       }
     }
     
-    console.log(`🎉 Migration completed: ${migratedCount} records migrated`);
+    console.log(`📋 Found ${missingRecords.length} records in Inventory that are missing in ExportHistory`);
+    
+    // ✅ Nếu có record thiếu thì migrate
+    let migratedCount = 0;
+    
+    for (const item of missingRecords) {
+      // Tạo record mới trong ExportHistory
+      await ExportHistory.create({
+        imei: item.imei || '',
+        sku: item.sku || '',
+        product_name: item.product_name || item.tenSanPham || '',
+        quantity: 1, // iPhone luôn là 1
+        price_import: item.price_import || 0,
+        price_sell: item.price_sell || item.giaBan || 0,
+        sold_date: item.sold_date || item.createdAt || new Date(),
+        customer_name: item.customer_name || '',
+        customer_phone: item.customer_phone || '',
+        warranty: item.warranty || '',
+        note: item.note || '',
+        debt: item.debt || 0,
+        branch: item.branch || '',
+        category: item.category || '',
+        export_type: item.imei ? 'normal' : 'accessory',
+        is_accessory: !item.imei // Phụ kiện không có IMEI
+      });
+      
+      migratedCount++;
+      console.log(`✅ Migrated: ${item.product_name || item.tenSanPham} (${item.imei || item.sku})`);
+    }
+    
+    console.log(`🎉 Migration check completed: ${migratedCount} records migrated`);
     res.status(200).json({ 
-      message: `✅ Migration thành công! Đã chuyển ${migratedCount} records từ Inventory sang ExportHistory.`,
+      message: `✅ Migration check hoàn tất! ${migratedCount > 0 ? `Đã chuyển ${migratedCount} records từ Inventory sang ExportHistory.` : 'Tất cả dữ liệu đã được đồng bộ.'}`,
       migratedCount,
-      totalSoldInventory: soldInventoryItems.length
+      totalExportHistory: exportHistoryItems.length,
+      totalSoldInventory: soldInventoryItems.length,
+      missingRecords: missingRecords.length
     });
   } catch (error) {
     console.error('❌ Migration error:', error);

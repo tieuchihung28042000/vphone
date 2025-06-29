@@ -219,73 +219,107 @@ function CongNo() {
 
   const handlePayDebt = async () => {
     if (!payAmount || isNaN(payAmount)) return alert("Nhập số tiền muốn trả");
-    const res = await fetch(`${import.meta.env.VITE_API_URL}/api/cong-no/cong-no-pay-customer`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
+    
+    try {
+      console.log('💰 Paying debt:', {
         customer_name: selectedCustomer.customer_name,
         customer_phone: selectedCustomer.customer_phone,
         amount: payAmount,
         note: payNote
-      }),
-    });
-    const data = await res.json();
-    if (res.ok) {
-      alert("✅ Đã cập nhật công nợ!");
-      setPayAmount(""); 
-      setPayNote("");
-      await fetchDebts();
-      setTimeout(() => {
-        const updated = debts.find(d =>
-          d.customer_name === selectedCustomer.customer_name &&
-          d.customer_phone === selectedCustomer.customer_phone
-        );
-        if (updated) {
-          setCustomerDebt({
-            total_debt: updated.total_debt,
-            total_paid: updated.total_paid,
-            debt_history: updated.debt_history || []
-          });
-        }
-      }, 200);
-    } else {
-      alert("❌ " + (data.message || "Cập nhật công nợ thất bại!"));
+      }); // Debug
+      
+      const res = await fetch(`${import.meta.env.VITE_API_URL}/api/cong-no/cong-no-pay-customer`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          customer_name: selectedCustomer.customer_name,
+          customer_phone: selectedCustomer.customer_phone,
+          amount: payAmount,
+          note: payNote
+        }),
+      });
+      
+      const data = await res.json();
+      console.log('💰 Pay debt response:', data); // Debug
+      
+      if (res.ok) {
+        alert("✅ Đã cập nhật công nợ!");
+        setPayAmount(""); 
+        setPayNote("");
+        await fetchDebts();
+        setTimeout(() => {
+          const updated = debts.find(d =>
+            d.customer_name === selectedCustomer.customer_name &&
+            d.customer_phone === selectedCustomer.customer_phone
+          );
+          if (updated) {
+            setCustomerDebt({
+              total_debt: updated.total_debt,
+              total_paid: updated.total_paid,
+              debt_history: updated.debt_history || []
+            });
+          }
+        }, 200);
+      } else {
+        console.error('❌ Pay debt error:', data);
+        alert("❌ " + (data.message || `Cập nhật công nợ thất bại! (${res.status})`));
+      }
+    } catch (error) {
+      console.error('❌ Network error paying debt:', error);
+      alert("❌ Lỗi kết nối khi trả nợ");
     }
   };
 
   const handleAddDebt = async () => {
     if (!addAmount || isNaN(addAmount)) return alert("Nhập số tiền muốn cộng nợ");
-    const res = await fetch(`${import.meta.env.VITE_API_URL}/api/cong-no/cong-no-add-customer`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
+    
+    try {
+      console.log('➕ Adding debt:', {
         customer_name: selectedCustomer.customer_name,
         customer_phone: selectedCustomer.customer_phone,
         amount: addAmount,
         note: addNote
-      }),
-    });
-    const data = await res.json();
-    if (res.ok) {
-      alert("✅ Đã cộng thêm nợ!");
-      setAddAmount(""); 
-      setAddNote("");
-      await fetchDebts();
-      setTimeout(() => {
-        const updated = debts.find(d =>
-          d.customer_name === selectedCustomer.customer_name &&
-          d.customer_phone === selectedCustomer.customer_phone
-        );
-        if (updated) {
-          setCustomerDebt({
-            total_debt: updated.total_debt,
-            total_paid: updated.total_paid,
-            debt_history: updated.debt_history || []
-          });
-        }
-      }, 200);
-    } else {
-      alert("❌ " + (data.message || "Cộng nợ thất bại!"));
+      }); // Debug
+      
+      const res = await fetch(`${import.meta.env.VITE_API_URL}/api/cong-no/cong-no-add-customer`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          customer_name: selectedCustomer.customer_name,
+          customer_phone: selectedCustomer.customer_phone,
+          amount: addAmount,
+          note: addNote
+        }),
+      });
+      
+      const data = await res.json();
+      console.log('➕ Add debt response:', data); // Debug
+      
+      if (res.ok) {
+        alert("✅ Đã cộng thêm nợ!");
+        setAddAmount(""); 
+        setAddNote("");
+        await fetchDebts();
+        setTimeout(() => {
+          const updated = debts.find(d =>
+            d.customer_name === selectedCustomer.customer_name &&
+            d.customer_phone === selectedCustomer.customer_phone
+          );
+          if (updated) {
+            setCustomerDebt({
+              total_debt: updated.total_debt,
+              total_paid: updated.total_paid,
+              debt_history: updated.debt_history || []
+            });
+          }
+        }, 200);
+      } else {
+        console.error('❌ Add debt error:', data);
+        alert("❌ " + (data.message || `Cộng nợ thất bại! (${res.status})`));
+      }
+    } catch (error) {
+      console.error('❌ Network error adding debt:', error);
+      alert("❌ Lỗi kết nối khi cộng nợ");
     }
   };
 
@@ -307,26 +341,46 @@ function CongNo() {
   };
 
   const handleSaveCustomer = async () => {
-    if (!editForm.name.trim()) return alert("Tên khách hàng không được để trống");
+    // ✅ Kiểm tra validation kỹ hơn
+    if (!editForm.name || !editForm.name.trim()) {
+      alert("Tên khách hàng không được để trống");
+      return;
+    }
     
-    const res = await fetch(`${import.meta.env.VITE_API_URL}/api/cong-no/update-customer`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
+    try {
+      console.log('🔄 Updating customer:', {
+        editForm: editForm,
         old_customer_name: editModal.customer.customer_name,
         old_customer_phone: editModal.customer.customer_phone,
         new_customer_name: editForm.name.trim(),
         new_customer_phone: editForm.phone.trim()
-      })
-    });
-    
-    const data = await res.json();
-    if (res.ok) {
-      alert("✅ " + data.message);
-      setEditModal({ open: false, customer: null });
-      fetchDebts();
-    } else {
-      alert("❌ " + (data.message || "Lỗi cập nhật"));
+      }); // Debug
+      
+      const res = await fetch(`${import.meta.env.VITE_API_URL}/api/cong-no/update-customer`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          old_customer_name: editModal.customer.customer_name,
+          old_customer_phone: editModal.customer.customer_phone,
+          new_customer_name: editForm.name.trim(),
+          new_customer_phone: editForm.phone.trim()
+        })
+      });
+      
+      const data = await res.json();
+      console.log('📝 Update customer response:', data); // Debug
+      
+      if (res.ok) {
+        alert("✅ " + data.message);
+        setEditModal({ open: false, customer: null });
+        await fetchDebts(); // ✅ Đảm bảo chờ refresh
+      } else {
+        console.error('❌ Update customer error:', data);
+        alert("❌ " + (data.message || `Lỗi cập nhật (${res.status})`));
+      }
+    } catch (error) {
+      console.error('❌ Network error updating customer:', error);
+      alert("❌ Lỗi kết nối khi cập nhật khách hàng");
     }
   };
 

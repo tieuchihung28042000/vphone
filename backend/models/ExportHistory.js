@@ -1,5 +1,6 @@
 const mongoose = require('mongoose');
 const ExportHistorySchema = new mongoose.Schema({
+  _id: String, // Cho phép _id là string để fix lỗi cập nhật
   imei: String,                // nếu có
   sku: String,
   product_name: String,

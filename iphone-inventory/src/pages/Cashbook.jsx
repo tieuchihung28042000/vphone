@@ -110,34 +110,46 @@ export default function Cashbook() {
   const loadBranches = async () => {
     try {
       setLoadingBranches(true);
+      console.log('🏢 Loading branches...'); // Debug
+      
       const response = await fetch(`${import.meta.env.VITE_API_URL}/api/branches`);
       const data = await response.json();
+      
+      console.log('🏢 Branches API response:', data); // Debug
       
       if (response.ok && data.length > 0) {
         // Lấy tên chi nhánh từ API
         const branchNames = data.map(branch => branch.name);
         setBranches(branchNames);
         
-        // Set chi nhánh đầu tiên làm mặc định
-        if (!selectedBranch) {
-          setSelectedBranch(branchNames[0]);
-        }
+        // ✅ Cải thiện logic chọn chi nhánh mặc định
+        const defaultBranch = selectedBranch || localStorage.getItem('selectedBranch') || branchNames[0];
+        setSelectedBranch(defaultBranch);
+        localStorage.setItem('selectedBranch', defaultBranch);
+        
+        console.log('🏢 Set default branch:', defaultBranch); // Debug
       } else {
         // Fallback nếu không load được - sử dụng chi nhánh thực tế
         const fallbackBranches = ['Dĩ An', 'Quận 9'];
         setBranches(fallbackBranches);
-        if (!selectedBranch) {
-          setSelectedBranch(fallbackBranches[0]);
-        }
+        
+        const defaultBranch = selectedBranch || localStorage.getItem('selectedBranch') || fallbackBranches[0];
+        setSelectedBranch(defaultBranch);
+        localStorage.setItem('selectedBranch', defaultBranch);
+        
+        console.log('🏢 Set fallback branch:', defaultBranch); // Debug
       }
     } catch (error) {
-      console.error('Error loading branches:', error);
+      console.error('❌ Error loading branches:', error);
       // Fallback nếu có lỗi - sử dụng chi nhánh thực tế
       const fallbackBranches = ['Dĩ An', 'Quận 9'];
       setBranches(fallbackBranches);
-      if (!selectedBranch) {
-        setSelectedBranch(fallbackBranches[0]);
-      }
+      
+      const defaultBranch = selectedBranch || localStorage.getItem('selectedBranch') || fallbackBranches[0];
+      setSelectedBranch(defaultBranch);
+      localStorage.setItem('selectedBranch', defaultBranch);
+      
+      console.log('🏢 Set error fallback branch:', defaultBranch); // Debug
     } finally {
       setLoadingBranches(false);
     }
@@ -601,7 +613,16 @@ export default function Cashbook() {
                   value={selectedBranch}
                   onChange={async (e) => {
                     const newBranch = e.target.value;
+                    console.log('🏢 Branch changed to:', newBranch); // Debug
+                    
                     setSelectedBranch(newBranch);
+                    
+                    // ✅ Lưu vào localStorage để nhớ lựa chọn
+                    if (newBranch) {
+                      localStorage.setItem('selectedBranch', newBranch);
+                    } else {
+                      localStorage.removeItem('selectedBranch');
+                    }
                     
                     // ✅ Reset data ngay lập tức để tránh hiển thị data cũ
                     setTransactions([]);
@@ -617,7 +638,7 @@ export default function Cashbook() {
                           loadBalanceBySource()
                         ]);
                       } catch (error) {
-                        console.error('Error reloading data:', error);
+                        console.error('❌ Error reloading data for branch:', newBranch, error);
                       } finally {
                         setLoading(false);
                       }

@@ -43,6 +43,10 @@ imei: { type: String, default: null },
   }],
 
   status: { type: String, enum: ["in_stock", "sold"], default: "in_stock" },
+  
+  // ✅ Thêm field để đánh dấu phụ kiện
+  is_accessory: { type: Boolean, default: false },
+  
 }, {
   timestamps: true
 });

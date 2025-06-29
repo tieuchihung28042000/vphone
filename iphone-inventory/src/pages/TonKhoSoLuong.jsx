@@ -84,16 +84,30 @@ function TonKhoSoLuong() {
 
         setData(result);
 
-        // Get unique branches
-        const allBranches = Array.from(
-          new Set(result.map(row => (row.branch || "Mặc định").trim()))
-        );
+        // ✅ Get unique branches - đảm bảo có "Mặc định" cho dữ liệu cũ
+        const branchesSet = new Set();
+        result.forEach(row => {
+          const branch = (row.branch || "").trim();
+          if (branch) {
+            branchesSet.add(branch);
+          } else {
+            branchesSet.add("Mặc định");
+          }
+        });
+        const allBranches = Array.from(branchesSet).sort();
         setBranches(allBranches);
 
-        // Get unique categories
-        const allCategories = Array.from(
-          new Set(result.map(row => (row.category || "Không rõ").trim()))
-        );
+        // ✅ Get unique categories - đảm bảo có "Không rõ" cho dữ liệu cũ  
+        const categoriesSet = new Set();
+        result.forEach(row => {
+          const category = (row.category || "").trim();
+          if (category) {
+            categoriesSet.add(category);
+          } else {
+            categoriesSet.add("Không rõ");
+          }
+        });
+        const allCategories = Array.from(categoriesSet).sort();
         setCategories(allCategories);
 
         setLoading(false);
@@ -107,10 +121,19 @@ function TonKhoSoLuong() {
   const filteredData = data.filter((row) => {
     const combined = `${row.tenSanPham} ${row.sku}`.toLowerCase();
     const matchSearch = combined.includes(search.toLowerCase());
-    const matchBranch = branchFilter === "all" || row.branch === branchFilter;
+    
+    // ✅ Cải thiện logic filter để xử lý dữ liệu thiếu branch/category
+    const matchBranch = branchFilter === "all" || 
+      row.branch === branchFilter || 
+      (branchFilter === "Mặc định" && (!row.branch || row.branch === ""));
+      
+    const matchCategory = categoryFilter === "all" || 
+      row.category === categoryFilter || 
+      (categoryFilter === "Không rõ" && (!row.category || row.category === ""));
+      
     const matchMonth = monthFilter === "" || row.importMonth === monthFilter;
     const matchLowStock = !showLowStockOnly || row.totalRemain < 2;
-    const matchCategory = categoryFilter === "all" || row.category === categoryFilter;
+    
     return matchSearch && matchBranch && matchMonth && matchLowStock && matchCategory;
   });
 
@@ -139,21 +162,27 @@ function TonKhoSoLuong() {
     setImeiList(row.imeis);
     setImeiDetails([]); // ✅ Reset data trước khi load
     
+    // ✅ Thêm loading state để hiển thị spinner
+    if (row.imeis.length === 0) {
+      console.warn('⚠️ Không có IMEI nào để hiển thị');
+      return;
+    }
+    
     // Fetch detailed info for each IMEI
     try {
       console.log('🔍 Fetching details for IMEIs:', row.imeis); // Debug
       
       const imeiDetailsPromises = row.imeis.map(async (imei) => {
         try {
-        const res = await fetch(`${import.meta.env.VITE_API_URL}/api/imei-detail/${imei}`);
+          const res = await fetch(`${import.meta.env.VITE_API_URL}/api/imei-detail/${imei}`);
           console.log(`📱 IMEI ${imei} response status:`, res.status); // Debug
           
-        if (res.ok) {
-          const data = await res.json();
+          if (res.ok) {
+            const data = await res.json();
             console.log(`📱 IMEI ${imei} data:`, data.item); // Debug
-          return data.item;
+            return data.item;
           } else {
-            const errorData = await res.json();
+            const errorData = await res.json().catch(() => ({ message: 'Unknown error' }));
             console.warn(`⚠️ IMEI ${imei} error:`, errorData.message);
             return null;
           }
@@ -163,7 +192,16 @@ function TonKhoSoLuong() {
         }
       });
       
-      const details = await Promise.all(imeiDetailsPromises);
+      // ✅ Đặt timeout để tránh loading vô hạn
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Timeout after 30 seconds')), 30000)
+      );
+      
+      const details = await Promise.race([
+        Promise.all(imeiDetailsPromises),
+        timeoutPromise
+      ]);
+      
       const validDetails = details.filter(item => item !== null);
       console.log('✅ Valid IMEI details:', validDetails); // Debug
       
@@ -172,10 +210,19 @@ function TonKhoSoLuong() {
       // ✅ Nếu không có details nào thì hiển thị thông báo
       if (validDetails.length === 0) {
         console.warn('⚠️ Không có thông tin chi tiết nào được tải');
+        // Đặt một object đặc biệt để báo lỗi
+        setImeiDetails([{ 
+          error: true, 
+          message: 'Không thể tải thông tin chi tiết IMEI. Vui lòng thử lại.' 
+        }]);
       }
     } catch (err) {
       console.error('❌ Error fetching IMEI details:', err);
-      setImeiDetails([]);
+      // ✅ Đảm bảo luôn có feedback cho user
+      setImeiDetails([{ 
+        error: true, 
+        message: err.message || 'Lỗi kết nối. Vui lòng thử lại sau.' 
+      }]);
     }
   };
 
@@ -428,6 +475,18 @@ function TonKhoSoLuong() {
                 <p className="text-gray-500">Đang tải thông tin chi tiết...</p>
                 <p className="text-xs text-gray-400 mt-2">Tải {imeiList.length} IMEI...</p>
               </div>
+            ) : imeiDetails.length === 1 && imeiDetails[0].error ? (
+              <div className="text-center py-8">
+                <div className="text-red-500 text-6xl mb-4">⚠️</div>
+                <p className="text-red-600 font-semibold mb-2">Lỗi tải dữ liệu</p>
+                <p className="text-gray-600 mb-4">{imeiDetails[0].message}</p>
+                <button
+                  onClick={() => handleShowIMEI({ sku: selectedSKU, imeis: imeiList })}
+                  className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition-all"
+                >
+                  🔄 Thử lại
+                </button>
+              </div>
             ) : (
               <div className="overflow-x-auto">
                 <table className="w-full">
@@ -443,7 +502,7 @@ function TonKhoSoLuong() {
                     </tr>
                   </thead>
                   <tbody>
-                    {imeiDetails.map((item, index) => (
+                    {imeiDetails.filter(item => !item.error).map((item, index) => (
                       <tr key={index} className="border-b border-gray-200 hover:bg-gray-50">
                         <td className="px-4 py-3">
                           <div className="font-mono text-sm font-semibold text-blue-600">{item.imei}</div>

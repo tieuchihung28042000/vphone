@@ -566,11 +566,31 @@ function NhapHang() {
     {
       header: "Nhà cung cấp",
       key: "supplier",
-      render: (item) => (
-        <div className="text-sm text-gray-700">
-          {item.supplier || <span className="text-gray-400 italic">Chưa có</span>}
-        </div>
-      )
+      render: (item) => {
+        // ✅ Cải thiện hiển thị supplier để xử lý dữ liệu cũ
+        const supplier = item.supplier || item.nha_cung_cap || '';
+        const supplierDisplay = supplier.trim();
+        
+        return (
+          <div className="text-sm text-gray-700">
+            {supplierDisplay ? (
+              <span>{supplierDisplay}</span>
+            ) : (
+              <span className="text-gray-400 italic">Chưa có nhà cung cấp</span>
+            )}
+            {/* ✅ Debug info để kiểm tra dữ liệu cũ */}
+            {process.env.NODE_ENV === 'development' && !supplierDisplay && (
+              <div className="text-xs text-red-400 mt-1">
+                Debug: {JSON.stringify({
+                  supplier: item.supplier,
+                  nha_cung_cap: item.nha_cung_cap,
+                  _id: item._id
+                })}
+              </div>
+            )}
+          </div>
+        );
+      }
     },
     {
       header: "Ghi chú",
