@@ -61,7 +61,7 @@ async function createTestDatabase() {
     console.log('📋 Tạo collections...');
     for (const collectionName of collections) {
       try {
-        await testConnection.db.createCollection(collectionName);
+        await testDb.createCollection(collectionName);
         console.log(`✅ Tạo collection '${collectionName}' thành công`);
       } catch (error) {
         if (error.message.includes('already exists')) {
@@ -75,28 +75,24 @@ async function createTestDatabase() {
     // 5. Tạo indexes cơ bản
     console.log('🔍 Tạo indexes...');
     
-    try {
-      // Index cho admins
-      await testConnection.db.collection('admins').createIndex({ username: 1 }, { unique: true });
-      await testConnection.db.collection('admins').createIndex({ email: 1 }, { unique: true });
-      
-      // Index cho users
-      await testConnection.db.collection('users').createIndex({ username: 1 }, { unique: true });
-      await testConnection.db.collection('users').createIndex({ email: 1 }, { unique: true });
-      
-      // Index cho inventories
-      await testConnection.db.collection('inventories').createIndex({ imei: 1 }, { unique: true });
-      await testConnection.db.collection('inventories').createIndex({ sku: 1 });
-      await testConnection.db.collection('inventories').createIndex({ status: 1 });
-      
-      console.log('✅ Tạo indexes thành công');
-    } catch (error) {
-      console.log('⚠️ Lỗi tạo indexes:', error.message);
-    }
+    // Index cho admins
+    await testDb.collection('admins').createIndex({ username: 1 }, { unique: true });
+    await testDb.collection('admins').createIndex({ email: 1 }, { unique: true });
+    
+    // Index cho users
+    await testDb.collection('users').createIndex({ username: 1 }, { unique: true });
+    await testDb.collection('users').createIndex({ email: 1 }, { unique: true });
+    
+    // Index cho inventories
+    await testDb.collection('inventories').createIndex({ imei: 1 }, { unique: true });
+    await testDb.collection('inventories').createIndex({ sku: 1 });
+    await testDb.collection('inventories').createIndex({ status: 1 });
+    
+    console.log('✅ Tạo indexes thành công');
 
     // 6. Test kết nối
     console.log('🧪 Test kết nối database test...');
-    const collections_list = await testConnection.db.listCollections().toArray();
+    const collections_list = await testDb.listCollections().toArray();
     console.log('📊 Danh sách collections trong database test:');
     collections_list.forEach(col => {
       console.log(`   - ${col.name}`);
