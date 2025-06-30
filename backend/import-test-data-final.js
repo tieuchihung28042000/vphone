@@ -249,7 +249,7 @@ async function importTestData() {
         amount: 35000000,
         content: 'Bán MacBook Air M3 15inch cho công ty',
         category: 'ban_hang',
-        source: 'chuyen_khoan',
+        source: 'the',
         branch: branches[0].name,
         related_type: 'ban_hang',
         customer: 'Công ty ABC',
@@ -260,7 +260,7 @@ async function importTestData() {
         amount: 30000000,
         content: 'Nhập MacBook Air M3 15inch',
         category: 'nhap_hang',
-        source: 'chuyen_khoan',
+        source: 'vi_dien_tu',
         branch: branches[0].name,
         related_type: 'nhap_hang',
         supplier: 'Apple Authorized Distributor',
@@ -296,7 +296,7 @@ async function importTestData() {
     console.log(`       - Chi: ${cashbook.filter(c => c.type === 'chi').length} giao dịch`);
     
     console.log('\n🔑 Thông tin đăng nhập:');
-    console.log('   👑 Admin: admin / admin123');
+    console.log('   👑 Admin: admin / 123456');
     console.log('   👑 Super Admin: superadmin / super123');
     console.log('   👤 User: testuser / user123');
     console.log('   👤 Sale User: saleuser / sale123');
