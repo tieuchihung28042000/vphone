@@ -49,6 +49,7 @@ function NhapHang() {
     product_name: "",
     sku: "",
     price_import: "",
+    da_thanh_toan_nhap: "", // Số tiền đã thanh toán cho nhà cung cấp
     import_date: getToday(),
     supplier: "",
     branch: getLocalBranch(),
@@ -174,7 +175,7 @@ function NhapHang() {
     const { name, value } = e.target;
     if (name === "branch") localStorage.setItem('lastBranch', value);
     if (name === "category") localStorage.setItem('lastCategory', value);
-    if (name === "price_import") {
+    if (name === "price_import" || name === "da_thanh_toan_nhap") {
       setFormData((prev) => ({ ...prev, [name]: parseNumber(value) }));
     } else {
       setFormData((prev) => ({ ...prev, [name]: value }));
@@ -187,6 +188,7 @@ function NhapHang() {
       product_name: "",
       sku: "",
       price_import: "",
+      da_thanh_toan_nhap: "", // Số tiền đã thanh toán cho nhà cung cấp
       import_date: getToday(),
       supplier: "",
       branch: formData.branch,
@@ -235,6 +237,7 @@ function NhapHang() {
       product_name: item.product_name || item.tenSanPham || "",
       sku: item.sku || "",
       price_import: item.price_import || "",
+      da_thanh_toan_nhap: item.da_thanh_toan_nhap || "", // Số tiền đã thanh toán cho nhà cung cấp
       import_date: item.import_date?.slice(0, 10) || getToday(),
       supplier: item.supplier || "",
       branch: item.branch || "",
@@ -647,6 +650,36 @@ function NhapHang() {
       )
     },
     {
+      header: "Đã trả NCC",
+      key: "da_thanh_toan_nhap",
+      render: (item) => {
+        const daTT = parseFloat(item.da_thanh_toan_nhap) || 0;
+        return (
+          <div className="text-sm font-bold text-blue-600">
+            {daTT > 0 ? formatCurrency(daTT) : (
+              <span className="text-gray-400 italic">0đ</span>
+            )}
+          </div>
+        );
+      }
+    },
+    {
+      header: "Nợ NCC",
+      key: "supplier_debt",
+      render: (item) => {
+        const daTT = parseFloat(item.da_thanh_toan_nhap) || 0;
+        const giaNhap = parseFloat(item.price_import) || 0;
+        const congNo = Math.max(giaNhap - daTT, 0);
+        return (
+          <div className={`text-sm font-bold ${congNo > 0 ? 'text-red-600' : 'text-gray-400'}`}>
+            {congNo > 0 ? formatCurrency(congNo) : (
+              <span className="text-green-600">✓ Đã trả</span>
+            )}
+          </div>
+        );
+      }
+    },
+    {
       header: "Ngày nhập",
       key: "import_date",
       render: (item) => (
@@ -814,6 +847,21 @@ function NhapHang() {
               className="form-input"
               required
             />
+          </div>
+
+          <div>
+            <label className="block text-sm font-semibold text-gray-700 mb-3">Đã thanh toán NCC</label>
+            <input
+              name="da_thanh_toan_nhap"
+              type="text"
+              placeholder="Số tiền đã thanh toán cho nhà cung cấp"
+              value={formatNumber(formData.da_thanh_toan_nhap)}
+              onChange={handleChange}
+              className="form-input"
+            />
+            <div className="text-xs text-gray-500 mt-1">
+              Công nợ NCC = Giá nhập - Đã thanh toán (tự động tính)
+            </div>
           </div>
 
           <div>

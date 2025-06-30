@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
 import Layout from "../components/Layout";
 import StatsCard from "../components/StatsCard";
-import FormCard from "../components/FormCard";
 import FilterCard from "../components/FilterCard";
 import DataTable from "../components/DataTable";
 
@@ -24,36 +23,37 @@ function formatCurrency(amount) {
   return `${formatNumber(amount)}đ`;
 }
 
+function parseNumber(val) {
+  if (!val) return "";
+  return val.toString().replace(/[^\d]/g, "");
+}
+
 function CongNo() {
   // Tab state - có 2 tab: khach_no (khách nợ mình) và minh_no_ncc (mình nợ nhà cung cấp)
   const [activeTab, setActiveTab] = useState("khach_no");
   
   const [debts, setDebts] = useState([]);
   const [supplierDebts, setSupplierDebts] = useState([]);
-  const [selectedCustomer, setSelectedCustomer] = useState(null);
-  const [selectedSupplier, setSelectedSupplier] = useState(null);
   
-  // ✅ Thêm loading states
+  // Loading states
   const [loading, setLoading] = useState(false);
   const [supplierLoading, setSupplierLoading] = useState(false);
-  const [customerDebt, setCustomerDebt] = useState({ total_debt: 0, total_paid: 0, debt_history: [] });
-  const [supplierDebt, setSupplierDebt] = useState({ total_debt: 0, total_paid: 0, debt_history: [] });
-  const [payAmount, setPayAmount] = useState("");
-  const [payNote, setPayNote] = useState("");
-  const [addAmount, setAddAmount] = useState("");
-  const [addNote, setAddNote] = useState("");
-  const [historyModal, setHistoryModal] = useState({ open: false, history: [] });
-  const [detailModal, setDetailModal] = useState({ open: false, orders: [] });
   
   // Filter states
   const [searchText, setSearchText] = useState("");
   const [showAll, setShowAll] = useState(false);
-  const [editModal, setEditModal] = useState({ open: false, customer: null });
-  const [editForm, setEditForm] = useState({ name: "", phone: "" });
   
-  // ✅ Thêm state cho modal thêm khách hàng mới
-  const [addCustomerModal, setAddCustomerModal] = useState(false);
-  const [newCustomerForm, setNewCustomerForm] = useState({ name: "", phone: "", initial_debt: "" });
+  // Edit modal states - ĐƠN GIẢN HÓA: Chỉ có modal cập nhật
+  const [editModal, setEditModal] = useState({ 
+    open: false, 
+    type: '', // 'customer' hoặc 'supplier'
+    data: null 
+  });
+  const [editForm, setEditForm] = useState({ 
+    name: "", 
+    phone: "", 
+    da_thanh_toan: "" 
+  });
 
   // Stats calculation - tách riêng cho 2 tab
   const customerStats = {
@@ -65,7 +65,7 @@ function CongNo() {
 
   const supplierStats = {
     totalDebt: supplierDebts.reduce((sum, debt) => sum + debt.total_debt, 0),
-    totalCustomers: supplierDebts.length, // ✅ Changed from totalSuppliers to totalCustomers for consistency
+    totalCustomers: supplierDebts.length,
     largestDebt: Math.max(...supplierDebts.map(debt => debt.total_debt), 0),
     averageDebt: supplierDebts.length > 0 ? supplierDebts.reduce((sum, debt) => sum + debt.total_debt, 0) / supplierDebts.length : 0
   };
@@ -98,7 +98,6 @@ function CongNo() {
     
     try {
       setSupplierLoading(true);
-      console.log('🔍 Fetching supplier debts...'); // Debug
       const res = await fetch(`${import.meta.env.VITE_API_URL}/api/cong-no/supplier-debt-list?${params}`);
       
       if (!res.ok) {
@@ -106,393 +105,86 @@ function CongNo() {
       }
       
       const data = await res.json();
-      console.log('📦 Supplier debts response:', data); // Debug
-      
-      // ✅ API trả về data.suppliers chứ không phải data.items
       setSupplierDebts(data.suppliers || data.items || []);
     } catch (err) {
       console.error('❌ Error fetching supplier debts:', err);
       setSupplierDebts([]);
-      // Hiển thị error message thay vì white screen
       alert(`❌ Lỗi tải dữ liệu nhà cung cấp: ${err.message}`);
     } finally {
       setSupplierLoading(false);
     }
   };
 
-  const handleSelectCustomer = (customer) => {
-    setSelectedCustomer(customer);
-    setCustomerDebt({
-      total_debt: customer.total_debt || 0,
-      total_paid: customer.total_paid || 0,
-      debt_history: customer.debt_history || []
-    });
-    setPayAmount(""); 
-    setPayNote("");
-    setAddAmount(""); 
-    setAddNote("");
-  };
-
-  // Supplier handler functions
-  const handleSelectSupplier = (supplier) => {
-    setSelectedSupplier(supplier);
-    setSupplierDebt({
-      total_debt: supplier.total_debt || 0,
-      total_paid: supplier.total_paid || 0,
-      debt_history: supplier.debt_history || []
-    });
-    setPayAmount(""); 
-    setPayNote("");
-    setAddAmount(""); 
-    setAddNote("");
-  };
-
-  const handleShowSupplierDetail = async (supplier) => {
-    const res = await fetch(
-      `${import.meta.env.VITE_API_URL}/api/cong-no/supplier-orders?supplier_name=${encodeURIComponent(supplier.supplier_name)}`
-    );
-    const data = await res.json();
-    setDetailModal({ open: true, orders: data.orders || [] });
-  };
-
-  const handlePaySupplierDebt = async () => {
-    if (!payAmount || isNaN(payAmount)) return alert("Nhập số tiền muốn trả");
-    const res = await fetch(`${import.meta.env.VITE_API_URL}/api/cong-no/supplier-debt-pay`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        supplier_name: selectedSupplier.supplier_name,
-        amount: payAmount,
-        note: payNote
-      }),
-    });
-    const data = await res.json();
-    if (res.ok) {
-      alert("✅ Đã trả nợ nhà cung cấp!");
-      setPayAmount(""); 
-      setPayNote("");
-      await fetchSupplierDebts();
-      // Update selected supplier debt info
-      setTimeout(() => {
-        const updated = supplierDebts.find(d => d.supplier_name === selectedSupplier.supplier_name);
-        if (updated) {
-          setSupplierDebt({
-            total_debt: updated.total_debt,
-            total_paid: updated.total_paid,
-            debt_history: updated.debt_history || []
-          });
-        }
-      }, 200);
-    } else {
-      alert("❌ " + (data.message || "Trả nợ NCC thất bại!"));
-    }
-  };
-
-  const handleAddSupplierDebt = async () => {
-    if (!addAmount || isNaN(addAmount)) return alert("Nhập số tiền muốn cộng nợ");
-    const res = await fetch(`${import.meta.env.VITE_API_URL}/api/cong-no/supplier-debt-add`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        supplier_name: selectedSupplier.supplier_name,
-        amount: addAmount,
-        note: addNote
-      }),
-    });
-    const data = await res.json();
-    if (res.ok) {
-      alert("✅ Đã cộng thêm nợ NCC!");
-      setAddAmount(""); 
-      setAddNote("");
-      await fetchSupplierDebts();
-      // Update selected supplier debt info
-      setTimeout(() => {
-        const updated = supplierDebts.find(d => d.supplier_name === selectedSupplier.supplier_name);
-        if (updated) {
-          setSupplierDebt({
-            total_debt: updated.total_debt,
-            total_paid: updated.total_paid,
-            debt_history: updated.debt_history || []
-          });
-        }
-      }, 200);
-    } else {
-      alert("❌ " + (data.message || "Cộng nợ NCC thất bại!"));
-    }
-  };
-
-  const handlePayDebt = async () => {
-    if (!payAmount || isNaN(payAmount)) return alert("Nhập số tiền muốn trả");
+  // ✅ ĐƠN GIẢN HÓA: Chỉ có thao tác cập nhật
+  const handleEdit = (item, type) => {
+    setEditModal({ open: true, type, data: item });
     
-    try {
-      console.log('💰 Paying debt:', {
-        customer_name: selectedCustomer.customer_name,
-        customer_phone: selectedCustomer.customer_phone,
-        amount: payAmount,
-        note: payNote
-      }); // Debug
-      
-      const res = await fetch(`${import.meta.env.VITE_API_URL}/api/cong-no/cong-no-pay-customer`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          customer_name: selectedCustomer.customer_name,
-          customer_phone: selectedCustomer.customer_phone,
-          amount: payAmount,
-          note: payNote
-        }),
+    if (type === 'customer') {
+      setEditForm({
+        name: item.customer_name || "",
+        phone: item.customer_phone || "",
+        da_thanh_toan: item.total_paid || 0 // Hiển thị số tiền đã trả thực tế
       });
-      
-      const data = await res.json();
-      console.log('💰 Pay debt response:', data); // Debug
-      
-      if (res.ok) {
-        alert("✅ Đã cập nhật công nợ!");
-        setPayAmount(""); 
-        setPayNote("");
-        await fetchDebts();
-        setTimeout(() => {
-          const updated = debts.find(d =>
-            d.customer_name === selectedCustomer.customer_name &&
-            d.customer_phone === selectedCustomer.customer_phone
-          );
-          if (updated) {
-            setCustomerDebt({
-              total_debt: updated.total_debt,
-              total_paid: updated.total_paid,
-              debt_history: updated.debt_history || []
-            });
-          }
-        }, 200);
-      } else {
-        console.error('❌ Pay debt error:', data);
-        alert("❌ " + (data.message || `Cập nhật công nợ thất bại! (${res.status})`));
-      }
-    } catch (error) {
-      console.error('❌ Network error paying debt:', error);
-      alert("❌ Lỗi kết nối khi trả nợ");
-    }
-  };
-
-  const handleAddDebt = async () => {
-    if (!addAmount || isNaN(addAmount)) return alert("Nhập số tiền muốn cộng nợ");
-    
-    try {
-      console.log('➕ Adding debt:', {
-        customer_name: selectedCustomer.customer_name,
-        customer_phone: selectedCustomer.customer_phone,
-        amount: addAmount,
-        note: addNote
-      }); // Debug
-      
-      const res = await fetch(`${import.meta.env.VITE_API_URL}/api/cong-no/cong-no-add-customer`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          customer_name: selectedCustomer.customer_name,
-          customer_phone: selectedCustomer.customer_phone,
-          amount: addAmount,
-          note: addNote
-        }),
+    } else if (type === 'supplier') {
+      setEditForm({
+        name: item.supplier_name || "",
+        phone: item.supplier_phone || "",
+        da_thanh_toan: item.total_paid || 0 // Hiển thị số tiền đã trả thực tế
       });
-      
-      const data = await res.json();
-      console.log('➕ Add debt response:', data); // Debug
-      
-      if (res.ok) {
-        alert("✅ Đã cộng thêm nợ!");
-        setAddAmount(""); 
-        setAddNote("");
-        await fetchDebts();
-        setTimeout(() => {
-          const updated = debts.find(d =>
-            d.customer_name === selectedCustomer.customer_name &&
-            d.customer_phone === selectedCustomer.customer_phone
-          );
-          if (updated) {
-            setCustomerDebt({
-              total_debt: updated.total_debt,
-              total_paid: updated.total_paid,
-              debt_history: updated.debt_history || []
-            });
-          }
-        }, 200);
-      } else {
-        console.error('❌ Add debt error:', data);
-        alert("❌ " + (data.message || `Cộng nợ thất bại! (${res.status})`));
-      }
-    } catch (error) {
-      console.error('❌ Network error adding debt:', error);
-      alert("❌ Lỗi kết nối khi cộng nợ");
     }
   };
 
-  const handleShowHistory = () => {
-    setHistoryModal({ open: true, history: customerDebt.debt_history || [] });
-  };
-
-  const handleShowDetail = async (customer) => {
-    const res = await fetch(
-      `${import.meta.env.VITE_API_URL}/api/cong-no/cong-no-orders?customer_name=${encodeURIComponent(customer.customer_name)}&customer_phone=${encodeURIComponent(customer.customer_phone || "")}`
-    );
-    const data = await res.json();
-    setDetailModal({ open: true, orders: data.orders || [] });
-  };
-
-  const handleEditCustomer = (customer) => {
-    setEditForm({ name: customer.customer_name, phone: customer.customer_phone || "" });
-    setEditModal({ open: true, customer });
-  };
-
-  const handleSaveCustomer = async () => {
-    // ✅ Kiểm tra validation chi tiết hơn
-    console.log('🔍 Validation check:', {
-      editForm: editForm,
-      name: editForm.name,
-      nameLength: editForm.name ? editForm.name.length : 0,
-      nameTrimmed: editForm.name ? editForm.name.trim() : '',
-      nameAfterTrimLength: editForm.name ? editForm.name.trim().length : 0
-    });
-    
-    if (!editForm.name || typeof editForm.name !== 'string' || editForm.name.trim().length === 0) {
-      alert("❌ Tên khách hàng không được để trống");
-      return;
-    }
-    
-    const trimmedName = editForm.name.trim();
-    const trimmedPhone = editForm.phone ? editForm.phone.trim() : '';
-    
-    if (trimmedName.length < 1) {
-      alert("❌ Tên khách hàng phải có ít nhất 1 ký tự");
+  const handleSaveEdit = async () => {
+    if (!editForm.name.trim()) {
+      alert("❌ Vui lòng nhập tên");
       return;
     }
     
     try {
-      console.log('🔄 Updating customer:', {
-        editForm: editForm,
-        old_customer_name: editModal.customer.customer_name,
-        old_customer_phone: editModal.customer.customer_phone,
-        new_customer_name: trimmedName,
-        new_customer_phone: trimmedPhone
-      }); // Debug
-      
-      const requestBody = {
-        old_customer_name: editModal.customer.customer_name,
-        old_customer_phone: editModal.customer.customer_phone || '',
-        new_customer_name: trimmedName,
-        new_customer_phone: trimmedPhone
+      const { type, data } = editModal;
+      const apiEndpoint = type === 'customer' ? 'update-customer' : 'update-supplier';
+      const payload = type === 'customer' ? {
+        old_customer_name: data.customer_name,
+        old_customer_phone: data.customer_phone || "",
+        new_customer_name: editForm.name.trim(),
+        new_customer_phone: editForm.phone.trim(),
+        da_thanh_toan: parseNumber(editForm.da_thanh_toan) || 0
+      } : {
+        old_supplier_name: data.supplier_name,
+        old_supplier_phone: data.supplier_phone || "",
+        new_supplier_name: editForm.name.trim(),
+        new_supplier_phone: editForm.phone.trim(),
+        da_thanh_toan: parseNumber(editForm.da_thanh_toan) || 0
       };
       
-      console.log('📤 Request body:', requestBody); // Debug
-      
-      const res = await fetch(`${import.meta.env.VITE_API_URL}/api/cong-no/update-customer`, {
+      const res = await fetch(`${import.meta.env.VITE_API_URL}/api/cong-no/${apiEndpoint}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(requestBody)
+        body: JSON.stringify(payload),
       });
       
-      const data = await res.json();
-      console.log('📝 Update customer response:', { status: res.status, data }); // Debug
-      
+      const result = await res.json();
       if (res.ok) {
-        alert("✅ " + data.message);
-        setEditModal({ open: false, customer: null });
-        setEditForm({ name: "", phone: "" }); // Reset form
-        await fetchDebts(); // ✅ Đảm bảo chờ refresh
+        alert(`✅ Đã cập nhật thông tin ${type === 'customer' ? 'khách hàng' : 'nhà cung cấp'}!`);
+        type === 'customer' ? await fetchDebts() : await fetchSupplierDebts();
       } else {
-        console.error('❌ Update customer error:', data);
-        alert("❌ " + (data.message || `Lỗi cập nhật (${res.status})`));
+        alert("❌ " + (result.message || "Cập nhật thất bại!"));
       }
-    } catch (error) {
-      console.error('❌ Network error updating customer:', error);
-      alert("❌ Lỗi kết nối khi cập nhật khách hàng: " + error.message);
+      
+      setEditModal({ open: false, type: '', data: null });
+      setEditForm({ name: "", phone: "", da_thanh_toan: "" });
+    } catch (err) {
+      console.error('❌ Error saving edit:', err);
+      alert("❌ Lỗi kết nối khi cập nhật!");
     }
   };
 
-  const handleDeleteCustomer = async (customer) => {
-    if (!window.confirm(`Bạn có chắc muốn xóa công nợ của khách hàng "${customer.customer_name}"?`)) return;
-    
-    console.log('🗑️ Deleting customer:', {
-      customer_name: customer.customer_name,
-      customer_phone: customer.customer_phone,
-      total_debt: customer.total_debt
-    }); // Debug
-    
-    const res = await fetch(`${import.meta.env.VITE_API_URL}/api/cong-no/delete-customer`, {
-      method: "DELETE",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        customer_name: customer.customer_name,
-        customer_phone: customer.customer_phone
-      })
-    });
-    
-    const data = await res.json();
-    console.log('🗑️ Delete response:', data); // Debug
-    
-    if (res.ok) {
-      alert("✅ " + data.message);
-      console.log('🔄 Reloading customer list...'); // Debug
-      await fetchDebts(); // Đảm bảo await
-    } else {
-      console.error('❌ Delete error:', data);
-      alert("❌ " + (data.message || "Lỗi xóa"));
-    }
-  };
-
-  useEffect(() => {
-    fetchDebts();
-  }, [searchText, showAll]);
-
-  // Clear filters function
   const clearFilters = () => {
     setSearchText("");
     setShowAll(false);
   };
 
-  // ✅ Thêm function tạo khách hàng mới
-  const handleAddNewCustomer = async () => {
-    if (!newCustomerForm.name.trim()) {
-      return alert("❌ Vui lòng nhập tên khách hàng");
-    }
-    
-    if (!newCustomerForm.phone.trim()) {
-      return alert("❌ Vui lòng nhập số điện thoại");
-    }
-    
-    const initialDebt = parseFloat(newCustomerForm.initial_debt) || 0;
-    
-    try {
-      console.log('🆕 Creating new customer:', newCustomerForm); // Debug
-      
-      const res = await fetch(`${import.meta.env.VITE_API_URL}/api/cong-no/create-customer`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          customer_name: newCustomerForm.name.trim(),
-          customer_phone: newCustomerForm.phone.trim(),
-          initial_debt: initialDebt,
-          note: `Khách hàng mới - Nợ ban đầu: ${formatNumber(initialDebt)}đ`
-        }),
-      });
-      
-      const data = await res.json();
-      
-      if (res.ok) {
-        alert("✅ Đã thêm khách hàng mới thành công!");
-        setNewCustomerForm({ name: "", phone: "", initial_debt: "" });
-        setAddCustomerModal(false);
-        await fetchDebts(); // Reload data
-      } else {
-        alert("❌ " + (data.message || "Thêm khách hàng thất bại!"));
-      }
-    } catch (err) {
-      console.error('❌ Error creating customer:', err);
-      alert("❌ Lỗi kết nối server");
-    }
-  };
-
-  // Table columns definition - Tự động switch theo tab
+  // Table columns definition - ĐƠN GIẢN HÓA: Chỉ có thao tác cập nhật
   const tableColumns = activeTab === "khach_no" ? [
     {
       header: "Khách hàng",
@@ -505,11 +197,11 @@ function CongNo() {
       )
     },
     {
-      header: "Tổng nợ",
-      key: "total_debt",
+      header: "Tổng giá bán",
+      key: "total_sale_price",
       render: (customer) => (
-        <div className="text-sm font-bold text-red-600">
-          {formatCurrency(customer.total_debt)}
+        <div className="text-sm font-bold text-blue-600">
+          {formatCurrency(customer.total_sale_price)}
         </div>
       )
     },
@@ -526,8 +218,7 @@ function CongNo() {
       header: "Còn nợ",
       key: "remaining",
       render: (customer) => {
-        // Logic: total_debt là số còn nợ, không cần trừ total_paid
-        const remaining = customer.total_debt; // debt đã là số còn nợ
+        const remaining = customer.total_debt;
   return (
           <div className={`text-sm font-bold ${remaining > 0 ? 'text-orange-600' : 'text-green-600'}`}>
             {formatCurrency(remaining)}
@@ -539,7 +230,7 @@ function CongNo() {
       header: "Trạng thái",
       key: "status",
       render: (customer) => {
-        const remaining = customer.total_debt; // debt đã là số còn nợ
+        const remaining = customer.total_debt;
         if (remaining <= 0) {
           return <span className="badge-success">✅ Đã thanh toán</span>;
         } else if (customer.total_paid > 0) {
@@ -553,32 +244,12 @@ function CongNo() {
       header: "Thao tác",
       key: "actions",
       render: (customer) => (
-        <div className="flex gap-2 flex-wrap">
         <button
-            onClick={() => handleSelectCustomer(customer)} 
+          onClick={() => handleEdit(customer, 'customer')} 
             className="btn-action-edit text-xs"
         >
-            💰 Quản lý
+          ✏️ Cập nhật
         </button>
-        <button
-            onClick={() => handleShowDetail(customer)} 
-            className="btn-action-edit text-xs"
-        >
-            📋 Chi tiết
-        </button>
-        <button
-            onClick={() => handleEditCustomer(customer)} 
-            className="btn-action-edit text-xs"
-        >
-            ✏️ Sửa
-        </button>
-        <button
-            onClick={() => handleDeleteCustomer(customer)} 
-            className="btn-action-delete text-xs"
-        >
-            🗑️ Xóa
-        </button>
-      </div>
       )
     }
   ] : [
@@ -594,11 +265,11 @@ function CongNo() {
       )
     },
     {
-      header: "Tổng nợ",
-      key: "total_debt",
+      header: "Tổng giá nhập",
+      key: "total_import_price",
       render: (supplier) => (
-        <div className="text-sm font-bold text-red-600">
-          {formatCurrency(supplier.total_debt)}
+        <div className="text-sm font-bold text-blue-600">
+          {formatCurrency(supplier.total_import_price)}
         </div>
       )
     },
@@ -641,20 +312,12 @@ function CongNo() {
       header: "Thao tác",
       key: "actions",
       render: (supplier) => (
-        <div className="flex gap-2 flex-wrap">
           <button
-            onClick={() => handleSelectSupplier(supplier)} 
+          onClick={() => handleEdit(supplier, 'supplier')} 
             className="btn-action-edit text-xs"
           >
-            💰 Quản lý
+          ✏️ Cập nhật
           </button>
-          <button
-            onClick={() => handleShowSupplierDetail(supplier)} 
-            className="btn-action-edit text-xs"
-          >
-            📋 Chi tiết
-          </button>
-        </div>
       )
     }
   ];
@@ -668,7 +331,7 @@ function CongNo() {
     }
   }, [activeTab, searchText, showAll]);
 
-  // ✅ Show loading spinner khi đang fetch
+  // Show loading spinner khi đang fetch
   if ((activeTab === "khach_no" && loading) || (activeTab === "minh_no_ncc" && supplierLoading)) {
     return (
       <Layout 
@@ -690,249 +353,67 @@ function CongNo() {
     <Layout 
       activeTab="cong-no"
       title="💳 Công Nợ"
-      subtitle={activeTab === "khach_no" ? "Quản lý công nợ khách hàng" : "Quản lý công nợ nhà cung cấp"}
+      subtitle="Quản lý công nợ khách hàng và nhà cung cấp"
     >
       {/* Tab Navigation */}
-      <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-1 mb-6">
-        <div className="flex">
+      <div className="flex space-x-1 mb-6">
           <button
-            onClick={() => {
-              setActiveTab("khach_no");
-              setSelectedCustomer(null);
-              setSelectedSupplier(null);
-            }}
-            className={`flex-1 py-3 px-6 rounded-xl font-semibold transition-all duration-200 ${
+          onClick={() => setActiveTab("khach_no")}
+          className={`px-6 py-3 rounded-lg font-medium transition-all duration-200 ${
               activeTab === "khach_no"
-                ? "bg-blue-600 text-white shadow-md"
-                : "text-gray-600 hover:text-blue-600"
+              ? "bg-purple-600 text-white shadow-lg"
+              : "bg-gray-100 text-gray-600 hover:bg-gray-200"
             }`}
           >
-            👥 Khách nợ mình
+          👥 Khách nợ mình ({debts.length})
           </button>
           <button
-            onClick={() => {
-              setActiveTab("minh_no_ncc");
-              setSelectedCustomer(null);
-              setSelectedSupplier(null);
-            }}
-            className={`flex-1 py-3 px-6 rounded-xl font-semibold transition-all duration-200 ${
+          onClick={() => setActiveTab("minh_no_ncc")}
+          className={`px-6 py-3 rounded-lg font-medium transition-all duration-200 ${
               activeTab === "minh_no_ncc"
-                ? "bg-orange-600 text-white shadow-md"
-                : "text-gray-600 hover:text-orange-600"
+              ? "bg-purple-600 text-white shadow-lg"
+              : "bg-gray-100 text-gray-600 hover:bg-gray-200"
             }`}
           >
-            🏪 Mình nợ nhà cung cấp
+          🏪 Mình nợ NCC ({supplierDebts.length})
           </button>
-        </div>
       </div>
 
-      {/* Stats Dashboard */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+      {/* Stats Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-6">
         <StatsCard
           title="Tổng công nợ"
-          value={formatCurrency(stats.totalDebt || 0)}
-          icon="💳"
+          value={formatCurrency(stats.totalDebt)}
+          icon="💰"
           color="red"
-          subtitle="Tổng tiền chưa thu"
             />
         <StatsCard
-          title={activeTab === "khach_no" ? "Số khách hàng" : "Số nhà cung cấp"}
-          value={(stats.totalCustomers || 0).toString()}
-          icon="👥"
+          title={activeTab === "khach_no" ? "Tổng khách hàng" : "Tổng nhà cung cấp"}
+          value={stats.totalCustomers.toString()}
+          icon={activeTab === "khach_no" ? "👥" : "🏪"}
           color="blue"
-          subtitle={activeTab === "khach_no" ? "Khách hàng có nợ" : "Nhà cung cấp có nợ"}
         />
         <StatsCard
           title="Nợ lớn nhất"
-          value={formatCurrency(stats.largestDebt || 0)}
-          icon="⚠️"
+          value={formatCurrency(stats.largestDebt)}
+          icon="📈"
           color="orange"
-          subtitle={activeTab === "khach_no" ? "Khách nợ nhiều nhất" : "NCC nhiều nhất"}
             />
         <StatsCard
           title="Nợ trung bình"
-          value={formatCurrency(stats.averageDebt || 0)}
+          value={formatCurrency(stats.averageDebt)}
           icon="📊"
-          color="purple"
-          subtitle={activeTab === "khach_no" ? "Trung bình mỗi khách" : "Trung bình mỗi NCC"}
+          color="green"
         />
       </div>
 
-      {/* Customer Management Form */}
-      {selectedCustomer && (
-        <FormCard
-          title={`💰 Quản lý công nợ: ${selectedCustomer.customer_name}`}
-          subtitle={`SĐT: ${selectedCustomer.customer_phone || 'Chưa có'} • Còn nợ: ${formatCurrency(customerDebt.total_debt)}`}
-          onReset={() => setSelectedCustomer(null)}
-          showReset={true}
-          resetLabel="Đóng"
-        >
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-            {/* Pay Debt Form */}
-            <div className="space-y-4">
-              <h4 className="text-lg font-semibold text-green-600">💸 Trả nợ</h4>
-            <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">Số tiền trả</label>
-              <input
-                type="number"
-                  placeholder="Nhập số tiền"
-                value={payAmount}
-                  onChange={(e) => setPayAmount(e.target.value)}
-                  className="form-input"
-              />
-              </div>
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">Ghi chú</label>
-              <input
-                type="text"
-                placeholder="Ghi chú trả nợ"
-                value={payNote}
-                  onChange={(e) => setPayNote(e.target.value)}
-                  className="form-input"
-              />
-              </div>
-              <button
-                onClick={handlePayDebt}
-                className="w-full bg-green-600 hover:bg-green-700 text-white py-3 rounded-xl transition-all font-medium"
-              >
-                ✅ Xác nhận trả nợ
-              </button>
-            </div>
-
-            {/* Add Debt Form */}
-            <div className="space-y-4">
-              <h4 className="text-lg font-semibold text-orange-600">📈 Cộng nợ</h4>
-            <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">Số tiền cộng</label>
-              <input
-                type="number"
-                  placeholder="Nhập số tiền"
-                value={addAmount}
-                  onChange={(e) => setAddAmount(e.target.value)}
-                  className="form-input"
-              />
-              </div>
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">Ghi chú</label>
-              <input
-                type="text"
-                placeholder="Ghi chú cộng nợ"
-                value={addNote}
-                  onChange={(e) => setAddNote(e.target.value)}
-                  className="form-input"
-              />
-              </div>
-              <button
-                onClick={handleAddDebt}
-                className="w-full bg-orange-600 hover:bg-orange-700 text-white py-3 rounded-xl transition-all font-medium"
-              >
-                ➕ Cộng thêm nợ
-              </button>
-            </div>
-          </div>
-
-          <div className="mt-6 pt-6 border-t border-gray-200">
-              <button
-                onClick={handleShowHistory}
-              className="bg-purple-600 hover:bg-purple-700 text-white px-6 py-3 rounded-xl transition-all font-medium"
-              >
-              📈 Xem lịch sử giao dịch
-              </button>
-            </div>
-        </FormCard>
-      )}
-
-      {/* Supplier Management Form */}
-      {selectedSupplier && (
-        <FormCard
-          title={`🏪 Quản lý nợ nhà cung cấp: ${selectedSupplier.supplier_name}`}
-          subtitle={`Còn nợ: ${formatCurrency(supplierDebt.total_debt)}`}
-          onReset={() => setSelectedSupplier(null)}
-          showReset={true}
-          resetLabel="Đóng"
-        >
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-            {/* Pay Debt Form */}
-            <div className="space-y-4">
-              <h4 className="text-lg font-semibold text-green-600">💸 Trả nợ NCC</h4>
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">Số tiền trả</label>
-                <input
-                  type="number"
-                  placeholder="Nhập số tiền trả"
-                  value={payAmount}
-                  onChange={(e) => setPayAmount(e.target.value)}
-                  className="form-input"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">Ghi chú</label>
-                <input
-                  type="text"
-                  placeholder="Ghi chú trả nợ"
-                  value={payNote}
-                  onChange={(e) => setPayNote(e.target.value)}
-                  className="form-input"
-                />
-              </div>
-              <button
-                onClick={handlePaySupplierDebt}
-                className="w-full bg-green-600 hover:bg-green-700 text-white py-3 rounded-xl transition-all font-medium"
-              >
-                ✅ Xác nhận trả nợ
-              </button>
-            </div>
-
-            {/* Add Debt Form */}
-            <div className="space-y-4">
-              <h4 className="text-lg font-semibold text-orange-600">📈 Cộng nợ NCC</h4>
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">Số tiền cộng</label>
-                <input
-                  type="number"
-                  placeholder="Nhập số tiền cộng nợ"
-                  value={addAmount}
-                  onChange={(e) => setAddAmount(e.target.value)}
-                  className="form-input"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">Ghi chú</label>
-                <input
-                  type="text"
-                  placeholder="Ghi chú cộng nợ"
-                  value={addNote}
-                  onChange={(e) => setAddNote(e.target.value)}
-                  className="form-input"
-                />
-              </div>
-              <button
-                onClick={handleAddSupplierDebt}
-                className="w-full bg-orange-600 hover:bg-orange-700 text-white py-3 rounded-xl transition-all font-medium"
-              >
-                ➕ Cộng thêm nợ
-              </button>
-            </div>
-          </div>
-
-          <div className="mt-6 pt-6 border-t border-gray-200">
-            <button
-              onClick={() => setHistoryModal({ open: true, history: supplierDebt.debt_history || [] })}
-              className="bg-purple-600 hover:bg-purple-700 text-white px-6 py-3 rounded-xl transition-all font-medium"
-            >
-              📈 Xem lịch sử giao dịch
-            </button>
-          </div>
-        </FormCard>
-      )}
-
       {/* Filters */}
       <FilterCard onClearFilters={clearFilters}>
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div>
             <input
               type="text"
-              placeholder="🔍 Tìm tên, SĐT khách hàng..."
+              placeholder={`🔍 Tìm ${activeTab === "khach_no" ? "khách hàng" : "nhà cung cấp"}...`}
               value={searchText}
               onChange={(e) => setSearchText(e.target.value)}
               className="form-input"
@@ -944,225 +425,94 @@ function CongNo() {
                 type="checkbox"
                 checked={showAll}
                 onChange={(e) => setShowAll(e.target.checked)}
-                className="w-4 h-4 text-purple-600 rounded focus:ring-purple-500"
+                className="form-checkbox"
               />
-              <span className="text-sm font-medium text-gray-700">Hiển thị cả khách đã trả hết nợ</span>
+              <span className="text-sm text-gray-700">Hiển thị tất cả (kể cả đã thanh toán)</span>
             </label>
           </div>
-          {/* ✅ Thêm nút tạo khách hàng mới */}
-          {activeTab === "khach_no" && (
-            <div className="md:col-span-2">
-              <button
-                onClick={() => setAddCustomerModal(true)}
-                className="w-full bg-blue-600 hover:bg-blue-700 text-white py-3 px-4 rounded-xl transition-all font-medium flex items-center justify-center gap-2"
-              >
-                ➕ Thêm khách hàng mới
-              </button>
-            </div>
-          )}
         </div>
       </FilterCard>
 
       {/* Data Table */}
       <DataTable
-        title={activeTab === "khach_no" ? "📋 Danh sách công nợ khách hàng" : "📋 Danh sách công nợ nhà cung cấp"}
-        data={
-          activeTab === "khach_no" 
-            ? debts.map(item => ({ ...item, id: item._id || `${item.customer_name}-${item.customer_phone}` }))
-            : supplierDebts.map(item => ({ ...item, id: item._id || `${item.supplier_name}-${item.supplier_phone}` }))
-        }
+        title={activeTab === "khach_no" ? "📋 Danh sách khách nợ" : "📋 Danh sách nợ nhà cung cấp"}
+        data={(activeTab === "khach_no" ? debts : supplierDebts).map(item => ({ ...item, id: item._id || Math.random() }))}
         columns={tableColumns}
         currentPage={1}
         totalPages={1}
-        itemsPerPage={activeTab === "khach_no" ? debts.length : supplierDebts.length}
+        itemsPerPage={50}
         totalItems={activeTab === "khach_no" ? debts.length : supplierDebts.length}
-        emptyMessage={
-          activeTab === "khach_no" 
-            ? "Chưa có khách hàng nào còn nợ" 
-            : "Chưa có nhà cung cấp nào mình đang nợ. Hãy nhập hàng với công nợ để tạo dữ liệu."
-        }
+        onPageChange={() => {}}
       />
 
-      {/* History Modal */}
-      {historyModal.open && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-2xl p-8 max-w-4xl w-full mx-4 max-h-[80vh] overflow-y-auto">
-            <h3 className="text-xl font-bold text-gray-900 mb-6">📈 Lịch sử giao dịch</h3>
-            <div className="space-y-3">
-              {historyModal.history.length === 0 ? (
-                <p className="text-gray-500 text-center py-8">Chưa có giao dịch nào</p>
-              ) : (
-                historyModal.history.map((item, index) => (
-                  <div key={index} className="bg-gray-50 p-4 rounded-xl">
-                    <div className="flex justify-between items-start">
-                      <div>
-                        <div className={`font-semibold ${item.type === 'pay' ? 'text-green-600' : 'text-orange-600'}`}>
-                          {item.type === 'pay' ? '💸 Trả nợ' : '📈 Cộng nợ'}: {formatNumber(item.amount)}đ
-                        </div>
-                        <div className="text-sm text-gray-600 mt-1">{item.note || 'Không có ghi chú'}</div>
-                      </div>
-                      <div className="text-sm text-gray-500">
-                        {new Date(item.date).toLocaleString('vi-VN')}
-                      </div>
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
-            <div className="mt-6 flex justify-end">
-              <button
-                onClick={() => setHistoryModal({ open: false, history: [] })}
-                className="bg-gray-500 hover:bg-gray-600 text-white px-6 py-3 rounded-xl transition-all"
-              >
-                ❌ Đóng
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Detail Modal */}
-      {detailModal.open && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-2xl p-8 max-w-6xl w-full mx-4 max-h-[80vh] overflow-y-auto">
-            <h3 className="text-xl font-bold text-gray-900 mb-6">📋 Chi tiết sản phẩm đã mua</h3>
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th className="px-4 py-3 text-left text-xs font-bold text-gray-600 uppercase">Sản phẩm</th>
-                    <th className="px-4 py-3 text-left text-xs font-bold text-gray-600 uppercase">Số lượng</th>
-                    <th className="px-4 py-3 text-left text-xs font-bold text-gray-600 uppercase">Giá bán</th>
-                    <th className="px-4 py-3 text-left text-xs font-bold text-gray-600 uppercase">Công nợ</th>
-                    <th className="px-4 py-3 text-left text-xs font-bold text-gray-600 uppercase">Ngày bán</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {detailModal.orders.map((order, index) => (
-                    <tr key={index} className="border-b border-gray-200">
-                      <td className="px-4 py-3">{order.product_name}</td>
-                      <td className="px-4 py-3">{order.quantity || 1}</td>
-                                          <td className="px-4 py-3">{formatCurrency(order.price_sell)}</td>
-                    <td className="px-4 py-3">{formatCurrency(order.debt)}</td>
-                      <td className="px-4 py-3">{order.sold_date ? new Date(order.sold_date).toLocaleDateString('vi-VN') : ''}</td>
-                    </tr>
-                  ))}
-              </tbody>
-            </table>
-            </div>
-            <div className="mt-6 flex justify-end">
-              <button
-                onClick={() => setDetailModal({ open: false, orders: [] })}
-                className="bg-gray-500 hover:bg-gray-600 text-white px-6 py-3 rounded-xl transition-all"
-              >
-                ❌ Đóng
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Edit Customer Modal */}
+      {/* Edit Modal - ĐƠN GIẢN HÓA */}
       {editModal.open && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-2xl p-8 max-w-md w-full mx-4">
-            <h3 className="text-xl font-bold text-gray-900 mb-6">✏️ Sửa thông tin khách hàng</h3>
+          <div className="bg-white rounded-xl p-6 w-full max-w-md mx-4">
+            <h3 className="text-lg font-bold mb-4">
+              ✏️ Cập nhật {editModal.type === 'customer' ? 'khách hàng' : 'nhà cung cấp'}
+            </h3>
+            
             <div className="space-y-4">
               <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">Tên khách hàng</label>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Tên {editModal.type === 'customer' ? 'khách hàng' : 'nhà cung cấp'}
+                </label>
                 <input
                   type="text"
                   value={editForm.name}
-                  onChange={(e) => setEditForm(prev => ({ ...prev, name: e.target.value }))}
+                  onChange={(e) => setEditForm({...editForm, name: e.target.value})}
                   className="form-input"
-                  placeholder="Nhập tên khách hàng"
+                  placeholder="Nhập tên..."
                 />
               </div>
+              
               <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">Số điện thoại</label>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Số điện thoại
+                </label>
                 <input
                   type="text"
                   value={editForm.phone}
-                  onChange={(e) => setEditForm(prev => ({ ...prev, phone: e.target.value }))}
+                  onChange={(e) => setEditForm({...editForm, phone: e.target.value})}
                   className="form-input"
-                  placeholder="Nhập số điện thoại"
+                  placeholder="Nhập số điện thoại..."
                 />
               </div>
-              <div className="flex gap-3 pt-4">
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Cập nhật số tiền đã thanh toán
+                </label>
+                <input
+                  type="text"
+                  value={formatNumber(editForm.da_thanh_toan)}
+                  onChange={(e) => setEditForm({...editForm, da_thanh_toan: parseNumber(e.target.value)})}
+                  className="form-input"
+                  placeholder="Nhập số tiền đã thanh toán..."
+                />
+                <p className="text-xs text-gray-500 mt-1">
+                  Để trống nếu không muốn thay đổi số tiền đã thanh toán
+                </p>
+              </div>
+              </div>
+            
+            <div className="flex gap-3 mt-6">
               <button
-                onClick={() => setEditModal({ open: false, customer: null })}
-                  className="flex-1 bg-gray-500 hover:bg-gray-600 text-white py-3 rounded-xl transition-all"
+                onClick={handleSaveEdit}
+                className="flex-1 bg-purple-600 text-white px-4 py-2 rounded-lg hover:bg-purple-700 transition-colors"
               >
-                ❌ Hủy
+                ✅ Lưu
               </button>
                 <button
-                  onClick={handleSaveCustomer}
-                  className="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-3 rounded-xl transition-all"
-                >
-                  ✅ Lưu
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ✅ Add New Customer Modal */}
-      {addCustomerModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-2xl p-8 max-w-md w-full mx-4">
-            <h3 className="text-xl font-bold text-gray-900 mb-6">➕ Thêm khách hàng mới</h3>
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">Tên khách hàng *</label>
-                <input
-                  type="text"
-                  value={newCustomerForm.name}
-                  onChange={(e) => setNewCustomerForm(prev => ({ ...prev, name: e.target.value }))}
-                  className="form-input"
-                  placeholder="Nhập tên khách hàng"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">Số điện thoại *</label>
-                <input
-                  type="text"
-                  value={newCustomerForm.phone}
-                  onChange={(e) => setNewCustomerForm(prev => ({ ...prev, phone: e.target.value }))}
-                  className="form-input"
-                  placeholder="Nhập số điện thoại"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">Nợ ban đầu (tùy chọn)</label>
-                <input
-                  type="number"
-                  value={newCustomerForm.initial_debt}
-                  onChange={(e) => setNewCustomerForm(prev => ({ ...prev, initial_debt: e.target.value }))}
-                  className="form-input"
-                  placeholder="Nhập số tiền nợ ban đầu (nếu có)"
-                />
-              </div>
-              <div className="text-sm text-gray-600 bg-blue-50 p-3 rounded-lg">
-                💡 <strong>Lưu ý:</strong> Nếu khách hàng đã có nợ từ trước, hãy nhập số tiền vào "Nợ ban đầu"
-              </div>
-              <div className="flex gap-3 pt-4">
-                <button
                   onClick={() => {
-                    setAddCustomerModal(false);
-                    setNewCustomerForm({ name: "", phone: "", initial_debt: "" });
+                  setEditModal({ open: false, type: '', data: null });
+                  setEditForm({ name: "", phone: "", da_thanh_toan: "" });
                   }}
-                  className="flex-1 bg-gray-500 hover:bg-gray-600 text-white py-3 rounded-xl transition-all"
+                className="flex-1 bg-gray-300 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-400 transition-colors"
                 >
                   ❌ Hủy
                 </button>
-                <button
-                  onClick={handleAddNewCustomer}
-                  className="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-3 rounded-xl transition-all"
-                >
-                  ✅ Thêm khách hàng
-                </button>
-              </div>
             </div>
           </div>
         </div>

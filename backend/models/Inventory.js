@@ -23,24 +23,10 @@ imei: { type: String, default: null },
   branch: { type: String },
   note: { type: String },
 
-  debt: { type: Number, default: 0 },       // Công nợ còn lại (khách nợ mình)
-  da_tra: { type: Number, default: 0 },     // Đã trả (khách đã trả)
-  debt_history: [{ 
-    type: { type: String, enum: ["pay", "add"] },
-    amount: { type: Number },
-    date: { type: Date, default: Date.now },
-    note: { type: String }
-  }],
+  // Trường đã thanh toán cho nhập hàng (với nhà cung cấp)
+  da_thanh_toan_nhap: { type: Number, default: 0 }, // Đã thanh toán khi nhập hàng
 
-  // ✅ Thêm Supplier debt fields (mình nợ nhà cung cấp)
-  supplier_debt: { type: Number, default: 0 },        // Còn nợ nhà cung cấp
-  supplier_da_tra: { type: Number, default: 0 },      // Đã trả nhà cung cấp
-  supplier_debt_history: [{ 
-    type: { type: String, enum: ["pay", "add"] },
-    amount: { type: Number },
-    date: { type: Date, default: Date.now },
-    note: { type: String }
-  }],
+  da_tra: { type: Number, default: 0 },     // Đã trả (khách đã trả)
 
   status: { type: String, enum: ["in_stock", "sold"], default: "in_stock" },
   

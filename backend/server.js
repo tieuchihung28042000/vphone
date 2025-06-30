@@ -191,7 +191,8 @@ app.post('/api/nhap-hang', async (req, res) => {
       note,
       quantity,
       category,
-      source // Nguồn tiền: Tiền mặt/Thẻ/Công nợ (từ frontend)
+      source, // Nguồn tiền: Tiền mặt/Thẻ/Công nợ (từ frontend)
+      da_thanh_toan_nhap // Số tiền đã thanh toán cho nhà cung cấp
     } = req.body;
 
     if (imei) {
@@ -199,6 +200,9 @@ app.post('/api/nhap-hang', async (req, res) => {
       if (exists) {
         return res.status(400).json({ message: '❌ IMEI này đã tồn tại trong kho.' });
       }
+      // Tính toán đã thanh toán
+      const daTTNhapNum = Number(da_thanh_toan_nhap) || 0;
+      
       const newItem = new Inventory({
         imei,
         sku,
@@ -211,21 +215,24 @@ app.post('/api/nhap-hang', async (req, res) => {
         note,
         quantity: 1,
         category,
+        da_thanh_toan_nhap: daTTNhapNum, // Đã thanh toán cho nhà cung cấp
       });
       await newItem.save();
 
-      // --- Ghi SỔ QUỸ ---
-      await Cashbook.create({
-        type: 'chi',
-        amount: price_import * 1,
-        content: `Nhập hàng: ${product_name} (IMEI: ${imei})`,
-        note: note || '',
-        date: import_date || new Date(),
-        branch,
-        source: source || 'Tiền mặt',
-        supplier: supplier || '',
-        related_id: newItem._id,
-      });
+      // --- Ghi SỔ QUỸ: chỉ ghi số tiền đã thanh toán thực tế ---
+      if (daTTNhapNum > 0) {
+        await Cashbook.create({
+          type: 'chi',
+          amount: daTTNhapNum,
+          content: `Nhập hàng: ${product_name} (IMEI: ${imei})`,
+          note: note || '',
+          date: import_date || new Date(),
+          branch,
+          source: source || 'Tiền mặt',
+          supplier: supplier || '',
+          related_id: newItem._id,
+        });
+      }
 
       return res.status(201).json({
         message: '✅ Nhập hàng thành công!',
@@ -247,16 +254,24 @@ app.post('/api/nhap-hang', async (req, res) => {
     });
 
     if (existItem) {
+      // Cập nhật số lượng
+      const daTTNhapNum = Number(da_thanh_toan_nhap) || 0;
+      
       existItem.quantity = (existItem.quantity || 1) + Number(quantity || 1);
       existItem.import_date = import_date || existItem.import_date;
       existItem.supplier = supplier || existItem.supplier;
       existItem.note = note || existItem.note;
+      existItem.da_thanh_toan_nhap = (existItem.da_thanh_toan_nhap || 0) + daTTNhapNum;
       await existItem.save();
       return res.status(200).json({
         message: '✅ Đã cộng dồn số lượng phụ kiện!',
         item: existItem,
       });
     } else {
+      // Tính toán cho phụ kiện mới
+      const daTTNhapNum = Number(da_thanh_toan_nhap) || 0;
+      const quantityNum = Number(quantity || 1);
+      
       const newItem = new Inventory({
         sku,
         price_import,
@@ -266,23 +281,26 @@ app.post('/api/nhap-hang', async (req, res) => {
         supplier,
         branch,
         note,
-        quantity: Number(quantity || 1),
+        quantity: quantityNum,
         category,
+        da_thanh_toan_nhap: daTTNhapNum, // Đã thanh toán cho nhà cung cấp
       });
       await newItem.save();
 
-      // --- Ghi SỔ QUỸ ---
-      await Cashbook.create({
-        type: 'chi',
-        amount: price_import * Number(quantity || 1),
-        content: `Nhập phụ kiện: ${product_name}`,
-        note: note || '',
-        date: import_date || new Date(),
-        branch,
-        source: source || 'Tiền mặt',
-        supplier: supplier || '',
-        related_id: newItem._id,
-      });
+      // --- Ghi SỔ QUỸ: chỉ ghi số tiền đã thanh toán thực tế ---
+      if (daTTNhapNum > 0) {
+        await Cashbook.create({
+          type: 'chi',
+          amount: daTTNhapNum,
+          content: `Nhập phụ kiện: ${product_name}`,
+          note: note || '',
+          date: import_date || new Date(),
+          branch,
+          source: source || 'Tiền mặt',
+          supplier: supplier || '',
+          related_id: newItem._id,
+        });
+      }
 
       return res.status(201).json({
         message: '✅ Nhập phụ kiện thành công!',
@@ -350,7 +368,8 @@ app.post('/api/xuat-hang', async (req, res) => {
       sku,
       product_name,
       sold_date,
-      debt,
+      // debt, // ✅ REMOVED: Không dùng field debt nữa
+      da_thanh_toan, // Số tiền đã thanh toán
       branch,
       source, // Nguồn tiền (frontend truyền lên)
       is_accessory,
@@ -419,6 +438,10 @@ app.post('/api/xuat-hang', async (req, res) => {
       }
       
       // ✅ Ghi vào ExportHistory thay vì Inventory
+      const priceSellNum = Number(price_sell) || 0;
+      const daTTNum = Number(da_thanh_toan) || 0;
+      // ✅ REMOVED: autoDebt không cần thiết nữa
+      
       const soldAccessory = new ExportHistory({
         imei: '', // Phụ kiện không có IMEI
         sku: item.sku,
@@ -428,6 +451,8 @@ app.post('/api/xuat-hang', async (req, res) => {
         price_import: item.price_import,
         giaBan: price_sell,
         price_sell: price_sell,
+        da_thanh_toan: daTTNum, // Số tiền đã thanh toán
+        // ✅ REMOVED: debt field - tính công nợ bằng price_sell - da_thanh_toan
         sold_date: sold_date ? new Date(sold_date) : new Date(),
         customer_name: customer_name || '',
         customer_phone: customer_phone || '',
@@ -455,6 +480,10 @@ app.post('/api/xuat-hang', async (req, res) => {
       await item.save();
       
       // 2. Tạo record mới trong ExportHistory
+      const priceSellNum = Number(price_sell) || 0;
+      const daTTNum = Number(da_thanh_toan) || 0;
+      // ✅ REMOVED: autoDebt không cần thiết nữa
+      
       const soldItem = new ExportHistory({
         imei: item.imei,
         sku: sku || item.sku,
@@ -462,6 +491,8 @@ app.post('/api/xuat-hang', async (req, res) => {
         category: item.category,
         price_import: item.price_import,
         price_sell: price_sell,
+        da_thanh_toan: daTTNum, // Số tiền đã thanh toán
+        // ✅ REMOVED: debt field - tính công nợ bằng price_sell - da_thanh_toan
         sold_date: sold_date ? new Date(sold_date) : new Date(),
         customer_name: customer_name || '',
         customer_phone: customer_phone || '',
@@ -470,12 +501,6 @@ app.post('/api/xuat-hang', async (req, res) => {
         branch: branch || item.branch,
         export_type: 'normal'
       });
-      
-      if (debt !== undefined && debt !== null && debt !== "") {
-        soldItem.debt = Number(debt);
-      } else {
-        soldItem.debt = 0;
-      }
       
       await soldItem.save();
       
@@ -490,23 +515,29 @@ app.post('/api/xuat-hang', async (req, res) => {
       ? `${item.product_name} (IMEI: ${item.imei})`
       : `${item.product_name} (Phụ kiện - SL: ${item.quantity || 1})`;
       
-    await Cashbook.create({
-      type: 'thu',
-      amount: Number(item.da_tra || item.price_sell || 0),
-      content: `Bán hàng: ${productDescription}`,
-      note: note || '',
-      date: sold_date || new Date(),
-      branch: branch || '',
-      source: source || 'Tiền mặt',
-      customer: customer_name || '',
-      related_id: item._id
-    });
-
-    // Nếu có công nợ thì ghi sổ công nợ khách
-    if (item.debt && item.debt > 0) {
+    // Ghi sổ quỹ với số tiền đã thanh toán thực tế
+    const amountReceived = Number(item.da_thanh_toan || da_thanh_toan || 0);
+    if (amountReceived > 0) {
       await Cashbook.create({
         type: 'thu',
-        amount: Number(item.debt),
+        amount: amountReceived,
+        content: `Bán hàng: ${productDescription}`,
+        note: note || '',
+        date: sold_date || new Date(),
+        branch: branch || '',
+        source: source || 'Tiền mặt',
+        customer: customer_name || '',
+        related_id: item._id
+      });
+    }
+
+    // ✅ REMOVED: Không dùng field debt nữa, tính công nợ bằng price_sell - da_thanh_toan
+    // Nếu có công nợ thì ghi sổ công nợ khách
+    const congNo = Math.max((item.price_sell || 0) - (item.da_thanh_toan || 0), 0);
+    if (congNo > 0) {
+      await Cashbook.create({
+        type: 'thu',
+        amount: congNo,
         content: `Công nợ khách hàng khi bán: ${productDescription}`,
         note: `Công nợ khách: ${customer_name}`,
         date: sold_date || new Date(),
@@ -644,7 +675,8 @@ app.get('/api/xuat-hang-list', async (req, res) => {
       // ✅ Thêm các field quan trọng khác  
       price_import: item.price_import || item.giaNhap || 0,
       profit: (item.price_sell || item.giaBan || 0) - (item.price_import || item.giaNhap || 0),
-      debt: item.debt || 0,
+      // ✅ REMOVED: debt field - tính công nợ bằng price_sell - da_thanh_toan
+      da_thanh_toan: item.da_thanh_toan || 0, // ✅ THÊM FIELD ĐÃ THANH TOÁN
       imei: item.imei || '',
       sku: item.sku || '',
       product_name: item.product_name || item.tenSanPham || '',
@@ -671,118 +703,45 @@ app.get('/api/xuat-hang-list', async (req, res) => {
   }
 });
 
+// API sửa xuất hàng - ĐƠN GIẢN HÓA THEO CÁCH NHẬP HÀNG
 app.put('/api/xuat-hang/:id', async (req, res) => {
   try {
-    const {
-      imei,
-      sku,
-      product_name,
-      price_sell,
-      customer_name,
-      customer_phone,
-      warranty,
-      note,
-      branch,
-      sold_date,
-      source,
-      debt
-    } = req.body;
-
     console.log('🔄 PUT Request data:', req.body); // Debug
     console.log('🔍 PUT Request ID:', req.params.id); // Debug
+    console.log('🔍 DEBUG da_thanh_toan in req.body:', req.body.da_thanh_toan); // Debug specific field
 
-    // ✅ Validate ObjectId format
-    const mongoose = require('mongoose');
-    if (!mongoose.isValidObjectId(req.params.id)) {
-      console.log('❌ Invalid ObjectId format:', req.params.id);
-      return res.status(400).json({ message: '❌ ID không hợp lệ.' });
-    }
-
-    // ✅ Debug: Kiểm tra record có tồn tại không trong ExportHistory TRƯỚC KHI UPDATE
+    // Kiểm tra record tồn tại trước khi cập nhật
     const existingRecord = await ExportHistory.findById(req.params.id);
-    console.log('🔍 Found record for PUT in ExportHistory:', existingRecord ? {
-      _id: existingRecord._id,
-      product_name: existingRecord.product_name,
-      imei: existingRecord.imei || 'No IMEI (accessory)',
-      price_sell: existingRecord.price_sell,
-      customer_name: existingRecord.customer_name
-    } : 'NOT FOUND');
-    
     if (!existingRecord) {
-      console.log('❌ Record not found in ExportHistory for ID:', req.params.id);
       return res.status(404).json({ message: '❌ Không tìm thấy đơn xuất để cập nhật.' });
     }
 
-    // ✅ ROLLBACK: Proper field mapping để consistent với POST API
-    const updateFields = {
-      // Price fields - map to both formats for consistency
-      price_sell: parseFloat(price_sell) || 0,
-      giaBan: parseFloat(price_sell) || 0,
-      // Customer info
-      customer_name: customer_name || '',
-      customer_phone: customer_phone || '',
-      // Product info  
-      product_name: product_name || '',
-      sku: sku || '',
-      imei: imei || '',
-      // Other fields
-      warranty: warranty || '',
-      note: note || '',
-      branch: branch || '',
-      source: source || 'tien_mat',
-      sold_date: sold_date ? new Date(sold_date) : new Date(),
-      debt: parseFloat(debt) || 0,
-      // Update timestamp
-      updatedAt: new Date()
-    };
-
-    // Remove undefined/empty fields - NHƯNG GIỮ LẠI ÍT NHẤT 1 FIELD
-    Object.keys(updateFields).forEach(key => {
-      if (updateFields[key] === undefined || updateFields[key] === '') {
-        delete updateFields[key];
-      }
+    console.log('📋 Existing record before update:', {
+      _id: existingRecord._id,
+      da_thanh_toan: existingRecord.da_thanh_toan,
+      customer_name: existingRecord.customer_name
     });
 
-    // ✅ Đảm bảo luôn có ít nhất 1 field để update
-    if (Object.keys(updateFields).length === 0) {
-      updateFields.updatedAt = new Date();
-    }
+    const updatedItem = await ExportHistory.findByIdAndUpdate(
+      req.params.id,
+      req.body,
+      { new: true }
+    );
 
-    console.log('🔄 Processed update fields:', updateFields); // Debug
-    console.log('🔄 Update fields count:', Object.keys(updateFields).length); // Debug
-
-    let updated;
-    try {
-      updated = await ExportHistory.findByIdAndUpdate(
-        req.params.id, 
-        { $set: updateFields }, 
-        { new: true, runValidators: false }
-      );
-      console.log('🔍 Update result:', updated ? 'SUCCESS' : 'FAILED');
-    } catch (updateError) {
-      console.error('❌ Update error:', updateError);
-      return res.status(500).json({ message: '❌ Lỗi database khi update', error: updateError.message });
-    }
-    
-    if (!updated) {
-      console.log('❌ findByIdAndUpdate returned null for ID:', req.params.id);
-      return res.status(404).json({ message: '❌ Không tìm thấy đơn xuất để cập nhật.' });
-    }
-
-    console.log('✅ Updated item successfully:', {
-      _id: updated._id,
-      product_name: updated.product_name,
-      price_sell: updated.price_sell,
-      customer_name: updated.customer_name
+    console.log('✅ Updated successfully:', {
+      _id: updatedItem._id,
+      da_thanh_toan: updatedItem.da_thanh_toan,
+      price_sell: updatedItem.price_sell,
+      customer_name: updatedItem.customer_name
     }); // Debug
 
-    res.status(200).json({ 
-      message: '✅ Đã cập nhật đơn xuất thành công!', 
-      item: updated 
+    res.status(200).json({
+      message: '✅ Cập nhật thành công!',
+      item: updatedItem,
     });
   } catch (error) {
-    console.error('❌ Error updating xuat-hang:', error);
-    res.status(500).json({ message: '❌ Lỗi khi cập nhật đơn xuất', error: error.message });
+    console.error('❌ Lỗi khi cập nhật xuất hàng:', error.message);
+    res.status(500).json({ message: '❌ Lỗi server khi cập nhật', error: error.message });
   }
 });
 

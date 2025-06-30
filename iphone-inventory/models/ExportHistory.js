@@ -12,7 +12,7 @@ const ExportHistorySchema = new mongoose.Schema({
   customer_phone: String,
   warranty: String,
   note: String,
-  debt: Number,
+  da_thanh_toan: { type: Number, default: 0 }, // Số tiền đã thanh toán
   branch: String,
   category: String,
   export_type: { type: String, default: 'normal' }, // phân biệt phụ kiện / iPhone

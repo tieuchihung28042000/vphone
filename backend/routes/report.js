@@ -345,11 +345,12 @@ router.put('/xuat-hang/:id', async (req, res) => {
       sold_date,
       sale_date,     // ✅ Thêm field từ frontend
       source,
-      debt
+      da_thanh_toan  // ✅ FIX: Thêm field da_thanh_toan
     } = req.body;
 
     console.log('🔄 Routes PUT Request data:', req.body); // Debug
     console.log('🔍 Routes PUT Request ID:', req.params.id); // Debug
+    console.log('🔍 DEBUG da_thanh_toan value:', da_thanh_toan); // Debug specific field
 
     // ✅ Validate ObjectId format
     const mongoose = require('mongoose');
@@ -400,7 +401,7 @@ router.put('/xuat-hang/:id', async (req, res) => {
       branch: branch || '',
       source: source || 'tien_mat',
       sold_date: finalSaleDate ? new Date(finalSaleDate) : new Date(),
-      debt: parseFloat(debt) || 0,
+      da_thanh_toan: parseFloat(da_thanh_toan) || 0, // ✅ FIX: Thêm field da_thanh_toan
       updatedAt: new Date()
     };
 

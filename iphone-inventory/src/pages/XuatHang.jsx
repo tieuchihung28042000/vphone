@@ -49,6 +49,7 @@ function XuatHang() {
     quantity: "1",
     warranty: "",
     sale_price: "",
+    da_thanh_toan: "", // Số tiền đã thanh toán
     sale_date: getToday(),
     buyer_name: "",
     buyer_phone: "",
@@ -231,7 +232,7 @@ function XuatHang() {
     const { name, value } = e.target;
     if (name === "branch") localStorage.setItem('lastBranch', value);
     
-    if (name === "sale_price") {
+    if (name === "sale_price" || name === "da_thanh_toan") {
       // Giữ nguyên giá trị đã format để hiển thị, nhưng lưu số nguyên vào state
       const cleanNumber = parseNumber(value);
       setFormData((prev) => ({ ...prev, [name]: cleanNumber }));
@@ -270,6 +271,7 @@ function XuatHang() {
       quantity: "1",
       warranty: "",
       sale_price: "",
+      da_thanh_toan: "", // Số tiền đã thanh toán
       sale_date: getToday(),
       buyer_name: "",
       buyer_phone: "",
@@ -289,48 +291,14 @@ function XuatHang() {
         ? `${import.meta.env.VITE_API_URL}/api/xuat-hang/${editingItemId}`
         : `${import.meta.env.VITE_API_URL}/api/xuat-hang`;
 
-      // Prepare data for API
-      const salePriceNumber = parseInt(parseNumber(formData.sale_price)) || 0;
-      
-      const apiData = {
-        imei: isAccessory ? "" : formData.imei, // Phụ kiện không cần IMEI
-        sku: formData.sku,
-        product_name: formData.product_name,
-        quantity: parseInt(formData.quantity) || 1,
-        warranty: formData.warranty,
-        price_sell: salePriceNumber, // ✅ Backend expects price_sell
-        customer_name: formData.buyer_name, // ✅ Backend expects customer_name
-        customer_phone: formData.buyer_phone, // ✅ Backend expects customer_phone
-        branch: formData.branch,
-        note: formData.note,
-        source: formData.source,
-        sold_date: formData.sale_date, // ✅ Backend expects sold_date
-        is_accessory: isAccessory, // Thêm flag để backend biết đây là phụ kiện
-        debt: 0 // ✅ Thêm debt field mặc định
-      };
-
-      // Debug logging cho giá bán
-      console.log('💰 Sale Price Debug:', {
-        formValue: formData.sale_price,
-        parsedNumber: parseNumber(formData.sale_price),
-        finalNumber: salePriceNumber
-      });
-
-      // ✅ Debug logging
-      if (editingItemId) {
-        console.log('🔄 EDIT mode - Submitting PUT request');
-        console.log('EditingID:', editingItemId);
-        console.log('API URL:', url);
-        console.log('API Data:', apiData);
-      } else {
-        console.log('🆕 CREATE mode - Submitting POST request');
-        console.log('API Data:', apiData);
-      }
+      // ✅ ĐƠN GIẢN HÓA: Học theo trang Nhập Hàng - gửi formData trực tiếp
+      console.log('🔄 Submitting request:', { method, url, formData });
+      console.log('🔍 DEBUG formData.da_thanh_toan:', formData.da_thanh_toan);
 
       const res = await fetch(url, {
         method,
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(apiData)
+        body: JSON.stringify(formData) // ✅ Gửi formData trực tiếp như Nhập hàng
       });
 
       const data = await res.json();
@@ -365,9 +333,10 @@ function XuatHang() {
       quantity: item.quantity || "1",
       warranty: item.warranty || "",
       sale_price: salePrice.toString(), // Đảm bảo là string để hiển thị đúng
+      da_thanh_toan: (item.da_thanh_toan || "").toString(), // Số tiền đã thanh toán
       sale_date: item.sale_date?.slice(0, 10) || getToday(),
-      buyer_name: item.buyer_name || "",
-      buyer_phone: item.buyer_phone || "",
+      buyer_name: item.customer_name || item.buyer_name || "",
+      buyer_phone: item.customer_phone || item.buyer_phone || "",
       branch: item.branch || "",
       note: item.note || "",
       source: item.source || "tien_mat"
@@ -497,6 +466,36 @@ function XuatHang() {
               <span className="text-red-500 italic">Chưa có giá</span>
             )}
             {/* Debug info đã tắt */}
+          </div>
+        );
+      }
+    },
+    {
+      header: "Đã thanh toán",
+      key: "da_thanh_toan",
+      render: (item) => {
+        const daTT = parseFloat(item.da_thanh_toan) || 0;
+        return (
+          <div className="text-sm font-bold text-blue-600">
+            {daTT > 0 ? formatCurrency(daTT) : (
+              <span className="text-gray-400 italic">0đ</span>
+            )}
+          </div>
+        );
+      }
+    },
+    {
+      header: "Công nợ",
+      key: "calculated_debt", // ✅ CHANGED: Không dùng field debt nữa, tính trực tiếp
+      render: (item) => {
+        const daTT = parseFloat(item.da_thanh_toan) || 0;
+        const giaBan = parseFloat(item.sale_price) || 0;
+        const congNo = Math.max(giaBan - daTT, 0); // ✅ Tính công nợ bằng price_sell - da_thanh_toan
+        return (
+          <div className={`text-sm font-bold ${congNo > 0 ? 'text-red-600' : 'text-gray-400'}`}>
+            {congNo > 0 ? formatCurrency(congNo) : (
+              <span className="text-green-600">✓ Đã thanh toán</span>
+            )}
           </div>
         );
       }
@@ -784,6 +783,21 @@ function XuatHang() {
               className="form-input"
               required
             />
+          </div>
+
+          <div>
+            <label className="block text-sm font-semibold text-gray-700 mb-3">Đã thanh toán</label>
+            <input
+              name="da_thanh_toan"
+              type="text"
+              placeholder="Số tiền khách đã thanh toán"
+              value={formatNumber(formData.da_thanh_toan)}
+              onChange={handleChange}
+              className="form-input"
+            />
+            <div className="text-xs text-gray-500 mt-1">
+              Công nợ = Giá bán - Đã thanh toán (tự động tính)
+            </div>
           </div>
 
           <div>
