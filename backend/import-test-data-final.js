@@ -77,32 +77,32 @@ async function importTestData() {
     const users = await User.insertMany(userData);
     console.log(`✅ Đã tạo ${users.length} tài khoản user`);
 
-    // 3. Tạo Chi nhánh
+    // 3. Tạo Chi nhánh - CHỈ CÓ NAME
     console.log('🏢 Tạo chi nhánh...');
     const branchData = [
-      { name: 'VPhone Test Quận 1', address: '123 Nguyễn Huệ, Quận 1, TP.HCM', phone: '0901234567' },
-      { name: 'VPhone Test Quận 3', address: '456 Võ Văn Tần, Quận 3, TP.HCM', phone: '0901234568' },
-      { name: 'VPhone Test Hà Nội', address: '789 Hoàng Kiếm, Hà Nội', phone: '0901234569' }
+      { name: 'VPhone Test Quận 1' },
+      { name: 'VPhone Test Quận 3' },
+      { name: 'VPhone Test Hà Nội' }
     ];
     
     const branches = await Branch.insertMany(branchData);
     console.log(`✅ Đã tạo ${branches.length} chi nhánh`);
 
-    // 4. Tạo Danh mục sản phẩm
+    // 4. Tạo Danh mục sản phẩm - CHỈ CÓ NAME
     console.log('📱 Tạo danh mục sản phẩm...');
     const categoryData = [
-      { name: 'iPhone 15 Series', description: 'iPhone 15, 15 Plus, 15 Pro, 15 Pro Max' },
-      { name: 'iPhone 14 Series', description: 'iPhone 14, 14 Plus, 14 Pro, 14 Pro Max' },
-      { name: 'MacBook', description: 'MacBook Air, MacBook Pro các loại' },
-      { name: 'iPad', description: 'iPad, iPad Air, iPad Pro, iPad Mini' },
-      { name: 'Apple Watch', description: 'Apple Watch Series và SE' },
-      { name: 'Phụ kiện', description: 'Ốp lưng, cáp sạc, tai nghe' }
+      { name: 'iPhone 15 Series' },
+      { name: 'iPhone 14 Series' },
+      { name: 'MacBook' },
+      { name: 'iPad' },
+      { name: 'Apple Watch' },
+      { name: 'Phụ kiện' }
     ];
     
     const categories = await Category.insertMany(categoryData);
     console.log(`✅ Đã tạo ${categories.length} danh mục`);
 
-    // 5. Tạo Inventory (Kho hàng) - SỬA STATUS
+    // 5. Tạo Inventory (Kho hàng)
     console.log('📦 Tạo dữ liệu kho hàng...');
     const currentTime = Date.now();
     const inventoryData = [
@@ -116,10 +116,10 @@ async function importTestData() {
         price_sell: 32000000,
         import_date: new Date(),
         supplier: 'Apple Authorized Distributor',
-        branch: branches[0]._id.toString(),
+        branch: branches[0].name, // SỬA: Dùng name thay vì _id
         category: categories[0].name,
         quantity: 1,
-        status: 'in_stock', // SỬA: available -> in_stock
+        status: 'in_stock',
         note: 'Hàng chính hãng VN/A',
         da_thanh_toan_nhap: 28000000
       },
@@ -131,10 +131,10 @@ async function importTestData() {
         tenSanPham: 'iPhone 15 Pro Max 512GB Blue Titanium',
         price_import: 35000000,
         price_sell: 39000000,
-        import_date: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000), // 7 ngày trước
+        import_date: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000),
         sold_date: new Date(),
         supplier: 'Apple Authorized Distributor',
-        branch: branches[0]._id.toString(),
+        branch: branches[0].name,
         category: categories[0].name,
         quantity: 1,
         status: 'sold',
@@ -153,7 +153,7 @@ async function importTestData() {
         price_sell: 29000000,
         import_date: new Date(),
         supplier: 'Apple Authorized Distributor',
-        branch: branches[1]._id.toString(),
+        branch: branches[1].name,
         category: categories[0].name,
         quantity: 1,
         status: 'in_stock',
@@ -170,7 +170,7 @@ async function importTestData() {
         price_sell: 24000000,
         import_date: new Date(),
         supplier: 'Apple Authorized Distributor',
-        branch: branches[2]._id.toString(),
+        branch: branches[2].name,
         category: categories[0].name,
         quantity: 1,
         status: 'in_stock',
@@ -185,10 +185,10 @@ async function importTestData() {
         tenSanPham: 'MacBook Air M3 15inch 256GB Space Gray',
         price_import: 30000000,
         price_sell: 35000000,
-        import_date: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000), // 5 ngày trước
+        import_date: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000),
         sold_date: new Date(),
         supplier: 'Apple Authorized Distributor',
-        branch: branches[0]._id.toString(),
+        branch: branches[0].name,
         category: categories[2].name,
         quantity: 1,
         status: 'sold',
@@ -207,7 +207,7 @@ async function importTestData() {
         price_sell: 26000000,
         import_date: new Date(),
         supplier: 'Apple Authorized Distributor',
-        branch: branches[1]._id.toString(),
+        branch: branches[1].name,
         category: categories[3].name,
         quantity: 1,
         status: 'in_stock',
@@ -219,40 +219,62 @@ async function importTestData() {
     const inventory = await Inventory.insertMany(inventoryData);
     console.log(`✅ Đã tạo ${inventory.length} sản phẩm trong kho`);
 
-    // 6. Tạo Cashbook (Sổ quỹ) - CHỈ TẠO CƠ BẢN
+    // 6. Tạo Cashbook (Sổ quỹ) - SỬA THEO ĐÚNG SCHEMA
     console.log('💰 Tạo dữ liệu sổ quỹ...');
     const cashbookData = [
       {
-        date: new Date(),
         type: 'thu',
         amount: 39000000,
-        description: 'Bán iPhone 15 Pro Max 512GB Blue Titanium',
+        content: 'Bán iPhone 15 Pro Max 512GB Blue Titanium', // SỬA: description -> content
         category: 'ban_hang',
-        source: 'tien_mat'
+        source: 'tien_mat',
+        branch: branches[0].name, // SỬA: Thêm branch required
+        related_type: 'ban_hang',
+        customer: 'Nguyễn Văn A',
+        date: new Date()
       },
       {
-        date: new Date(),
         type: 'chi',
         amount: 35000000,
-        description: 'Nhập iPhone 15 Pro Max 512GB Blue Titanium',
+        content: 'Nhập iPhone 15 Pro Max 512GB Blue Titanium',
         category: 'nhap_hang',
-        source: 'tien_mat'
+        source: 'tien_mat',
+        branch: branches[0].name,
+        related_type: 'nhap_hang',
+        supplier: 'Apple Authorized Distributor',
+        date: new Date()
       },
       {
-        date: new Date(),
         type: 'thu',
         amount: 35000000,
-        description: 'Bán MacBook Air M3 15inch cho công ty',
+        content: 'Bán MacBook Air M3 15inch cho công ty',
         category: 'ban_hang',
-        source: 'chuyen_khoan'
+        source: 'chuyen_khoan',
+        branch: branches[0].name,
+        related_type: 'ban_hang',
+        customer: 'Công ty ABC',
+        date: new Date()
       },
       {
-        date: new Date(),
         type: 'chi',
         amount: 30000000,
-        description: 'Nhập MacBook Air M3 15inch',
+        content: 'Nhập MacBook Air M3 15inch',
         category: 'nhap_hang',
-        source: 'chuyen_khoan'
+        source: 'chuyen_khoan',
+        branch: branches[0].name,
+        related_type: 'nhap_hang',
+        supplier: 'Apple Authorized Distributor',
+        date: new Date()
+      },
+      {
+        type: 'chi',
+        amount: 2000000,
+        content: 'Chi phí vận chuyển hàng từ HN về HCM',
+        category: 'van_chuyen',
+        source: 'tien_mat',
+        branch: branches[0].name,
+        related_type: 'manual',
+        date: new Date()
       }
     ];
     
@@ -266,8 +288,12 @@ async function importTestData() {
     console.log(`   👥 User: ${users.length} tài khoản`);
     console.log(`   🏢 Chi nhánh: ${branches.length} chi nhánh`);
     console.log(`   📱 Danh mục: ${categories.length} danh mục`);
-    console.log(`   📦 Kho hàng: ${inventory.length} sản phẩm (${inventory.filter(i => i.status === 'in_stock').length} còn hàng, ${inventory.filter(i => i.status === 'sold').length} đã bán)`);
+    console.log(`   📦 Kho hàng: ${inventory.length} sản phẩm`);
+    console.log(`       - Còn hàng: ${inventory.filter(i => i.status === 'in_stock').length}`);
+    console.log(`       - Đã bán: ${inventory.filter(i => i.status === 'sold').length}`);
     console.log(`   💰 Sổ quỹ: ${cashbook.length} giao dịch`);
+    console.log(`       - Thu: ${cashbook.filter(c => c.type === 'thu').length} giao dịch`);
+    console.log(`       - Chi: ${cashbook.filter(c => c.type === 'chi').length} giao dịch`);
     
     console.log('\n🔑 Thông tin đăng nhập:');
     console.log('   👑 Admin: admin / admin123');
@@ -277,6 +303,11 @@ async function importTestData() {
     
     console.log('\n🔗 Database Connection:');
     console.log('   mongodb://vphone_admin:***@103.109.187.224:27017/test?authSource=admin');
+    
+    console.log('\n📋 Chi tiết sản phẩm:');
+    inventory.forEach((item, index) => {
+      console.log(`   ${index + 1}. ${item.product_name} - ${item.status === 'in_stock' ? '✅ Còn hàng' : '❌ Đã bán'}`);
+    });
 
   } catch (error) {
     console.error('❌ Lỗi import dữ liệu:', error);
@@ -289,6 +320,6 @@ async function importTestData() {
 }
 
 // Chạy import
-console.log('🚀 Bắt đầu import dữ liệu test environment (FIXED VERSION)');
+console.log('🚀 Bắt đầu import dữ liệu test environment (FINAL VERSION)');
 console.log('📅 Thời gian:', new Date().toLocaleString('vi-VN'));
 importTestData(); 
