@@ -27,6 +27,8 @@ const allowedOrigins = [
   'https://chinhthuc-jade.vercel.app',
   'http://app.vphone.vn',
   'https://app.vphone.vn',
+  'http://test.vphone.vn',
+  'https://test.vphone.vn',
   'http://103.109.187.224',
   'https://103.109.187.224',
 ];
