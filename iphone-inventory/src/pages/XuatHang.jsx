@@ -297,8 +297,8 @@ function XuatHang() {
       const quantity = parseInt(formData.quantity) || 1;
       const daTT = parseNumber(formData.da_thanh_toan) || 0;
       
-      // ✅ Tự động tính toán nếu chưa có giá trị đã thanh toán
-      const finalDaTT = daTT || (salePrice * quantity); // Nếu chưa nhập, tự động = giá bán * số lượng
+      // ✅ Chỉ tự động tính khi tạo mới (không edit) và khi thực sự trống
+      const finalDaTT = editingItemId ? daTT : (daTT || (salePrice * quantity)); // Edit: giữ nguyên giá trị, Create: tự động tính
       
       const submitData = {
         ...formData,
@@ -327,8 +327,15 @@ function XuatHang() {
         console.log('✅ API Response success:', data);
         setMessage(`✅ ${data.message}`);
         resetForm();
-        fetchSoldItems(); // This should refresh the list with updated data
-        fetchAvailableItems();
+        
+        // ✅ Force refresh data để đảm bảo UI cập nhật
+        console.log('🔄 Refreshing data after successful operation...');
+        await Promise.all([
+          fetchSoldItems(),
+          fetchAvailableItems()
+        ]);
+        console.log('✅ Data refresh completed');
+        
         setTimeout(() => setMessage(""), 3000);
       } else {
         console.error('❌ API Response error:', data);
@@ -697,7 +704,8 @@ function XuatHang() {
       render: (item) => {
         const daTT = parseFloat(item.da_thanh_toan) || 0;
         const giaBan = parseFloat(item.sale_price) || 0;
-        const congNo = Math.max(giaBan - daTT, 0); // ✅ Tính công nợ bằng price_sell - da_thanh_toan
+        const soLuong = parseInt(item.quantity) || 1;
+        const congNo = Math.max((giaBan * soLuong) - daTT, 0); // ✅ Tính công nợ = (giá bán × số lượng) - đã thanh toán
         return (
           <div className={`text-sm font-bold ${congNo > 0 ? 'text-red-600' : 'text-gray-400'}`}>
             {congNo > 0 ? formatCurrency(congNo) : (
@@ -1012,10 +1020,16 @@ function XuatHang() {
                 const congNo = Math.max(autoAmount - finalDaTT, 0);
                 
                 return (
-                  <div>
-                    <div>Tự động tính: {formatCurrency(salePrice)} × {quantity} = {formatCurrency(autoAmount)}</div>
-                    <div className={congNo > 0 ? 'text-red-600 font-semibold' : 'text-green-600'}>
-                      Công nợ: {formatCurrency(congNo)} {congNo === 0 && '✓ Đã thanh toán đủ'}
+                  <div className="p-2 bg-green-50 rounded border border-green-200">
+                    <div className="font-medium text-green-900">💡 Tính toán tự động:</div>
+                    <div className="text-green-700">
+                      <strong>Tổng tiền bán:</strong> {formatCurrency(salePrice)} × {quantity} = <strong>{formatCurrency(autoAmount)}</strong>
+                    </div>
+                    <div className="text-green-700">
+                      <strong>Khách thanh toán:</strong> {daTT > 0 ? formatCurrency(daTT) : `${formatCurrency(autoAmount)} (tự động)`}
+                    </div>
+                    <div className={`font-semibold ${congNo > 0 ? 'text-red-600' : 'text-green-600'}`}>
+                      <strong>Công nợ khách:</strong> {formatCurrency(congNo)} {congNo === 0 && '✅ Đã thanh toán đủ'}
                     </div>
                   </div>
                 );

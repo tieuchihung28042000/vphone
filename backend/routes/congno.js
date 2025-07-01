@@ -39,13 +39,14 @@ router.get('/cong-no-list', async (req, res) => {
         };
       }
       
-      // Tính công nợ từ logic mới: price_sell - da_thanh_toan
+      // Tính công nợ từ logic mới: (price_sell × quantity) - da_thanh_toan
       const priceSell = parseFloat(item.price_sell) || 0;
+      const quantity = parseInt(item.quantity) || 1;
       const daTT = parseFloat(item.da_thanh_toan) || 0;
-      const congNo = Math.max(priceSell - daTT, 0);
+      const congNo = Math.max((priceSell * quantity) - daTT, 0);
       
-      // Tổng giá bán (TẤT CẢ đơn)
-      grouped[key].total_sale_price += priceSell;
+      // Tổng giá bán (TẤT CẢ đơn) = giá bán × số lượng
+      grouped[key].total_sale_price += (priceSell * quantity);
       
       // Tổng đã trả (TẤT CẢ đơn)  
       grouped[key].total_paid += daTT;
@@ -59,6 +60,7 @@ router.get('/cong-no-list', async (req, res) => {
         imei: item.imei,
         product_name: item.product_name,
         price_sell: priceSell,
+        quantity: quantity,
         da_thanh_toan: daTT,
         sold_date: item.sold_date
       });
@@ -92,11 +94,12 @@ router.get('/cong-no-orders', async (req, res) => {
     
     const orders = await ExportHistory.find(query).sort({ sold_date: -1 });
     
-    // Chỉ lấy đơn còn nợ (price_sell > da_thanh_toan)
+    // Chỉ lấy đơn còn nợ ((price_sell × quantity) > da_thanh_toan)
     const ordersWithDebt = orders.filter(order => {
       const priceSell = parseFloat(order.price_sell) || 0;
+      const quantity = parseInt(order.quantity) || 1;
       const daTT = parseFloat(order.da_thanh_toan) || 0;
-      return priceSell > daTT;
+      return (priceSell * quantity) > daTT;
     }).map(order => order.toObject());
     
     res.json({ orders: ordersWithDebt });
@@ -135,8 +138,9 @@ router.put('/cong-no-pay-customer', async (req, res) => {
       if (remain <= 0) break;
       
       const priceSell = parseFloat(order.price_sell) || 0;
+      const quantity = parseInt(order.quantity) || 1;
       const currentDaTT = parseFloat(order.da_thanh_toan) || 0;
-      const currentDebt = Math.max(priceSell - currentDaTT, 0);
+      const currentDebt = Math.max((priceSell * quantity) - currentDaTT, 0);
       
       if (currentDebt <= 0) continue;
       
@@ -156,8 +160,9 @@ router.put('/cong-no-pay-customer', async (req, res) => {
     const updatedOrders = await ExportHistory.find(query);
     updatedOrders.forEach(order => {
       const priceSell = parseFloat(order.price_sell) || 0;
+      const quantity = parseInt(order.quantity) || 1;
       const daTT = parseFloat(order.da_thanh_toan) || 0;
-      totalDebt += Math.max(priceSell - daTT, 0);
+      totalDebt += Math.max((priceSell * quantity) - daTT, 0);
     });
 
     res.json({
@@ -210,8 +215,9 @@ router.put('/cong-no-add-customer', async (req, res) => {
     let totalDebt = 0;
     allOrders.forEach(order => {
       const priceSell = parseFloat(order.price_sell) || 0;
+      const quantity = parseInt(order.quantity) || 1;
       const daTT = parseFloat(order.da_thanh_toan) || 0;
-      totalDebt += Math.max(priceSell - daTT, 0);
+      totalDebt += Math.max((priceSell * quantity) - daTT, 0);
     });
 
     res.json({ 
@@ -261,13 +267,14 @@ router.get('/supplier-debt-list', async (req, res) => {
         };
       }
       
-      // Tính công nợ từ logic: price_import - da_thanh_toan_nhap
+      // Tính công nợ từ logic: (price_import × quantity) - da_thanh_toan_nhap
       const priceImport = parseFloat(item.price_import) || 0;
+      const quantity = parseInt(item.quantity) || 1;
       const daTT = parseFloat(item.da_thanh_toan_nhap) || 0;
-      const congNo = Math.max(priceImport - daTT, 0);
+      const congNo = Math.max((priceImport * quantity) - daTT, 0);
       
-      // Tổng giá nhập (TẤT CẢ đơn)
-      grouped[key].total_import_price += priceImport;
+      // Tổng giá nhập (TẤT CẢ đơn) = giá nhập × số lượng
+      grouped[key].total_import_price += (priceImport * quantity);
       
       // Tổng đã trả (TẤT CẢ đơn)
       grouped[key].total_paid += daTT;

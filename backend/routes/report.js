@@ -402,6 +402,7 @@ router.put('/xuat-hang/:id', async (req, res) => {
       source: source || 'tien_mat',
       sold_date: finalSaleDate ? new Date(finalSaleDate) : new Date(),
       da_thanh_toan: parseFloat(da_thanh_toan) || 0, // ✅ FIX: Thêm field da_thanh_toan
+      quantity: parseInt(req.body.quantity) || existingRecord.quantity || 1, // ✅ THÊM QUANTITY
       updatedAt: new Date()
     };
 

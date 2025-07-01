@@ -227,16 +227,51 @@ function NhapHang() {
     fetchSuggestList(value);
   };
 
-  // ✅ Thêm function để chọn suggestion
-  const handleSelectSuggest = (item) => {
-    setFormData(prev => ({
-      ...prev,
-      product_name: item.name,
-      sku: item.sku,
-      category: item.category
-    }));
-    
-    setShowSuggest(false);
+  // ✅ Thêm function để chọn suggestion - CHUYỂN SANG CHẾ ĐỘ CẬP NHẬT
+  const handleSelectSuggest = async (item) => {
+    // Tìm sản phẩm tồn kho để cập nhật
+    try {
+      const res = await fetch(`${import.meta.env.VITE_API_URL}/api/ton-kho`);
+      const data = await res.json();
+      
+      // Tìm sản phẩm phụ kiện (không có IMEI) hoặc sản phẩm có IMEI chưa bán
+      const existingItem = (data.items || []).find(
+        existing => 
+          (existing.product_name === item.name || existing.tenSanPham === item.name) &&
+          existing.sku === item.sku &&
+          existing.status === 'in_stock'
+      );
+      
+      if (existingItem) {
+        // Chuyển sang chế độ cập nhật sản phẩm có sẵn
+        console.log('🔄 Switching to UPDATE mode for existing product:', existingItem);
+        handleEdit(existingItem);
+        setMessage("📝 Chuyển sang chế độ cập nhật sản phẩm có sẵn!");
+        setTimeout(() => setMessage(""), 3000);
+      } else {
+        // Điền thông tin để tạo mới
+        setFormData(prev => ({
+          ...prev,
+          product_name: item.name,
+          sku: item.sku,
+          category: item.category,
+          price_import: item.price_import || prev.price_import
+        }));
+        console.log('➕ Filling form for NEW product creation');
+      }
+      
+      setShowSuggest(false);
+    } catch (err) {
+      console.error("Error finding existing product:", err);
+      // Fallback: chỉ điền form
+      setFormData(prev => ({
+        ...prev,
+        product_name: item.name,
+        sku: item.sku,
+        category: item.category
+      }));
+      setShowSuggest(false);
+    }
   };
 
   const handleChange = (e) => {
@@ -737,7 +772,8 @@ function NhapHang() {
       render: (item) => {
         const daTT = parseFloat(item.da_thanh_toan_nhap) || 0;
         const giaNhap = parseFloat(item.price_import) || 0;
-        const congNo = Math.max(giaNhap - daTT, 0);
+        const soLuong = parseInt(item.quantity) || 1;
+        const congNo = Math.max((giaNhap * soLuong) - daTT, 0);
         return (
           <div className={`text-sm font-bold ${congNo > 0 ? 'text-red-600' : 'text-gray-400'}`}>
             {congNo > 0 ? formatCurrency(congNo) : (
@@ -955,10 +991,16 @@ function NhapHang() {
                 const congNo = Math.max(autoAmount - finalDaTT, 0);
                 
                 return (
-                  <div>
-                    <div>Tự động tính: {formatCurrency(importPrice)} × {quantity} = {formatCurrency(autoAmount)}</div>
-                    <div className={congNo > 0 ? 'text-red-600 font-semibold' : 'text-green-600'}>
-                      Công nợ NCC: {formatCurrency(congNo)} {congNo === 0 && '✓ Đã thanh toán đủ'}
+                  <div className="p-2 bg-blue-50 rounded border border-blue-200">
+                    <div className="font-medium text-blue-900">💡 Tính toán tự động:</div>
+                    <div className="text-blue-700">
+                      <strong>Tổng tiền hàng:</strong> {formatCurrency(importPrice)} × {quantity} = <strong>{formatCurrency(autoAmount)}</strong>
+                    </div>
+                    <div className="text-blue-700">
+                      <strong>Sẽ thanh toán:</strong> {daTT > 0 ? formatCurrency(daTT) : `${formatCurrency(autoAmount)} (tự động)`}
+                    </div>
+                    <div className={`font-semibold ${congNo > 0 ? 'text-red-600' : 'text-green-600'}`}>
+                      <strong>Nợ NCC:</strong> {formatCurrency(congNo)} {congNo === 0 && '✅ Đã trả đủ'}
                     </div>
                   </div>
                 );

@@ -445,8 +445,9 @@ app.post('/api/xuat-hang', async (req, res) => {
       
       // ✅ Ghi vào ExportHistory thay vì Inventory
       const priceSellNum = Number(price_sell) || 0;
-      const daTTNum = Number(da_thanh_toan) || 0;
-      // ✅ REMOVED: autoDebt không cần thiết nữa
+      const daTTNum = Number(da_thanh_toan) || (priceSellNum * sellQuantity); // ✅ Tự động tính đã thanh toán = giá bán × số lượng
+      
+      console.log('🔧 Creating ExportHistory for accessory with quantity:', sellQuantity); // ✅ Debug log
       
       const soldAccessory = new ExportHistory({
         imei: '', // Phụ kiện không có IMEI
@@ -455,10 +456,9 @@ app.post('/api/xuat-hang', async (req, res) => {
         tenSanPham: item.tenSanPham,
         category: item.category,
         price_import: item.price_import,
-        giaBan: price_sell,
-        price_sell: price_sell,
-        da_thanh_toan: daTTNum, // Số tiền đã thanh toán
-        // ✅ REMOVED: debt field - tính công nợ bằng price_sell - da_thanh_toan
+        giaBan: priceSellNum,
+        price_sell: priceSellNum,
+        da_thanh_toan: daTTNum, // ✅ Tự động tính = giá bán × số lượng nếu không nhập
         sold_date: sold_date ? new Date(sold_date) : new Date(),
         customer_name: customer_name || '',
         customer_phone: customer_phone || '',
@@ -467,9 +467,17 @@ app.post('/api/xuat-hang', async (req, res) => {
         branch: branch || item.branch,
         source: source || 'tien_mat',
         status: 'sold',
-        quantity: sellQuantity,
+        quantity: sellQuantity, // ✅ Đảm bảo số lượng đúng
         is_accessory: true
       });
+      
+      console.log('✅ ExportHistory record to be saved:', {
+        sku: soldAccessory.sku,
+        product_name: soldAccessory.product_name,
+        quantity: soldAccessory.quantity,
+        price_sell: soldAccessory.price_sell,
+        da_thanh_toan: soldAccessory.da_thanh_toan
+      }); // ✅ Debug log
       
       await soldAccessory.save();
       await item.save();
@@ -487,8 +495,9 @@ app.post('/api/xuat-hang', async (req, res) => {
       
       // 2. Tạo record mới trong ExportHistory
       const priceSellNum = Number(price_sell) || 0;
-      const daTTNum = Number(da_thanh_toan) || 0;
-      // ✅ REMOVED: autoDebt không cần thiết nữa
+      const daTTNum = Number(da_thanh_toan) || priceSellNum; // ✅ Tự động tính = giá bán nếu không nhập (sản phẩm IMEI số lượng = 1)
+      
+      console.log('🔧 Creating ExportHistory for IMEI product with quantity: 1'); // ✅ Debug log
       
       const soldItem = new ExportHistory({
         imei: item.imei,
@@ -496,17 +505,26 @@ app.post('/api/xuat-hang', async (req, res) => {
         product_name: product_name || item.product_name,
         category: item.category,
         price_import: item.price_import,
-        price_sell: price_sell,
-        da_thanh_toan: daTTNum, // Số tiền đã thanh toán
-        // ✅ REMOVED: debt field - tính công nợ bằng price_sell - da_thanh_toan
+        price_sell: priceSellNum,
+        da_thanh_toan: daTTNum, // ✅ Tự động tính = giá bán nếu không nhập
         sold_date: sold_date ? new Date(sold_date) : new Date(),
         customer_name: customer_name || '',
         customer_phone: customer_phone || '',
         warranty: warranty || '',
         note: note || '',
         branch: branch || item.branch,
-        export_type: 'normal'
+        export_type: 'normal',
+        quantity: 1 // ✅ Sản phẩm IMEI luôn là 1
       });
+      
+      console.log('✅ ExportHistory IMEI record to be saved:', {
+        imei: soldItem.imei,
+        sku: soldItem.sku,
+        product_name: soldItem.product_name,
+        quantity: soldItem.quantity,
+        price_sell: soldItem.price_sell,
+        da_thanh_toan: soldItem.da_thanh_toan
+      }); // ✅ Debug log
       
       await soldItem.save();
       
@@ -537,9 +555,10 @@ app.post('/api/xuat-hang', async (req, res) => {
       });
     }
 
-    // ✅ REMOVED: Không dùng field debt nữa, tính công nợ bằng price_sell - da_thanh_toan
+    // ✅ REMOVED: Không dùng field debt nữa, tính công nợ = (giá bán × số lượng) - đã thanh toán
     // Nếu có công nợ thì ghi sổ công nợ khách
-    const congNo = Math.max((item.price_sell || 0) - (item.da_thanh_toan || 0), 0);
+    const sellQuantity = parseInt(quantity) || 1;
+    const congNo = Math.max(((item.price_sell || 0) * sellQuantity) - (item.da_thanh_toan || 0), 0);
     if (congNo > 0) {
       await Cashbook.create({
         type: 'thu',
@@ -656,6 +675,7 @@ app.get('/api/xuat-hang-list', async (req, res) => {
       console.log('Sample export record fields:', {
         product_name: rawItems[0].product_name,
         imei: rawItems[0].imei || 'No IMEI (accessory)',
+        quantity: rawItems[0].quantity, // ✅ Debug quantity field
         sale_price: rawItems[0].sale_price,
         selling_price: rawItems[0].selling_price,
         customer_name: rawItems[0].customer_name,
@@ -683,6 +703,7 @@ app.get('/api/xuat-hang-list', async (req, res) => {
       profit: (item.price_sell || item.giaBan || 0) - (item.price_import || item.giaNhap || 0),
       // ✅ REMOVED: debt field - tính công nợ bằng price_sell - da_thanh_toan
       da_thanh_toan: item.da_thanh_toan || 0, // ✅ THÊM FIELD ĐÃ THANH TOÁN
+      quantity: item.quantity || 1, // ✅ THÊM FIELD SỐ LƯỢNG - QUAN TRỌNG!
       imei: item.imei || '',
       sku: item.sku || '',
       product_name: item.product_name || item.tenSanPham || '',
@@ -725,18 +746,28 @@ app.put('/api/xuat-hang/:id', async (req, res) => {
     console.log('📋 Existing record before update:', {
       _id: existingRecord._id,
       da_thanh_toan: existingRecord.da_thanh_toan,
+      quantity: existingRecord.quantity,
       customer_name: existingRecord.customer_name
     });
 
+    // ✅ Xử lý da_thanh_toan: không tự động tính khi edit
+    const updateData = { ...req.body };
+    if (updateData.da_thanh_toan === undefined || updateData.da_thanh_toan === "") {
+      updateData.da_thanh_toan = existingRecord.da_thanh_toan || 0; // Giữ nguyên giá trị cũ
+    } else {
+      updateData.da_thanh_toan = parseFloat(updateData.da_thanh_toan) || 0;
+    }
+
     const updatedItem = await ExportHistory.findByIdAndUpdate(
       req.params.id,
-      req.body,
+      updateData,
       { new: true }
     );
 
     console.log('✅ Updated successfully:', {
       _id: updatedItem._id,
       da_thanh_toan: updatedItem.da_thanh_toan,
+      quantity: updatedItem.quantity,
       price_sell: updatedItem.price_sell,
       customer_name: updatedItem.customer_name
     }); // Debug
@@ -776,7 +807,8 @@ app.delete('/api/xuat-hang/:id', async (req, res) => {
         status: { $in: ['in_stock', 'sold'] }
       });
       if (inventoryItem) {
-        inventoryItem.quantity = (inventoryItem.quantity || 0) + 1;
+        const returnQuantity = exportRecord.quantity || 1; // ✅ Khôi phục đúng số lượng đã xuất
+        inventoryItem.quantity = (inventoryItem.quantity || 0) + returnQuantity;
         inventoryItem.status = 'in_stock';
         await inventoryItem.save();
       }
