@@ -110,12 +110,28 @@ fi
 print_status "Waiting for backend to be ready..."
 sleep 3
 
+# Fix permissions for build directory
+print_status "Fixing file permissions..."
+BUILD_DIR="$PROJECT_DIR/iphone-inventory/dist"
+if [ -d "$BUILD_DIR" ]; then
+    chown -R www-data:www-data "$BUILD_DIR"
+    chmod -R 755 "$BUILD_DIR"
+    print_success "Permissions fixed!"
+else
+    print_warning "Build directory not found: $BUILD_DIR"
+fi
+
 # Reload nginx
 print_status "Reloading nginx..."
 if systemctl reload nginx; then
     print_success "Nginx reloaded!"
 else
-    print_warning "Nginx reload failed"
+    print_warning "Nginx reload failed - trying to fix..."
+    # Run the fix script if available
+    if [ -f "$PROJECT_DIR/scripts/fix-nginx-403.sh" ]; then
+        print_status "Running nginx fix script..."
+        bash "$PROJECT_DIR/scripts/fix-nginx-403.sh"
+    fi
 fi
 
 # Test if backend is responding
