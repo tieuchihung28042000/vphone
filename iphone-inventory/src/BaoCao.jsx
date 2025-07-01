@@ -28,7 +28,7 @@ function BaoCao() {
   const [data, setData] = useState(null);
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
-  const [filter, setFilter] = useState("Tất cả"); // Đổi mặc định thành "Tất cả" để hiển thị dữ liệu
+  const [filter, setFilter] = useState("Hôm nay"); // ✅ Mặc định hôm nay
   const [branch, setBranch] = useState("all");
 
   const [loading, setLoading] = useState(false);
@@ -218,12 +218,22 @@ function BaoCao() {
       )
     },
     {
+      header: "Số lượng",
+      key: "quantity",
+      render: (order) => (
+        <div className="text-sm font-bold text-center">
+          {order.quantity || 1}
+        </div>
+      )
+    },
+    {
       header: "Lợi nhuận",
       key: "profit",
       render: (order) => {
         const salePrice = order.sale_price || order.price_sell || order.revenue || order.selling_price || 0;
         const importPrice = order.import_price || order.price_import || order.cost || 0;
-        const profit = salePrice - importPrice;
+        const quantity = parseInt(order.quantity) || 1;
+        const profit = (salePrice * quantity) - (importPrice * quantity);
         
         // Kiểm tra nếu thiếu dữ liệu
         if (salePrice === 0 && importPrice === 0) {

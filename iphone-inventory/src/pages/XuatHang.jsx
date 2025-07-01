@@ -315,6 +315,8 @@ function XuatHang() {
 
       console.log('🔄 Submitting request:', { method, url, submitData });
       console.log('🔍 DEBUG calculated da_thanh_toan:', finalDaTT);
+      console.log('🔍 DEBUG form da_thanh_toan input:', formData.da_thanh_toan);
+      console.log('🔍 DEBUG parsed daTT:', daTT);
 
       const res = await fetch(url, {
         method,
@@ -680,6 +682,20 @@ function XuatHang() {
               <span className="text-red-500 italic">Chưa có giá</span>
             )}
             {/* Debug info đã tắt */}
+          </div>
+        );
+      }
+    },
+    {
+      header: "Đã thanh toán",
+      key: "da_thanh_toan",
+      render: (item) => {
+        const daTT = parseFloat(item.da_thanh_toan) || 0;
+        return (
+          <div className="text-sm font-bold text-blue-600">
+            {daTT > 0 ? formatCurrency(daTT) : (
+              <span className="text-gray-400 italic">0đ</span>
+            )}
           </div>
         );
       }
