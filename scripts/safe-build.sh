@@ -48,9 +48,9 @@ echo "Available RAM: ${FREE_RAM}GB"
 
 if (( $(echo "$FREE_RAM < 1.0" | bc -l) )); then
     print_warning "Low RAM detected. Using conservative build settings."
-    MEMORY_LIMIT=1024
+    MEMORY_LIMIT=512
 else
-    MEMORY_LIMIT=4096
+    MEMORY_LIMIT=1024
 fi
 
 # Kill any existing build processes
