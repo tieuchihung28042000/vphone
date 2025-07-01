@@ -203,12 +203,13 @@ app.post('/api/nhap-hang', async (req, res) => {
         return res.status(400).json({ message: '❌ IMEI này đã tồn tại trong kho.' });
       }
       // Tính toán đã thanh toán
-      const daTTNhapNum = Number(da_thanh_toan_nhap) || 0;
+      const priceImportNum = Number(price_import) || 0;
+      const daTTNhapNum = Number(da_thanh_toan_nhap) || priceImportNum; // Tự động tính = giá nhập nếu không có
       
       const newItem = new Inventory({
         imei,
         sku,
-        price_import,
+        price_import: priceImportNum,
         product_name,
         tenSanPham: product_name,
         import_date,
@@ -257,9 +258,11 @@ app.post('/api/nhap-hang', async (req, res) => {
 
     if (existItem) {
       // Cập nhật số lượng
-      const daTTNhapNum = Number(da_thanh_toan_nhap) || 0;
+      const quantityNum = Number(quantity || 1);
+      const priceImportNum = Number(price_import) || 0;
+      const daTTNhapNum = Number(da_thanh_toan_nhap) || (priceImportNum * quantityNum); // Tự động tính nếu không có
       
-      existItem.quantity = (existItem.quantity || 1) + Number(quantity || 1);
+      existItem.quantity = (existItem.quantity || 1) + quantityNum;
       existItem.import_date = import_date || existItem.import_date;
       existItem.supplier = supplier || existItem.supplier;
       existItem.note = note || existItem.note;
@@ -271,12 +274,13 @@ app.post('/api/nhap-hang', async (req, res) => {
       });
     } else {
       // Tính toán cho phụ kiện mới
-      const daTTNhapNum = Number(da_thanh_toan_nhap) || 0;
       const quantityNum = Number(quantity || 1);
+      const priceImportNum = Number(price_import) || 0;
+      const daTTNhapNum = Number(da_thanh_toan_nhap) || (priceImportNum * quantityNum); // Tự động tính nếu không có
       
       const newItem = new Inventory({
         sku,
-        price_import,
+        price_import: priceImportNum,
         product_name,
         tenSanPham: product_name,
         import_date,

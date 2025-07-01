@@ -77,6 +77,10 @@ function NhapHang() {
   // ✅ Thêm state cho quản lý danh mục
   const [categoryModal, setCategoryModal] = useState({ open: false, type: 'add', data: null });
   const [categoryForm, setCategoryForm] = useState({ name: '', description: '' });
+  
+  // ✅ Thêm states cho autocomplete
+  const [suggestList, setSuggestList] = useState([]);
+  const [showSuggest, setShowSuggest] = useState(false);
 
   // ✅ Filter and pagination - Moved up to use in stats
   const filteredItems = items.filter((item) => {
@@ -170,6 +174,70 @@ function NhapHang() {
     fetchBranches();
     fetchCategories();
   }, []);
+
+  // ✅ Thêm function để fetch gợi ý sản phẩm
+  const fetchSuggestList = async (query) => {
+    if (!query || query.length < 2) {
+      setSuggestList([]);
+      setShowSuggest(false);
+      return;
+    }
+    
+    try {
+      const res = await fetch(`${import.meta.env.VITE_API_URL}/api/ton-kho`);
+      const data = await res.json();
+      const lowerQuery = query.trim().toLowerCase();
+      
+      const filtered = (data.items || []).filter(
+        item =>
+          (item.product_name || item.tenSanPham || "")
+            .toLowerCase()
+            .includes(lowerQuery) ||
+          (item.sku || "").toLowerCase().includes(lowerQuery)
+      );
+      
+      // Gom nhóm sản phẩm
+      const group = {};
+      filtered.forEach(item => {
+        const key = (item.product_name || item.tenSanPham || "Không rõ") + "_" + (item.sku || "Không rõ");
+        if (!group[key]) {
+          group[key] = {
+            name: item.product_name || item.tenSanPham || "Không rõ",
+            sku: item.sku || "",
+            isAccessory: !item.imei,
+            price_import: item.price_import || 0,
+            category: item.category || ""
+          };
+        }
+      });
+      
+      setSuggestList(Object.values(group));
+      setShowSuggest(true);
+    } catch (err) {
+      console.error("Error fetching suggestions:", err);
+      setSuggestList([]);
+      setShowSuggest(false);
+    }
+  };
+
+  // ✅ Thêm function để handle khi nhập tên sản phẩm
+  const handleProductNameChange = (e) => {
+    const value = e.target.value;
+    setFormData(prev => ({ ...prev, product_name: value }));
+    fetchSuggestList(value);
+  };
+
+  // ✅ Thêm function để chọn suggestion
+  const handleSelectSuggest = (item) => {
+    setFormData(prev => ({
+      ...prev,
+      product_name: item.name,
+      sku: item.sku,
+      category: item.category
+    }));
+    
+    setShowSuggest(false);
+  };
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -812,16 +880,34 @@ function NhapHang() {
             />
           </div>
           
-          <div>
+          <div className="relative">
             <label className="block text-sm font-semibold text-gray-700 mb-3">Tên sản phẩm *</label>
             <input
               name="product_name"
-              placeholder="Nhập tên sản phẩm"
+              placeholder="Nhập 2-3 ký tự để gợi ý..."
               value={formData.product_name}
-              onChange={handleChange}
+              onChange={handleProductNameChange}
               className="form-input"
               required
+              autoComplete="off"
             />
+            {/* ✅ Dropdown gợi ý */}
+            {showSuggest && suggestList.length > 0 && (
+              <div className="absolute top-full left-0 right-0 bg-white border border-gray-300 rounded-lg shadow-lg z-50 max-h-60 overflow-y-auto">
+                {suggestList.map((item, index) => (
+                  <div
+                    key={index}
+                    className="p-3 hover:bg-blue-50 cursor-pointer border-b border-gray-100 last:border-b-0"
+                    onClick={() => handleSelectSuggest(item)}
+                  >
+                    <div className="font-semibold text-gray-900">{item.name}</div>
+                    <div className="text-sm text-gray-500">
+                      SKU: {item.sku} • {item.category} • {formatCurrency(item.price_import)}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
           <div>
@@ -854,13 +940,29 @@ function NhapHang() {
             <input
               name="da_thanh_toan_nhap"
               type="text"
-              placeholder="Số tiền đã thanh toán cho nhà cung cấp"
+              placeholder="Để trống sẽ tự động = Giá nhập × Số lượng"
               value={formatNumber(formData.da_thanh_toan_nhap)}
               onChange={handleChange}
               className="form-input"
             />
             <div className="text-xs text-gray-500 mt-1">
-              Công nợ NCC = Giá nhập - Đã thanh toán (tự động tính)
+              {(() => {
+                const importPrice = parseNumber(formData.price_import) || 0;
+                const quantity = parseInt(formData.quantity) || 1;
+                const daTT = parseNumber(formData.da_thanh_toan_nhap) || 0;
+                const autoAmount = importPrice * quantity;
+                const finalDaTT = daTT || autoAmount;
+                const congNo = Math.max(autoAmount - finalDaTT, 0);
+                
+                return (
+                  <div>
+                    <div>Tự động tính: {formatCurrency(importPrice)} × {quantity} = {formatCurrency(autoAmount)}</div>
+                    <div className={congNo > 0 ? 'text-red-600 font-semibold' : 'text-green-600'}>
+                      Công nợ NCC: {formatCurrency(congNo)} {congNo === 0 && '✓ Đã thanh toán đủ'}
+                    </div>
+                  </div>
+                );
+              })()}
             </div>
           </div>
 

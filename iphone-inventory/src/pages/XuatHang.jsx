@@ -4,6 +4,7 @@ import StatsCard from "../components/StatsCard";
 import FormCard from "../components/FormCard";
 import FilterCard from "../components/FilterCard";
 import DataTable from "../components/DataTable";
+import * as XLSX from 'xlsx';
 
 // Utility functions
 const getToday = () => {
@@ -291,14 +292,34 @@ function XuatHang() {
         ? `${import.meta.env.VITE_API_URL}/api/xuat-hang/${editingItemId}`
         : `${import.meta.env.VITE_API_URL}/api/xuat-hang`;
 
-      // ✅ ĐƠN GIẢN HÓA: Học theo trang Nhập Hàng - gửi formData trực tiếp
-      console.log('🔄 Submitting request:', { method, url, formData });
-      console.log('🔍 DEBUG formData.da_thanh_toan:', formData.da_thanh_toan);
+      // ✅ Chuẩn bị data với tính toán tự động
+      const salePrice = parseNumber(formData.sale_price) || 0;
+      const quantity = parseInt(formData.quantity) || 1;
+      const daTT = parseNumber(formData.da_thanh_toan) || 0;
+      
+      // ✅ Tự động tính toán nếu chưa có giá trị đã thanh toán
+      const finalDaTT = daTT || (salePrice * quantity); // Nếu chưa nhập, tự động = giá bán * số lượng
+      
+      const submitData = {
+        ...formData,
+        sale_price: salePrice,
+        price_sell: salePrice, // Backend compatibility
+        quantity: quantity,
+        da_thanh_toan: finalDaTT,
+        is_accessory: isAccessory || !formData.imei, // Đánh dấu phụ kiện nếu không có IMEI
+        // Mapping fields cho backend
+        customer_name: formData.buyer_name || formData.customer_name,
+        customer_phone: formData.buyer_phone || formData.customer_phone,
+        sold_date: formData.sale_date
+      };
+
+      console.log('🔄 Submitting request:', { method, url, submitData });
+      console.log('🔍 DEBUG calculated da_thanh_toan:', finalDaTT);
 
       const res = await fetch(url, {
         method,
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(formData) // ✅ Gửi formData trực tiếp như Nhập hàng
+        body: JSON.stringify(submitData)
       });
 
       const data = await res.json();
@@ -408,6 +429,192 @@ function XuatHang() {
     setFilterBranch("");
     setFilterCategory("");
     setFilterBuyer("");
+  };
+
+  // ✅ Export to Excel function
+  const exportToExcel = () => {
+    try {
+      // Prepare data for export
+      const exportData = filteredItems.map(item => ({
+        "IMEI": item.item?.imei || "",
+        "Tên sản phẩm": item.item?.product_name || item.item?.tenSanPham || "",
+        "SKU": item.item?.sku || "",
+        "Giá bán": item.sale_price || item.price_sell || 0,
+        "Đã thanh toán": item.da_thanh_toan || 0,
+        "Công nợ": Math.max((item.sale_price || item.price_sell || 0) - (item.da_thanh_toan || 0), 0),
+        "Ngày bán": item.sale_date ? new Date(item.sale_date).toLocaleDateString('vi-VN') : "",
+        "Khách hàng": item.buyer_name || item.customer_name || "",
+        "SĐT khách": item.buyer_phone || item.customer_phone || "",
+        "Chi nhánh": item.branch || "",
+        "Số lượng": item.quantity || 1,
+        "Bảo hành": item.warranty || "",
+        "Ghi chú": item.note || "",
+        "Nguồn tiền": item.source || ""
+      }));
+
+      // Create workbook and worksheet
+      const wb = XLSX.utils.book_new();
+      const ws = XLSX.utils.json_to_sheet(exportData);
+      
+      // Set column widths
+      const colWidths = [
+        { wch: 15 }, // IMEI
+        { wch: 30 }, // Tên sản phẩm
+        { wch: 15 }, // SKU
+        { wch: 12 }, // Giá bán
+        { wch: 12 }, // Đã thanh toán
+        { wch: 12 }, // Công nợ
+        { wch: 12 }, // Ngày bán
+        { wch: 20 }, // Khách hàng
+        { wch: 15 }, // SĐT khách
+        { wch: 15 }, // Chi nhánh
+        { wch: 10 }, // Số lượng
+        { wch: 15 }, // Bảo hành
+        { wch: 25 }, // Ghi chú
+        { wch: 12 }  // Nguồn tiền
+      ];
+      ws['!cols'] = colWidths;
+
+      XLSX.utils.book_append_sheet(wb, ws, "Danh sách xuất hàng");
+      
+      // Generate filename with current date
+      const now = new Date();
+      const dateStr = now.toISOString().slice(0, 10);
+      const filename = `DanhSachXuatHang_${dateStr}.xlsx`;
+      
+      // Save file
+      XLSX.writeFile(wb, filename);
+      
+      setMessage("✅ Đã xuất file Excel thành công!");
+      setTimeout(() => setMessage(""), 3000);
+    } catch (err) {
+      console.error("❌ Lỗi khi xuất Excel:", err);
+      setMessage("❌ Lỗi khi xuất Excel");
+      setTimeout(() => setMessage(""), 3000);
+    }
+  };
+
+  // ✅ Import from Excel function
+  const handleImportExcel = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    setMessage("🔄 Đang xử lý file Excel...");
+
+    try {
+      const data = await file.arrayBuffer();
+      const workbook = XLSX.read(data);
+      const worksheet = workbook.Sheets[workbook.SheetNames[0]];
+      const jsonData = XLSX.utils.sheet_to_json(worksheet);
+
+      if (jsonData.length === 0) {
+        setMessage("❌ File Excel không có dữ liệu");
+        setTimeout(() => setMessage(""), 3000);
+        return;
+      }
+
+      let successCount = 0;
+      let errorCount = 0;
+      const errors = [];
+
+      for (let i = 0; i < jsonData.length; i++) {
+        const row = jsonData[i];
+        
+        // Map Excel columns to form data
+        const importData = {
+          imei: row['IMEI'] || row['imei'] || "",
+          product_name: row['Tên sản phẩm'] || row['Ten san pham'] || row['product_name'] || "",
+          sku: row['SKU'] || row['sku'] || "",
+          sale_price: row['Giá bán'] || row['Gia ban'] || row['sale_price'] || "",
+          da_thanh_toan: row['Đã thanh toán'] || row['Da thanh toan'] || row['da_thanh_toan'] || "",
+          sale_date: row['Ngày bán'] || row['Ngay ban'] || row['sale_date'] || getToday(),
+          buyer_name: row['Khách hàng'] || row['Khach hang'] || row['buyer_name'] || "",
+          buyer_phone: row['SĐT khách'] || row['SDT khach'] || row['buyer_phone'] || "",
+          branch: row['Chi nhánh'] || row['Chi nhanh'] || row['branch'] || formData.branch,
+          quantity: row['Số lượng'] || row['So luong'] || row['quantity'] || "1",
+          warranty: row['Bảo hành'] || row['Bao hanh'] || row['warranty'] || "",
+          note: row['Ghi chú'] || row['Ghi chu'] || row['note'] || "",
+          source: row['Nguồn tiền'] || row['Nguon tien'] || row['source'] || "tien_mat"
+        };
+
+        // Validate required fields
+        if (!importData.sale_price || !importData.branch) {
+          errors.push(`Hàng ${i + 1}: Thiếu thông tin bắt buộc (Giá bán, Chi nhánh)`);
+          errorCount++;
+          continue;
+        }
+
+        // Convert date format if needed
+        if (importData.sale_date && typeof importData.sale_date === 'number') {
+          const excelDate = new Date((importData.sale_date - 25569) * 86400 * 1000);
+          importData.sale_date = excelDate.toISOString().slice(0, 10);
+        } else if (importData.sale_date && typeof importData.sale_date === 'string') {
+          const dateObj = new Date(importData.sale_date);
+          if (!isNaN(dateObj.getTime())) {
+            importData.sale_date = dateObj.toISOString().slice(0, 10);
+          } else {
+            importData.sale_date = getToday();
+          }
+        }
+
+        try {
+          // Prepare data for submission
+          const salePrice = parseNumber(importData.sale_price) || 0;
+          const quantity = parseInt(importData.quantity) || 1;
+          const daTT = parseNumber(importData.da_thanh_toan) || 0;
+          const finalDaTT = daTT || (salePrice * quantity);
+          
+          const submitData = {
+            ...importData,
+            sale_price: salePrice,
+            price_sell: salePrice,
+            quantity: quantity,
+            da_thanh_toan: finalDaTT,
+            is_accessory: !importData.imei,
+            customer_name: importData.buyer_name,
+            customer_phone: importData.buyer_phone,
+            sold_date: importData.sale_date
+          };
+
+          const res = await fetch(`${import.meta.env.VITE_API_URL}/api/xuat-hang`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(submitData)
+          });
+
+          if (res.ok) {
+            successCount++;
+          } else {
+            const errorData = await res.json();
+            errors.push(`Hàng ${i + 1}: ${errorData.message || 'Lỗi không xác định'}`);
+            errorCount++;
+          }
+        } catch (err) {
+          errors.push(`Hàng ${i + 1}: Lỗi kết nối server`);
+          errorCount++;
+        }
+      }
+
+      // Show results
+      let resultMessage = `✅ Nhập thành công ${successCount} giao dịch`;
+      if (errorCount > 0) {
+        resultMessage += `, ${errorCount} lỗi`;
+        console.log("Chi tiết lỗi:", errors);
+      }
+      
+      setMessage(resultMessage);
+      fetchSoldItems(); // Reload data
+      fetchAvailableItems();
+      setTimeout(() => setMessage(""), 5000);
+
+    } catch (err) {
+      console.error("❌ Lỗi khi xử lý file Excel:", err);
+      setMessage("❌ Lỗi khi xử lý file Excel");
+      setTimeout(() => setMessage(""), 3000);
+    } finally {
+      // Reset file input
+      e.target.value = '';
+    }
   };
 
   // Filter and pagination
@@ -790,13 +997,29 @@ function XuatHang() {
             <input
               name="da_thanh_toan"
               type="text"
-              placeholder="Số tiền khách đã thanh toán"
+              placeholder="Để trống sẽ tự động = Giá bán × Số lượng"
               value={formatNumber(formData.da_thanh_toan)}
               onChange={handleChange}
               className="form-input"
             />
             <div className="text-xs text-gray-500 mt-1">
-              Công nợ = Giá bán - Đã thanh toán (tự động tính)
+              {(() => {
+                const salePrice = parseNumber(formData.sale_price) || 0;
+                const quantity = parseInt(formData.quantity) || 1;
+                const daTT = parseNumber(formData.da_thanh_toan) || 0;
+                const autoAmount = salePrice * quantity;
+                const finalDaTT = daTT || autoAmount;
+                const congNo = Math.max(autoAmount - finalDaTT, 0);
+                
+                return (
+                  <div>
+                    <div>Tự động tính: {formatCurrency(salePrice)} × {quantity} = {formatCurrency(autoAmount)}</div>
+                    <div className={congNo > 0 ? 'text-red-600 font-semibold' : 'text-green-600'}>
+                      Công nợ: {formatCurrency(congNo)} {congNo === 0 && '✓ Đã thanh toán đủ'}
+                    </div>
+                  </div>
+                );
+              })()}
             </div>
           </div>
 
@@ -940,6 +1163,34 @@ function XuatHang() {
               onChange={(e) => setFilterBuyer(e.target.value)}
               className="form-input"
             />
+          </div>
+        </div>
+        
+        {/* ✅ Excel Import/Export Buttons */}
+        <div className="flex gap-4 mt-4 pt-4 border-t border-gray-200">
+          <button
+            onClick={exportToExcel}
+            className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg transition-colors duration-200 flex items-center gap-2"
+          >
+            📊 Xuất Excel
+          </button>
+          <div className="relative">
+            <input
+              type="file"
+              accept=".xlsx,.xls"
+              onChange={handleImportExcel}
+              className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+              id="excel-import"
+            />
+            <label
+              htmlFor="excel-import"
+              className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition-colors duration-200 cursor-pointer flex items-center gap-2"
+            >
+              📥 Nhập từ Excel
+            </label>
+          </div>
+          <div className="text-sm text-gray-600 flex items-center">
+            💡 Mẹo: Xuất Excel để có template chuẩn, sau đó nhập lại
           </div>
         </div>
       </FilterCard>
