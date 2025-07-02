@@ -74,8 +74,6 @@ services:
     build:
       context: ./iphone-inventory
       dockerfile: Dockerfile
-      args:
-        VITE_API_URL: http://${DOMAIN:-localhost}
     container_name: vphone-frontend
     restart: unless-stopped
     environment:
