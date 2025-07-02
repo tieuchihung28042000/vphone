@@ -1,26 +1,27 @@
 # 🚀 VPhone Production - Nguyenkieuanh.com
 
-## Quick Start
+## Quick Start - CHỈ CẦN 1 LỆNH!
 
-### 1. Chuẩn bị VPS
-```bash
-# Install Docker & Docker Compose
-curl -fsSL https://get.docker.com -o get-docker.sh
-sudo sh get-docker.sh
-sudo usermod -aG docker $USER
-sudo apt install docker-compose-plugin -y
-```
-
-### 2. Deploy Production
+### Triển khai VPhone trên VPS:
 ```bash
 # Clone project
 git clone [your-repo-url]
 cd vphone
 
-# Run production deployment
-chmod +x deploy-production.sh
-./deploy-production.sh
+# Chạy script all-in-one (tự động cài Docker nếu chưa có)
+chmod +x vphone-deploy.sh
+./vphone-deploy.sh
 ```
+
+**Đó là tất cả!** Script sẽ tự động:
+- ✅ Cài Docker & Docker Compose (nếu chưa có)
+- ✅ Sửa lỗi permissions
+- ✅ Tạo file .env từ template
+- ✅ Build images với giới hạn tài nguyên
+- ✅ Khởi động tất cả services
+- ✅ Tạo SSL certificate
+- ✅ Tạo admin user
+- ✅ Kiểm tra DNS
 
 ### 3. Access System
 - **URL**: https://Nguyenkieuanh.com
