@@ -5,8 +5,6 @@ services:
     container_name: vphone-mongodb
     restart: unless-stopped
     environment:
-      MONGO_INITDB_ROOT_USERNAME: admin
-      MONGO_INITDB_ROOT_PASSWORD: password
       MONGO_INITDB_DATABASE: vphone_production
     ports:
       - "27017:27017"
@@ -40,8 +38,8 @@ services:
       # Backend Environment Variables
       NODE_ENV: production
       PORT: 4000
-      # MongoDB connection to Docker service
-      MONGODB_URI: mongodb://admin:password@mongodb:27017/vphone_production?authSource=admin
+      # MongoDB connection to Docker service (no authentication)
+      MONGODB_URI: mongodb://mongodb:27017/vphone_production
       # JWT and Email configuration
       JWT_SECRET: VPhone2025_Production_JWT_NguyenKieuAnh_SecureKey
       EMAIL_USER: vphone24h3@gmail.com
