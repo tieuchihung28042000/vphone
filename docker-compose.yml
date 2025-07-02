@@ -6,7 +6,7 @@ services:
     restart: unless-stopped
     environment:
       MONGO_INITDB_ROOT_USERNAME: ${MONGO_ROOT_USERNAME:-admin}
-      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD:-password123}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD:-123456}
       MONGO_INITDB_DATABASE: ${MONGO_DB_NAME:-vphone}
     ports:
       - "27017:27017"
@@ -21,6 +21,13 @@ services:
       timeout: 10s
       retries: 3
       start_period: 40s
+    deploy:
+      resources:
+        limits:
+          cpus: '0.4'
+          memory: 400M
+        reservations:
+          memory: 256M
 
   # Backend API
   backend:
@@ -35,8 +42,8 @@ services:
       PORT: 4000
       # MongoDB connection to Docker service
       MONGODB_URI: mongodb://${MONGO_ROOT_USERNAME:-admin}:${MONGO_ROOT_PASSWORD:-123456}@mongodb:27017/${MONGO_DB_NAME:-vphone}?authSource=admin
-      # JWT and Email configuration from backend/.env_example
-      JWT_SECRET: "mh2!#F8m@kd%$a7LzQxT9^v!w"
+      # JWT and Email configuration
+      JWT_SECRET: "VPhone2025ProductionJWTNguyenKieuAnhSecureKey"
       EMAIL_USER: vphone24h3@gmail.com
       EMAIL_PASS: ftxhkismjvdqzawp
     ports:
@@ -54,6 +61,13 @@ services:
       timeout: 10s
       retries: 3
       start_period: 60s
+    deploy:
+      resources:
+        limits:
+          cpus: '0.4'
+          memory: 400M
+        reservations:
+          memory: 256M
 
   # Frontend React App
   frontend:
@@ -65,7 +79,6 @@ services:
     container_name: vphone-frontend
     restart: unless-stopped
     environment:
-      # Frontend Environment Variables from iphone-inventory/.env_example
       NODE_ENV: production
     ports:
       - "3000:80"
@@ -77,6 +90,13 @@ services:
       timeout: 10s
       retries: 3
       start_period: 30s
+    deploy:
+      resources:
+        limits:
+          cpus: '0.1'
+          memory: 128M
+        reservations:
+          memory: 64M
 
   # Nginx Reverse Proxy (HTTP only)
   nginx:
@@ -84,7 +104,7 @@ services:
     container_name: vphone-nginx
     restart: unless-stopped
     ports:
-      - "80:80"     # HTTP only
+      - "80:80"
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
       - nginx_logs:/var/log/nginx
@@ -103,17 +123,40 @@ services:
       timeout: 10s
       retries: 3
       start_period: 30s
+    deploy:
+      resources:
+        limits:
+          cpus: '0.1'
+          memory: 96M
+        reservations:
+          memory: 32M
 
-# Named volumes for data persistence
+# Named volumes with size limits (total ~20GB)
 volumes:
   mongodb_data:
     driver: local
+    driver_opts:
+      type: none
+      o: bind,size=15G
+      device: ./data/mongodb
   mongodb_config:
     driver: local
+    driver_opts:
+      type: none
+      o: bind,size=1G
+      device: ./data/mongodb_config
   backend_logs:
     driver: local
+    driver_opts:
+      type: none
+      o: bind,size=2G
+      device: ./data/backend_logs
   nginx_logs:
     driver: local
+    driver_opts:
+      type: none
+      o: bind,size=2G
+      device: ./data/nginx_logs
 
 # Network for inter-service communication
 networks:
