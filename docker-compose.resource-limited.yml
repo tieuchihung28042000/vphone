@@ -183,25 +183,17 @@ services:
           cpus: '0.1'
           memory: 64M
 
-# Named volumes with size limits
+# Named volumes (Docker không hỗ trợ size limit trực tiếp)
+# Giới hạn storage sẽ được thực hiện thông qua filesystem
 volumes:
   mongodb_data:
     driver: local
-    driver_opts:
-      type: none
-      o: bind,size=15G
   mongodb_config:
     driver: local
   backend_logs:
     driver: local
-    driver_opts:
-      type: none
-      o: bind,size=2G
   nginx_logs:
     driver: local
-    driver_opts:
-      type: none
-      o: bind,size=1G
   ssl_certs:
     driver: local
   ssl_webroot:
