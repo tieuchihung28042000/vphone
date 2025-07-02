@@ -43,7 +43,7 @@ services:
       # MongoDB connection to Docker service
       MONGODB_URI: mongodb://${MONGO_ROOT_USERNAME:-admin}:${MONGO_ROOT_PASSWORD:-123456}@mongodb:27017/${MONGO_DB_NAME:-vphone}?authSource=admin
       # JWT and Email configuration
-      JWT_SECRET: "VPhone2025ProductionJWTNguyenKieuAnhSecureKey"
+      JWT_SECRET: VPhone2025_Production_JWT_NguyenKieuAnh_SecureKey
       EMAIL_USER: vphone24h3@gmail.com
       EMAIL_PASS: ftxhkismjvdqzawp
     ports:
@@ -131,32 +131,16 @@ services:
         reservations:
           memory: 32M
 
-# Named volumes with size limits (total ~20GB)
+# Named volumes for data persistence
 volumes:
   mongodb_data:
     driver: local
-    driver_opts:
-      type: none
-      o: bind,size=15G
-      device: ./data/mongodb
   mongodb_config:
     driver: local
-    driver_opts:
-      type: none
-      o: bind,size=1G
-      device: ./data/mongodb_config
   backend_logs:
     driver: local
-    driver_opts:
-      type: none
-      o: bind,size=2G
-      device: ./data/backend_logs
   nginx_logs:
     driver: local
-    driver_opts:
-      type: none
-      o: bind,size=2G
-      device: ./data/nginx_logs
 
 # Network for inter-service communication
 networks:

@@ -81,7 +81,7 @@ echo "   🌐 Domain: $(grep DOMAIN= .env | cut -d'=' -f2 || echo 'localhost')"
 # Step 4: Stop existing containers
 print_status "Stopping any existing containers..."
 docker compose down 2>/dev/null || true
-docker compose -f docker-compose.resource-limited.yml down 2>/dev/null || true
+docker compose down 2>/dev/null || true
 
 # Step 5: Clean up old data (optional)
 echo ""
@@ -94,7 +94,7 @@ fi
 
 # Step 6: Build images
 print_status "Building Docker images (this may take a few minutes)..."
-docker compose -f docker-compose.resource-limited.yml build --no-cache
+docker compose build --no-cache
 
 # Step 7: Start services with resource limits
 print_status "Starting VPhone with resource limits (HTTP only)..."
@@ -104,7 +104,7 @@ echo "   💾 RAM: 1GB maximum"
 echo "   💿 Storage: 20GB maximum"
 echo ""
 
-docker compose -f docker-compose.resource-limited.yml up -d
+docker compose up -d
 
 # Step 8: Wait for services
 print_status "Waiting for services to initialize..."
@@ -119,7 +119,7 @@ echo ""
 
 # Step 9: Check service status
 print_status "Checking service status..."
-docker compose -f docker-compose.resource-limited.yml ps
+docker compose ps
 
 # Step 10: Test API
 print_status "Testing API connection..."
@@ -155,11 +155,11 @@ echo "   👤 Username: admin"
 echo "   🔑 Password: 123456"
 echo ""
 echo "📋 Management Commands:"
-echo "   📊 Status: docker compose -f docker-compose.resource-limited.yml ps"
+echo "   📊 Status: docker compose ps"
 echo "   📈 Monitor: docker stats"
-echo "   📝 Logs: docker compose -f docker-compose.resource-limited.yml logs -f"
-echo "   🔄 Restart: docker compose -f docker-compose.resource-limited.yml restart"
-echo "   🛑 Stop: docker compose -f docker-compose.resource-limited.yml down"
+echo "   📝 Logs: docker compose logs -f"
+echo "   🔄 Restart: docker compose restart"
+echo "   🛑 Stop: docker compose down"
 echo ""
 
 # Step 12: Check domain resolution (for production)
