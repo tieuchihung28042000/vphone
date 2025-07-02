@@ -9,7 +9,7 @@ RUN apk add --no-cache \
     bash
 
 # Create directories
-RUN mkdir -p /ssl/certs /ssl/webroot /scripts
+RUN mkdir -p /ssl/certs /ssl/webroot /ssl/work /ssl/logs /scripts
 
 # Copy initialization script
 COPY init-ssl.sh /scripts/init-ssl.sh

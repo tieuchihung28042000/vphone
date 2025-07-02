@@ -68,47 +68,45 @@ if [ -f "/ssl/certs/live/$DOMAIN/fullchain.pem" ] && [ -f "/ssl/certs/live/$DOMA
     fi
 fi
 
-# Wait for nginx to be ready (for webroot challenge)
-log_info "⏳ Đợi nginx sẵn sàng..."
-for i in {1..30}; do
-    if curl -s http://nginx/.well-known/acme-challenge/test > /dev/null 2>&1; then
-        log_success "✅ Nginx sẵn sàng cho ACME challenge"
-        break
-    fi
-    if [ $i -eq 30 ]; then
-        log_warning "⚠️  Nginx chưa sẵn sàng, tiếp tục với standalone mode"
-        STANDALONE_MODE=true
-    fi
-    sleep 2
-done
+# Check if we can use webroot mode (nginx ready)
+log_info "🔍 Kiểm tra nginx availability..."
+if curl -s --connect-timeout 5 http://nginx/.well-known/acme-challenge/test > /dev/null 2>&1; then
+    log_success "✅ Nginx sẵn sàng cho webroot mode"
+    STANDALONE_MODE=false
+else
+    log_info "ℹ️  Nginx chưa sẵn sàng, sử dụng standalone mode"
+    STANDALONE_MODE=true
+fi
 
 # Create SSL certificates
 log_info "🔐 Tạo SSL certificates với Let's Encrypt..."
 
 if [ "$STANDALONE_MODE" = "true" ]; then
     # Standalone mode (nginx not ready)
+    log_info "🔐 Sử dụng standalone mode để tạo certificate..."
     certbot certonly \
         --standalone \
         --email "$SSL_EMAIL" \
         --agree-tos \
         --no-eff-email \
-        --force-renewal \
-        --cert-path /ssl/certs/live/$DOMAIN \
+        --config-dir /ssl/certs \
+        --work-dir /ssl/work \
+        --logs-dir /ssl/logs \
         -d "$DOMAIN" \
-        -d "www.$DOMAIN" \
         --non-interactive
 else
     # Webroot mode (preferred)
+    log_info "🔐 Sử dụng webroot mode để tạo certificate..."
     certbot certonly \
         --webroot \
         --webroot-path=/ssl/webroot \
         --email "$SSL_EMAIL" \
         --agree-tos \
         --no-eff-email \
-        --force-renewal \
-        --cert-path /ssl/certs/live/$DOMAIN \
+        --config-dir /ssl/certs \
+        --work-dir /ssl/work \
+        --logs-dir /ssl/logs \
         -d "$DOMAIN" \
-        -d "www.$DOMAIN" \
         --non-interactive
 fi
 
