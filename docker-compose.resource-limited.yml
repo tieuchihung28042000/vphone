@@ -1,25 +1,4 @@
 services:
-  # SSL Initialization (chạy trước để tạo certificates)
-  ssl-init:
-    build:
-      context: ./ssl-init
-      dockerfile: Dockerfile
-    container_name: vphone-ssl-init
-    environment:
-      - DOMAIN=${DOMAIN:-localhost}
-      - SSL_EMAIL=${SSL_EMAIL:-}
-    volumes:
-      - ssl_certs:/ssl/certs
-      - ssl_webroot:/ssl/webroot
-    networks:
-      - vphone-network
-    restart: "no"  # Chỉ chạy một lần
-    deploy:
-      resources:
-        limits:
-          cpus: '0.1'
-          memory: 128M
-
   # MongoDB Database
   mongodb:
     image: mongo:7-jammy
@@ -69,8 +48,6 @@ services:
     depends_on:
       mongodb:
         condition: service_healthy
-      ssl-init:
-        condition: service_completed_successfully
     networks:
       - vphone-network
     volumes:
@@ -118,29 +95,23 @@ services:
         reservations:
           memory: 64M
 
-  # Nginx Reverse Proxy
+  # Nginx Reverse Proxy (HTTP only)
   nginx:
     image: nginx:alpine
     container_name: vphone-nginx
     restart: unless-stopped
     ports:
       - "80:80"
-      - "443:443"
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
       - nginx_logs:/var/log/nginx
-      - ssl_certs:/etc/letsencrypt:ro
-      - ssl_webroot:/var/www/certbot:ro
     environment:
       - DOMAIN=${DOMAIN:-localhost}
-      - SSL_EMAIL=${SSL_EMAIL:-}
     depends_on:
       backend:
         condition: service_healthy
       frontend:
         condition: service_healthy
-      ssl-init:
-        condition: service_completed_successfully
     networks:
       - vphone-network
     healthcheck:
@@ -157,32 +128,6 @@ services:
         reservations:
           memory: 32M
 
-  # SSL Renewal Service
-  ssl-renewal:
-    build:
-      context: ./ssl-renewal
-      dockerfile: Dockerfile
-    container_name: vphone-ssl-renewal
-    restart: unless-stopped
-    environment:
-      - DOMAIN=${DOMAIN:-localhost}
-      - SSL_EMAIL=${SSL_EMAIL:-}
-    volumes:
-      - ssl_certs:/ssl/certs
-      - ssl_webroot:/ssl/webroot
-    depends_on:
-      nginx:
-        condition: service_healthy
-      ssl-init:
-        condition: service_completed_successfully
-    networks:
-      - vphone-network
-    deploy:
-      resources:
-        limits:
-          cpus: '0.1'
-          memory: 64M
-
 # Named volumes (Docker không hỗ trợ size limit trực tiếp)
 # Giới hạn storage sẽ được thực hiện thông qua filesystem
 volumes:
@@ -193,10 +138,6 @@ volumes:
   backend_logs:
     driver: local
   nginx_logs:
-    driver: local
-  ssl_certs:
-    driver: local
-  ssl_webroot:
     driver: local
 
 # Network for inter-service communication

@@ -1,14 +1,12 @@
 #!/bin/bash
 
-# VPhone All-in-One Deployment Script
-# Domain: Nguyenkieuanh.com
+# VPhone All-in-One Deployment Script (HTTP Only)
 # Resource Limits: 1 CPU, 1GB RAM, 20GB Storage
 
 set -e  # Exit on any error
 
-echo "🚀 VPhone All-in-One Deployment"
-echo "==============================="
-echo "Domain: Nguyenkieuanh.com"
+echo "🚀 VPhone All-in-One Deployment (HTTP Only)"
+echo "============================================"
 echo "Resource Limits: 1 CPU, 1GB RAM, 20GB Storage"
 echo ""
 
@@ -78,8 +76,7 @@ else
 fi
 
 print_status "Current configuration:"
-echo "   🌐 Domain: $(grep DOMAIN= .env | cut -d'=' -f2)"
-echo "   📧 SSL Email: $(grep SSL_EMAIL= .env | cut -d'=' -f2)"
+echo "   🌐 Domain: $(grep DOMAIN= .env | cut -d'=' -f2 || echo 'localhost')"
 
 # Step 4: Stop existing containers
 print_status "Stopping any existing containers..."
@@ -100,7 +97,7 @@ print_status "Building Docker images (this may take a few minutes)..."
 docker compose -f docker-compose.resource-limited.yml build --no-cache
 
 # Step 7: Start services with resource limits
-print_status "Starting VPhone with resource limits..."
+print_status "Starting VPhone with resource limits (HTTP only)..."
 print_warning "Resource Limits Applied:"
 echo "   🖥️  CPU: 1 core maximum"
 echo "   💾 RAM: 1GB maximum" 
@@ -124,18 +121,7 @@ echo ""
 print_status "Checking service status..."
 docker compose -f docker-compose.resource-limited.yml ps
 
-# Step 10: Check SSL initialization
-print_status "Checking SSL setup..."
-SSL_LOGS=$(docker compose -f docker-compose.resource-limited.yml logs ssl-init 2>/dev/null | tail -5)
-if echo "$SSL_LOGS" | grep -q "Certificate ready"; then
-    print_success "SSL certificate ready!"
-elif echo "$SSL_LOGS" | grep -q "Creating self-signed"; then
-    print_success "Self-signed certificate created!"
-else
-    print_warning "SSL setup in progress..."
-fi
-
-# Step 11: Test API
+# Step 10: Test API
 print_status "Testing API connection..."
 sleep 5
 if curl -s http://localhost/api/branches &> /dev/null; then
@@ -144,7 +130,7 @@ else
     print_warning "API may still be starting up..."
 fi
 
-# Step 12: Show final status
+# Step 11: Show final status
 echo ""
 echo "🎉 VPhone Deployment Completed!"
 echo "==============================="
@@ -155,13 +141,11 @@ echo "   💾 RAM Limit: 1GB"
 echo "   💿 Storage Limit: 20GB"
 echo ""
 echo "🌐 Access Information:"
-DOMAIN=$(grep DOMAIN= .env | cut -d'=' -f2)
-if [ "$DOMAIN" = "localhost" ]; then
+DOMAIN=$(grep DOMAIN= .env | cut -d'=' -f2 || echo 'localhost')
+if [ "$DOMAIN" = "localhost" ] || [ -z "$DOMAIN" ]; then
     echo "   🌍 URL: http://localhost"
-    echo "   🔒 HTTPS: https://localhost (self-signed)"
 else
     echo "   🌍 URL: http://$DOMAIN"
-    echo "   🔒 HTTPS: https://$DOMAIN"
     print_warning "Make sure $DOMAIN points to this server's IP!"
 fi
 echo ""
@@ -178,8 +162,8 @@ echo "   🔄 Restart: docker compose -f docker-compose.resource-limited.yml res
 echo "   🛑 Stop: docker compose -f docker-compose.resource-limited.yml down"
 echo ""
 
-# Step 13: Check domain resolution (for production)
-if [ "$DOMAIN" != "localhost" ]; then
+# Step 12: Check domain resolution (for production)
+if [ "$DOMAIN" != "localhost" ] && [ -n "$DOMAIN" ]; then
     print_status "Checking domain resolution..."
     SERVER_IP=$(curl -s ifconfig.me 2>/dev/null || curl -s ipinfo.io/ip 2>/dev/null || echo "unknown")
     DOMAIN_IP=$(nslookup $DOMAIN 2>/dev/null | grep -A1 "Name:" | tail -1 | awk '{print $2}' 2>/dev/null || echo "unknown")
@@ -197,10 +181,4 @@ fi
 
 echo ""
 print_success "🚀 All done! VPhone is ready to use!"
-echo ""
-echo "💡 Next steps:"
-echo "   1. Access the URL above"
-echo "   2. Login with admin credentials"
-echo "   3. Change default password"
-echo "   4. Start using VPhone!"
 echo "" 
