@@ -1,0 +1,174 @@
+services:
+  # SSL Initialization (chạy trước để tạo certificates)
+  ssl-init:
+    build:
+      context: ./ssl-init
+      dockerfile: Dockerfile
+    container_name: vphone-ssl-init
+    environment:
+      - DOMAIN=${DOMAIN:-localhost}
+      - SSL_EMAIL=${SSL_EMAIL:-}
+    volumes:
+      - ssl_certs:/ssl/certs
+      - ssl_webroot:/ssl/webroot
+    networks:
+      - vphone-network
+    restart: "no"  # Chỉ chạy một lần
+
+  # MongoDB Database
+  mongodb:
+    image: mongo:7-jammy
+    container_name: vphone-mongodb
+    restart: unless-stopped
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_ROOT_USERNAME:-admin}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD:-password123}
+      MONGO_INITDB_DATABASE: ${MONGO_DB_NAME:-vphone}
+    ports:
+      - "27017:27017"  # Sử dụng port 27018 để tránh conflict
+    volumes:
+      - mongodb_data:/data/db
+      - mongodb_config:/data/configdb
+    networks:
+      - vphone-network
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Backend API
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: vphone-backend
+    restart: unless-stopped
+    environment:
+      # Backend Environment Variables
+      NODE_ENV: production
+      PORT: 4000
+      # MongoDB connection to Docker service
+      MONGODB_URI: mongodb://${MONGO_ROOT_USERNAME:-admin}:${MONGO_ROOT_PASSWORD:-123456}@mongodb:27017/${MONGO_DB_NAME:-vphone}?authSource=admin
+      # JWT and Email configuration from backend/.env_example
+      JWT_SECRET: "mh2!#F8m@kd%$a7LzQxT9^v!w"
+      EMAIL_USER: vphone24h3@gmail.com
+      EMAIL_PASS: ftxhkismjvdqzawp
+    ports:
+      - "4000:4000"  # Sử dụng port 4001 để tránh conflict
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      ssl-init:
+        condition: service_completed_successfully
+    networks:
+      - vphone-network
+    volumes:
+      - backend_logs:/app/logs
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:4000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  # Frontend React App
+  frontend:
+    build:
+      context: ./iphone-inventory
+      dockerfile: Dockerfile
+      args:
+        VITE_API_URL: http://${DOMAIN:-localhost}
+    container_name: vphone-frontend
+    restart: unless-stopped
+    environment:
+      # Frontend Environment Variables from iphone-inventory/.env_example
+      NODE_ENV: production
+    ports:
+      - "3000:80"  # Sử dụng port 3001 để tránh conflict
+    networks:
+      - vphone-network
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:80/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  # Nginx Reverse Proxy
+  nginx:
+    image: nginx:alpine
+    container_name: vphone-nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"     # HTTP
+      - "443:443"   # HTTPS
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - nginx_logs:/var/log/nginx
+      # SSL certificates (auto-created by ssl-init)
+      - ssl_certs:/etc/letsencrypt:ro
+      - ssl_webroot:/var/www/certbot:ro
+    environment:
+      - DOMAIN=${DOMAIN:-localhost}
+      - SSL_EMAIL=${SSL_EMAIL:-}
+    depends_on:
+      backend:
+        condition: service_healthy
+      frontend:
+        condition: service_healthy
+      ssl-init:
+        condition: service_completed_successfully
+    networks:
+      - vphone-network
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:80/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  # SSL Renewal Service (chạy liên tục để gia hạn SSL)
+  ssl-renewal:
+    build:
+      context: ./ssl-renewal
+      dockerfile: Dockerfile
+    container_name: vphone-ssl-renewal
+    restart: unless-stopped
+    environment:
+      - DOMAIN=${DOMAIN:-localhost}
+      - SSL_EMAIL=${SSL_EMAIL:-}
+    volumes:
+      - ssl_certs:/ssl/certs
+      - ssl_webroot:/ssl/webroot
+    depends_on:
+      nginx:
+        condition: service_healthy
+      ssl-init:
+        condition: service_completed_successfully
+    networks:
+      - vphone-network
+
+# Named volumes for data persistence
+volumes:
+  mongodb_data:
+    driver: local
+  mongodb_config:
+    driver: local
+  backend_logs:
+    driver: local
+  nginx_logs:
+    driver: local
+  ssl_certs:
+    driver: local
+  ssl_webroot:
+    driver: local
+
+# Network for inter-service communication
+networks:
+  vphone-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16 

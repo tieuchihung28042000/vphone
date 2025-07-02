@@ -81,11 +81,11 @@ function Login() {
                 fontWeight: 600,
               }}
             >
-              Tên đăng nhập
+              Email hoặc Username
             </label>
             <input
-              type="email"
-              placeholder="Nhập email đăng nhập"
+              type="text"
+              placeholder="Nhập email hoặc username"
               style={{
                 width: "100%",
                 padding: "12px 10px",

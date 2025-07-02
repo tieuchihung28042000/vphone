@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 
 function DangKy() {
   const [email, setEmail] = useState("");
+  const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [message, setMessage] = useState(""); // thêm state message hiển thị thông báo
@@ -20,10 +21,10 @@ function DangKy() {
       const API = import.meta.env.VITE_API_URL?.replace(/\/+$/, ""); // Xoá dấu / nếu có
       console.log("🔗 API:", `${API}/api/admin-register`);
 
-      const res = await fetch(`${API}/api/admin-register`, {
+      const res = await fetch(`${API}/api/auth/register`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password }),
+        body: JSON.stringify({ email, username, password }),
       });
 
       let data = {};
@@ -52,11 +53,18 @@ function DangKy() {
       <form onSubmit={handleRegister} className="flex flex-col gap-4">
         <input
           type="email"
-          placeholder="Email"
+          placeholder="Email (bắt buộc)"
           className="border p-2 rounded"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
           required
+        />
+        <input
+          type="text"
+          placeholder="Username (tùy chọn)"
+          className="border p-2 rounded"
+          value={username}
+          onChange={(e) => setUsername(e.target.value)}
         />
         <input
           type="password"

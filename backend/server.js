@@ -17,47 +17,12 @@ const cashbookRoutes = require('./routes/cashbook'); // THÊM DÒNG NÀY
 
 const app = express();
 
-// Danh sách origin frontend được phép truy cập API backend
-const allowedOrigins = [
-  'http://localhost:5174',
-  'http://localhost:5175',
-  'http://localhost:3000',
-  'http://localhost:8080',
-  'http://localhost:80',
-  'https://chinhthuc-jade.vercel.app',
-  'http://app.vphone.vn',
-  'https://app.vphone.vn',
-  'http://test.vphone.vn',
-  'https://test.vphone.vn',
-  'http://103.109.187.224',
-  'https://103.109.187.224',
-];
-
+// CORS configuration - cho phép tất cả origins để dễ triển khai
 app.use(cors({
   origin: function(origin, callback) {
-    // Cho phép các request không có origin (Postman, mobile apps)
-    if (!origin) return callback(null, true);
-    
-    // Kiểm tra nếu origin trong danh sách cho phép
-    if (allowedOrigins.includes(origin)) {
-      return callback(null, true);
-    }
-    
-    // Cho phép IP addresses trong production (VPS)
-    if (origin && origin.match(/^https?:\/\/\d+\.\d+\.\d+\.\d+(:\d+)?$/)) {
-      console.log('✅ CORS cho phép IP:', origin);
-      return callback(null, true);
-    }
-    
-    // Trong development, cho phép tất cả origins
-    if (process.env.NODE_ENV !== 'production') {
-      console.log('⚠️ CORS dev mode - allowing origin:', origin);
-      return callback(null, true);
-    }
-    
-    console.log('❌ CORS bị chặn origin:', origin);
-    const msg = '❌ CORS bị chặn: ' + origin;
-    return callback(new Error(msg), false);
+    // Cho phép tất cả origins để dễ triển khai cho nhiều người
+    console.log('✅ CORS allowing origin:', origin || 'no-origin');
+    return callback(null, true);
   },
   credentials: true,
 }));
@@ -906,7 +871,13 @@ app.post('/api/thu-no-khach', async (req, res) => {
 
 
 mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/vphone')
-.then(() => console.log('✅ Kết nối MongoDB thành công'))
+.then(async () => {
+  console.log('✅ Kết nối MongoDB thành công');
+  
+  // Tự động tạo admin user nếu chưa có
+  const { createDefaultAdmin } = require('./scripts/init-admin');
+  await createDefaultAdmin();
+})
 .catch(err => console.error('❌ Kết nối MongoDB lỗi:', err));
 
 app.get('/', (req, res) => {
@@ -914,7 +885,7 @@ app.get('/', (req, res) => {
 });
 
 // Health check endpoint
-app.get('/health', (req, res) => {
+app.get('/api/health', (req, res) => {
   res.status(200).json({ 
     status: 'healthy', 
     timestamp: new Date().toISOString(),

@@ -9,21 +9,31 @@ const router = express.Router();
 // ===== Đăng ký tài khoản user =====
 router.post('/register', async (req, res) => {
   try {
-    const { email, password } = req.body;
+    const { email, password, username } = req.body;
 
     if (!email || !password) {
       return res.status(400).json({ message: '❌ Email và mật khẩu là bắt buộc' });
     }
 
-    const existing = await User.findOne({ email });
-    if (existing) {
+    // Kiểm tra email đã tồn tại
+    const existingEmail = await User.findOne({ email });
+    if (existingEmail) {
       return res.status(400).json({ message: '❌ Email đã tồn tại' });
+    }
+
+    // Kiểm tra username đã tồn tại (nếu có)
+    if (username) {
+      const existingUsername = await User.findOne({ username });
+      if (existingUsername) {
+        return res.status(400).json({ message: '❌ Username đã tồn tại' });
+      }
     }
 
     const hashed = await bcrypt.hash(password, 10);
 
     await User.create({
       email,
+      username: username || null, // Có thể null nếu không nhập
       password: hashed,
       role: 'user'
     });
@@ -37,15 +47,22 @@ router.post('/register', async (req, res) => {
 // ===== Đăng nhập user =====
 router.post('/login', async (req, res) => {
   try {
-    const { email, password } = req.body;
+    const { email, password } = req.body; // email có thể là email hoặc username
 
     if (!email || !password) {
-      return res.status(400).json({ message: '❌ Email và mật khẩu là bắt buộc' });
+      return res.status(400).json({ message: '❌ Email/Username và mật khẩu là bắt buộc' });
     }
 
-    const user = await User.findOne({ email });
+    // Tìm user bằng email hoặc username
+    const user = await User.findOne({
+      $or: [
+        { email: email.toLowerCase() },
+        { username: email } // Sử dụng field email để nhận cả username
+      ]
+    });
+    
     if (!user) {
-      return res.status(400).json({ message: '❌ Email không tồn tại' });
+      return res.status(400).json({ message: '❌ Email/Username không tồn tại' });
     }
 
     const match = await bcrypt.compare(password, user.password);
