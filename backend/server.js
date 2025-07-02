@@ -580,6 +580,66 @@ app.post('/api/xuat-hang', async (req, res) => {
   }
 });
 
+// API cảnh báo tồn kho - ✅ ADDED: Tạo API mới cho cảnh báo tồn kho
+app.get('/api/canh-bao-ton-kho', async (req, res) => {
+  try {
+    // Lấy tất cả phụ kiện (IMEI null) và máy iPhone (có IMEI) có status in_stock
+    const inventories = await Inventory.find({ status: 'in_stock' });
+
+    // Lấy tổng xuất theo từng sku (chỉ cho phụ kiện)
+    const exportAgg = await ExportHistory.aggregate([
+      { $match: { imei: { $in: [null, ""] } } }, // Chỉ phụ kiện (không IMEI)
+      { $group: { _id: "$sku", totalExported: { $sum: "$quantity" } } }
+    ]);
+    const exportMap = {};
+    exportAgg.forEach(e => exportMap[e._id] = e.totalExported);
+
+    // Gom phụ kiện thành 1 dòng duy nhất mỗi SKU
+    const accessoriesMap = {};
+    
+    for (const item of inventories) {
+      if (!item.imei) {
+        // Phụ kiện: gom theo SKU + tên + chi nhánh
+        const key = (item.sku || '') + '|' + (item.product_name || item.tenSanPham || '') + '|' + (item.branch || '');
+        if (!accessoriesMap[key]) {
+          accessoriesMap[key] = {
+            sku: item.sku || "",
+            tenSanPham: item.product_name || item.tenSanPham || "",
+            product_name: item.product_name || item.tenSanPham || "",
+            branch: item.branch || "",
+            quantity: 0, // Tổng số nhập
+            totalRemain: 0, // Tổng tồn kho
+          };
+        }
+        accessoriesMap[key].quantity += Number(item.quantity) || 1;
+      }
+    }
+    
+    // Tính số lượng còn lại cho phụ kiện = số nhập - số xuất
+    const lowStockItems = [];
+    for (const key in accessoriesMap) {
+      const acc = accessoriesMap[key];
+      const totalExported = exportMap[acc.sku] || 0;
+      acc.totalRemain = acc.quantity - totalExported;
+      if (acc.totalRemain < 0) acc.totalRemain = 0;
+      
+      // Chỉ lấy các sản phẩm có tồn kho <= 2 (cảnh báo)
+      if (acc.totalRemain <= 2) {
+        lowStockItems.push(acc);
+      }
+    }
+
+    res.status(200).json({
+      message: '✅ Danh sách cảnh báo tồn kho',
+      total: lowStockItems.length,
+      items: lowStockItems,
+    });
+  } catch (error) {
+    console.error('❌ Lỗi khi lấy cảnh báo tồn kho:', error.message);
+    res.status(500).json({ message: '❌ Lỗi server khi lấy cảnh báo tồn kho', error: error.message });
+  }
+});
+
 // API chi tiết IMEI
 app.get('/api/imei-detail/:imei', async (req, res) => {
   try {
@@ -600,15 +660,73 @@ app.get('/api/imei-detail/:imei', async (req, res) => {
   }
 });
 
-// API tồn kho
+// API tồn kho - ✅ FIXED: Tính toán đúng số lượng còn lại cho phụ kiện
 app.get('/api/ton-kho', async (req, res) => {
   try {
-    const items = await Inventory.find({ status: 'in_stock' });
+    // Lấy tất cả phụ kiện (IMEI null) và máy iPhone (có IMEI) có status in_stock
+    const inventories = await Inventory.find({ status: 'in_stock' });
+
+    // Lấy tổng xuất theo từng sku (chỉ cho phụ kiện)
+    const exportAgg = await ExportHistory.aggregate([
+      { $match: { imei: { $in: [null, ""] } } }, // Chỉ phụ kiện (không IMEI)
+      { $group: { _id: "$sku", totalExported: { $sum: "$quantity" } } }
+    ]);
+    const exportMap = {};
+    exportAgg.forEach(e => exportMap[e._id] = e.totalExported);
+
+    // Gom phụ kiện thành 1 dòng duy nhất mỗi SKU
+    const accessoriesMap = {};
+    const imeiItems = [];
+    
+    for (const item of inventories) {
+      if (item.imei) {
+        // Máy có IMEI: giữ nguyên
+        imeiItems.push(item);
+      } else {
+        // Phụ kiện: gom theo SKU + tên + thư mục + chi nhánh
+        const key = (item.sku || '') + '|' + (item.product_name || item.tenSanPham || '') + '|' + (item.category || '') + '|' + (item.branch || '');
+        if (!accessoriesMap[key]) {
+          accessoriesMap[key] = {
+            _id: item._id,
+            sku: item.sku || "",
+            product_name: item.product_name || item.tenSanPham || "",
+            tenSanPham: item.product_name || item.tenSanPham || "",
+            price_import: item.price_import || 0,
+            import_date: item.import_date,
+            supplier: item.supplier,
+            branch: item.branch,
+            category: item.category,
+            note: item.note,
+            status: 'in_stock',
+            quantity: 0, // Tổng số nhập
+            soLuongConLai: 0, // Tổng tồn kho
+          };
+        }
+        accessoriesMap[key].quantity += Number(item.quantity) || 1;
+      }
+    }
+    
+    // ✅ Tính số lượng còn lại cho phụ kiện = số nhập - số xuất
+    for (const key in accessoriesMap) {
+      const acc = accessoriesMap[key];
+      const totalExported = exportMap[acc.sku] || 0;
+      acc.soLuongConLai = acc.quantity - totalExported;
+      if (acc.soLuongConLai < 0) acc.soLuongConLai = 0;
+      
+      // ✅ Cập nhật quantity thành số lượng còn lại thực tế
+      acc.quantity = acc.soLuongConLai;
+    }
+    
+    // Kết quả trả về: iPhone (IMEI riêng) + phụ kiện (mỗi loại 1 dòng với số lượng đã tính đúng)
+    const accessoriesItems = Object.values(accessoriesMap);
+    const allItems = [...imeiItems, ...accessoriesItems];
 
     res.status(200).json({
-      message: '✅ Danh sách máy còn tồn kho',
-      total: items.length,
-      items,
+      message: '✅ Danh sách tồn kho (đã tính đúng số lượng phụ kiện)',
+      total: allItems.length,
+      items: allItems,
+      imeiItems, // Máy có IMEI
+      accessoriesItems, // Phụ kiện đã gom nhóm
     });
   } catch (error) {
     console.error('❌ Lỗi khi lấy tồn kho:', error.message);
