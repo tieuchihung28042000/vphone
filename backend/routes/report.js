@@ -133,8 +133,8 @@ router.get('/ton-kho', async (req, res) => {
       if (item.imei) {
         imeiItems.push(item);
       } else {
-        // Gom theo SKU + tên
-        const key = (item.sku || '') + '|' + (item.product_name || item.tenSanPham || '');
+        // ✅ Sửa: Gom theo SKU + tên + thư mục + chi nhánh, KHÔNG phân biệt ngày tháng  
+        const key = (item.sku || '') + '|' + (item.product_name || item.tenSanPham || '') + '|' + (item.category || '') + '|' + (item.branch || '');
         if (!accessoriesMap[key]) {
           accessoriesMap[key] = {
             sku: item.sku || "",
@@ -228,7 +228,7 @@ router.post('/xuat-hang', async (req, res) => {
         customer_phone,
         warranty,
         note,
-        debt: debt || 0,
+        da_thanh_toan: parseFloat(req.body.da_thanh_toan) || 0, // ✅ FIX: Thêm field da_thanh_toan
         branch,
         category: item.category || "",
         export_type: "iphone",
@@ -289,7 +289,7 @@ router.post('/xuat-hang', async (req, res) => {
         customer_phone,
         warranty,
         note,
-        debt: debt || 0,
+        da_thanh_toan: parseFloat(req.body.da_thanh_toan) || 0, // ✅ FIX: Thêm field da_thanh_toan
         branch,
         category: acc.category || "",
         export_type: "accessory",

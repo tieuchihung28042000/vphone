@@ -293,9 +293,9 @@ function XuatHang() {
         : `${import.meta.env.VITE_API_URL}/api/xuat-hang`;
 
       // ✅ Chuẩn bị data với tính toán tự động
-      const salePrice = parseNumber(formData.sale_price) || 0;
+      const salePrice = parseFloat(parseNumber(formData.sale_price)) || 0;
       const quantity = parseInt(formData.quantity) || 1;
-      const daTT = parseNumber(formData.da_thanh_toan) || 0;
+      const daTT = parseFloat(parseNumber(formData.da_thanh_toan)) || 0; // ✅ Chuyển thành number
       
       // ✅ Chỉ tự động tính khi tạo mới (không edit) và khi thực sự trống
       const finalDaTT = editingItemId ? daTT : (daTT || (salePrice * quantity)); // Edit: giữ nguyên giá trị, Create: tự động tính
@@ -317,6 +317,8 @@ function XuatHang() {
       console.log('🔍 DEBUG calculated da_thanh_toan:', finalDaTT);
       console.log('🔍 DEBUG form da_thanh_toan input:', formData.da_thanh_toan);
       console.log('🔍 DEBUG parsed daTT:', daTT);
+      console.log('🔍 DEBUG parseNumber result:', parseNumber(formData.da_thanh_toan));
+      console.log('🔍 DEBUG salePrice:', salePrice, 'quantity:', quantity);
 
       const res = await fetch(url, {
         method,
@@ -682,20 +684,6 @@ function XuatHang() {
               <span className="text-red-500 italic">Chưa có giá</span>
             )}
             {/* Debug info đã tắt */}
-          </div>
-        );
-      }
-    },
-    {
-      header: "Đã thanh toán",
-      key: "da_thanh_toan",
-      render: (item) => {
-        const daTT = parseFloat(item.da_thanh_toan) || 0;
-        return (
-          <div className="text-sm font-bold text-blue-600">
-            {daTT > 0 ? formatCurrency(daTT) : (
-              <span className="text-gray-400 italic">0đ</span>
-            )}
           </div>
         );
       }

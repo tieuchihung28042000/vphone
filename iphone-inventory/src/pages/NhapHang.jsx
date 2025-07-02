@@ -227,51 +227,18 @@ function NhapHang() {
     fetchSuggestList(value);
   };
 
-  // ✅ Thêm function để chọn suggestion - CHUYỂN SANG CHẾ ĐỘ CẬP NHẬT
-  const handleSelectSuggest = async (item) => {
-    // Tìm sản phẩm tồn kho để cập nhật
-    try {
-      const res = await fetch(`${import.meta.env.VITE_API_URL}/api/ton-kho`);
-      const data = await res.json();
-      
-      // Tìm sản phẩm phụ kiện (không có IMEI) hoặc sản phẩm có IMEI chưa bán
-      const existingItem = (data.items || []).find(
-        existing => 
-          (existing.product_name === item.name || existing.tenSanPham === item.name) &&
-          existing.sku === item.sku &&
-          existing.status === 'in_stock'
-      );
-      
-      if (existingItem) {
-        // Chuyển sang chế độ cập nhật sản phẩm có sẵn
-        console.log('🔄 Switching to UPDATE mode for existing product:', existingItem);
-        handleEdit(existingItem);
-        setMessage("📝 Chuyển sang chế độ cập nhật sản phẩm có sẵn!");
-        setTimeout(() => setMessage(""), 3000);
-      } else {
-        // Điền thông tin để tạo mới
-        setFormData(prev => ({
-          ...prev,
-          product_name: item.name,
-          sku: item.sku,
-          category: item.category,
-          price_import: item.price_import || prev.price_import
-        }));
-        console.log('➕ Filling form for NEW product creation');
-      }
-      
-      setShowSuggest(false);
-    } catch (err) {
-      console.error("Error finding existing product:", err);
-      // Fallback: chỉ điền form
-      setFormData(prev => ({
-        ...prev,
-        product_name: item.name,
-        sku: item.sku,
-        category: item.category
-      }));
-      setShowSuggest(false);
-    }
+  // ✅ Sửa function để chọn suggestion - CHỈ ĐIỀN FORM, KHÔNG TỰ ĐỘNG CHUYỂN SANG EDIT
+  const handleSelectSuggest = (item) => {
+    // Chỉ điền thông tin vào form để người dùng có thể nhập mới
+    setFormData(prev => ({
+      ...prev,
+      product_name: item.name,
+      sku: item.sku,
+      category: item.category,
+      price_import: item.price_import || prev.price_import
+    }));
+    setShowSuggest(false);
+    console.log('💡 Đã điền thông tin gợi ý vào form');
   };
 
   const handleChange = (e) => {

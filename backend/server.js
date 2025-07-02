@@ -247,13 +247,14 @@ app.post('/api/nhap-hang', async (req, res) => {
       return res.status(400).json({ message: '❌ Thiếu SKU hoặc tên sản phẩm.' });
     }
 
+    // ✅ Sửa: Tìm sản phẩm cùng loại để gộp (không phân biệt giá nhập và ngày tháng)
     let existItem = await Inventory.findOne({
       $or: [{ imei: null }, { imei: "" }, { imei: undefined }],
       sku: sku,
       branch: branch,
       product_name: product_name,
-      price_import: price_import,
       category: category,
+      // Bỏ điều kiện price_import để gộp cùng sản phẩm dù khác giá nhập
     });
 
     if (existItem) {
@@ -382,6 +383,10 @@ app.post('/api/xuat-hang', async (req, res) => {
       quantity // Số lượng (cho phụ kiện)
     } = req.body;
 
+    console.log('🔍 POST /api/xuat-hang received da_thanh_toan:', da_thanh_toan);
+    console.log('🔍 POST da_thanh_toan type:', typeof da_thanh_toan);
+    console.log('🔍 POST full request body:', req.body);
+
     let item;
     
     // ✅ Xử lý phụ kiện và sản phẩm có IMEI khác nhau
@@ -445,30 +450,34 @@ app.post('/api/xuat-hang', async (req, res) => {
       
       // ✅ Ghi vào ExportHistory thay vì Inventory
       const priceSellNum = Number(price_sell) || 0;
-      const daTTNum = Number(da_thanh_toan) || (priceSellNum * sellQuantity); // ✅ Tự động tính đã thanh toán = giá bán × số lượng
+      // ✅ FIX: Không tự động tính da_thanh_toan khi bán hàng, lưu đúng giá trị người dùng nhập
+      let daTTNum = parseFloat(da_thanh_toan) || 0; // Lưu giá trị người dùng nhập (kể cả 0)
       
       console.log('🔧 Creating ExportHistory for accessory with quantity:', sellQuantity); // ✅ Debug log
+      console.log('🔍 POST Accessory da_thanh_toan - FIXED:', {
+        input_da_thanh_toan: da_thanh_toan,
+        final_daTTNum: daTTNum,
+        priceSellNum,
+        sellQuantity,
+        note: 'Không tự động tính, lưu đúng giá trị người dùng nhập'
+      });
       
       const soldAccessory = new ExportHistory({
         imei: '', // Phụ kiện không có IMEI
         sku: item.sku,
         product_name: item.product_name,
-        tenSanPham: item.tenSanPham,
         category: item.category,
         price_import: item.price_import,
-        giaBan: priceSellNum,
-        price_sell: priceSellNum,
-        da_thanh_toan: daTTNum, // ✅ Tự động tính = giá bán × số lượng nếu không nhập
+        price_sell: priceSellNum, // ✅ Chỉ dùng field có trong schema
+        da_thanh_toan: daTTNum, // ✅ Field này có trong schema
         sold_date: sold_date ? new Date(sold_date) : new Date(),
         customer_name: customer_name || '',
         customer_phone: customer_phone || '',
         warranty: warranty || '',
         note: note || '',
         branch: branch || item.branch,
-        source: source || 'tien_mat',
-        status: 'sold',
-        quantity: sellQuantity, // ✅ Đảm bảo số lượng đúng
-        is_accessory: true
+        quantity: sellQuantity, // ✅ Field này có trong schema
+        export_type: 'accessory' // ✅ Đánh dấu là phụ kiện
       });
       
       console.log('✅ ExportHistory record to be saved:', {
@@ -481,6 +490,15 @@ app.post('/api/xuat-hang', async (req, res) => {
       
       await soldAccessory.save();
       await item.save();
+      
+      // ✅ DEBUG: Kiểm tra record sau khi lưu
+      const savedRecord = await ExportHistory.findById(soldAccessory._id);
+      console.log('🔍 SAVED ACCESSORY RECORD:', {
+        _id: savedRecord._id,
+        da_thanh_toan: savedRecord.da_thanh_toan,
+        quantity: savedRecord.quantity,
+        price_sell: savedRecord.price_sell
+      });
       
       // Đặt item thành soldAccessory để ghi sổ quỹ
       item = soldAccessory;
@@ -495,9 +513,16 @@ app.post('/api/xuat-hang', async (req, res) => {
       
       // 2. Tạo record mới trong ExportHistory
       const priceSellNum = Number(price_sell) || 0;
-      const daTTNum = Number(da_thanh_toan) || priceSellNum; // ✅ Tự động tính = giá bán nếu không nhập (sản phẩm IMEI số lượng = 1)
+      // ✅ FIX: Không tự động tính da_thanh_toan khi bán hàng, lưu đúng giá trị người dùng nhập
+      let daTTNum = parseFloat(da_thanh_toan) || 0; // Lưu giá trị người dùng nhập (kể cả 0)
       
       console.log('🔧 Creating ExportHistory for IMEI product with quantity: 1'); // ✅ Debug log
+      console.log('🔍 POST IMEI da_thanh_toan - FIXED:', {
+        input_da_thanh_toan: da_thanh_toan,
+        final_daTTNum: daTTNum,
+        priceSellNum,
+        note: 'Không tự động tính, lưu đúng giá trị người dùng nhập'
+      });
       
       const soldItem = new ExportHistory({
         imei: item.imei,
@@ -506,14 +531,14 @@ app.post('/api/xuat-hang', async (req, res) => {
         category: item.category,
         price_import: item.price_import,
         price_sell: priceSellNum,
-        da_thanh_toan: daTTNum, // ✅ Tự động tính = giá bán nếu không nhập
+        da_thanh_toan: daTTNum, // ✅ Field này có trong schema
         sold_date: sold_date ? new Date(sold_date) : new Date(),
         customer_name: customer_name || '',
         customer_phone: customer_phone || '',
         warranty: warranty || '',
         note: note || '',
         branch: branch || item.branch,
-        export_type: 'normal',
+        export_type: 'normal', // ✅ Field này có trong schema
         quantity: 1 // ✅ Sản phẩm IMEI luôn là 1
       });
       
@@ -527,6 +552,16 @@ app.post('/api/xuat-hang', async (req, res) => {
       }); // ✅ Debug log
       
       await soldItem.save();
+      
+      // ✅ DEBUG: Kiểm tra record sau khi lưu
+      const savedIMEIRecord = await ExportHistory.findById(soldItem._id);
+      console.log('🔍 SAVED IMEI RECORD:', {
+        _id: savedIMEIRecord._id,
+        da_thanh_toan: savedIMEIRecord.da_thanh_toan,
+        quantity: savedIMEIRecord.quantity,
+        price_sell: savedIMEIRecord.price_sell,
+        imei: savedIMEIRecord.imei
+      });
       
       // Cập nhật item để sử dụng cho phần ghi sổ quỹ phía dưới
       item = soldItem;
@@ -758,6 +793,11 @@ app.put('/api/xuat-hang/:id', async (req, res) => {
       updateData.da_thanh_toan = parseFloat(updateData.da_thanh_toan) || 0;
     }
 
+    // ✅ Đảm bảo quantity được cập nhật
+    if (updateData.quantity) {
+      updateData.quantity = parseInt(updateData.quantity) || 1;
+    }
+    
     const updatedItem = await ExportHistory.findByIdAndUpdate(
       req.params.id,
       updateData,

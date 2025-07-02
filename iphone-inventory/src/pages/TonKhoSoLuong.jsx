@@ -47,7 +47,8 @@ function TonKhoSoLuong() {
             ? item.sku 
             : item.product_name || item.tenSanPham || `product_${item._id}`;
           
-          const key = uniqueKey + "|" + (item.branch || "") + "|" + importMonth;
+          // ✅ Sửa: Gộp theo tên + SKU + thư mục + chi nhánh, KHÔNG phân biệt ngày tháng
+          const key = uniqueKey + "|" + (item.product_name || item.tenSanPham || "") + "|" + (item.category || "") + "|" + (item.branch || "");
           
           if (!grouped[key]) {
             grouped[key] = {
