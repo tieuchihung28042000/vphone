@@ -156,7 +156,32 @@ EOF
     
     # Khởi động MongoDB
     echo "▶️  Khởi động MongoDB..."
-    sudo systemctl start mongod
+    if ! sudo systemctl start mongod; then
+        echo "❌ Lỗi khởi động MongoDB, kiểm tra chi tiết..."
+        echo "📋 Status MongoDB:"
+        sudo systemctl status mongod --no-pager || true
+        echo "📋 Logs MongoDB:"
+        sudo journalctl -u mongod --no-pager --lines=10 || true
+        
+        # Thử khởi động manual để debug
+        echo "🔍 Thử khởi động manual để debug..."
+        sudo -u mongodb mongod --config /etc/mongod.conf --fork || {
+            echo "❌ Lỗi khởi động manual, thử cấu hình đơn giản hơn..."
+            # Tạo cấu hình tối giản
+            sudo tee /etc/mongod.conf > /dev/null << 'EOF'
+systemLog:
+  destination: file
+  path: /var/log/mongodb/mongod.log
+storage:
+  dbPath: /var/lib/mongodb
+net:
+  port: 27017
+  bindIp: 127.0.0.1
+EOF
+            echo "📝 Đã tạo cấu hình tối giản, thử lại..."
+            sudo systemctl start mongod
+        }
+    fi
     sudo systemctl enable mongod
     sleep 5
     
@@ -182,13 +207,41 @@ EOF
         fi
     done
     
-    # Kiểm tra cuối cùng
-    if ! sudo systemctl is-active --quiet mongod; then
-        echo "❌ MongoDB service vẫn không khởi động được sau $MAX_RETRIES lần thử"
-        echo "📋 Logs cuối cùng:"
-        sudo journalctl -u mongod --no-pager --lines=15
-        exit 1
-    fi
+         # Kiểm tra cuối cùng
+     if ! sudo systemctl is-active --quiet mongod; then
+         echo "❌ MongoDB service vẫn không khởi động được sau $MAX_RETRIES lần thử"
+         echo "📋 Logs cuối cùng:"
+         sudo journalctl -u mongod --no-pager --lines=15
+         
+         # Thử khởi động MongoDB manual như fallback
+         echo "🔄 Thử khởi động MongoDB manual như fallback..."
+         if sudo -u mongodb mongod --dbpath /var/lib/mongodb --logpath /var/log/mongodb/mongod.log --port 27017 --bind_ip 127.0.0.1 --fork; then
+             echo "✅ MongoDB đã khởi động thành công bằng manual mode"
+             # Tạo script khởi động tự động
+             sudo tee /etc/systemd/system/mongod-manual.service > /dev/null << 'EOF'
+[Unit]
+Description=MongoDB Database Server (Manual)
+After=network.target
+
+[Service]
+Type=forking
+User=mongodb
+Group=mongodb
+ExecStart=/usr/bin/mongod --dbpath /var/lib/mongodb --logpath /var/log/mongodb/mongod.log --port 27017 --bind_ip 127.0.0.1 --fork
+ExecStop=/usr/bin/mongod --dbpath /var/lib/mongodb --shutdown
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
+EOF
+             sudo systemctl daemon-reload
+             sudo systemctl enable mongod-manual
+             echo "📝 Đã tạo service mongod-manual cho tương lai"
+         else
+             echo "❌ Không thể khởi động MongoDB bằng bất kỳ cách nào"
+             exit 1
+         fi
+     fi
 else
     echo "❌ Hệ điều hành không được hỗ trợ"
     exit 1
