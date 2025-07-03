@@ -95,12 +95,10 @@ elif [[ "$OSTYPE" == "linux-gnu"* ]]; then
     # Kiểm tra file cấu hình
     if [ ! -f /etc/mongod.conf ]; then
         echo "⚠️  File cấu hình MongoDB không tồn tại, tạo mới..."
-        sudo tee /etc/mongod.conf > /dev/null << 'EOF'
+                 sudo tee /etc/mongod.conf > /dev/null << 'EOF'
 # MongoDB configuration file
 storage:
   dbPath: /var/lib/mongodb
-  journal:
-    enabled: true
 
 systemLog:
   destination: file
@@ -112,8 +110,6 @@ net:
   bindIp: 127.0.0.1
 
 processManagement:
-  fork: true
-  pidFilePath: /var/run/mongodb/mongod.pid
   timeZoneInfo: /usr/share/zoneinfo
 EOF
     fi

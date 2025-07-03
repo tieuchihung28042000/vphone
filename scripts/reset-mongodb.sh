@@ -30,8 +30,6 @@ sudo tee /etc/mongod.conf > /dev/null << 'EOF'
 # MongoDB configuration file
 storage:
   dbPath: /var/lib/mongodb
-  journal:
-    enabled: true
 
 systemLog:
   destination: file
