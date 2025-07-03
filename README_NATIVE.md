@@ -11,7 +11,14 @@ Hướng dẫn setup VPhone với MongoDB và Nginx chạy native (không dùng 
 
 ## Cách sử dụng
 
-### 1. Setup MongoDB
+### 1. Sửa lỗi repositories (nếu cần)
+
+```bash
+# Sửa lỗi repositories Ubuntu (cloudflare, etc.)
+./scripts/fix-repositories.sh
+```
+
+### 2. Setup MongoDB
 
 ```bash
 # Cài đặt MongoDB và tạo database với tên mặc định
@@ -21,7 +28,7 @@ Hướng dẫn setup VPhone với MongoDB và Nginx chạy native (không dùng 
 ./scripts/setup-mongodb.sh my_database
 ```
 
-### 2. Setup Nginx
+### 3. Setup Nginx
 
 ```bash
 # Cài đặt Nginx với localhost
@@ -31,11 +38,21 @@ Hướng dẫn setup VPhone với MongoDB và Nginx chạy native (không dùng 
 ./scripts/setup-nginx.sh nguyenkieuanh.com
 ```
 
-### 3. Khởi động Docker services
+### 4. Khởi động Docker services
 
 ```bash
 # Khởi động backend và frontend
 docker-compose up -d
+```
+
+### 5. Kiểm tra database
+
+```bash
+# Kiểm tra database mặc định
+./scripts/check-database.sh
+
+# Kiểm tra database tùy chỉnh
+./scripts/check-database.sh my_database
 ```
 
 ## Thông tin kết nối

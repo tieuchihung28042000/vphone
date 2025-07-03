@@ -31,6 +31,9 @@ elif [[ "$OSTYPE" == "linux-gnu"* ]]; then
     # Linux
     echo "🐧 Cài đặt Nginx trên Linux..."
     if ! command -v nginx &> /dev/null; then
+        # Sửa lỗi repository trước khi cài đặt
+        echo "🔧 Sửa lỗi repository..."
+        sudo rm -f /etc/apt/sources.list.d/cloudflare.list 2>/dev/null || true
         sudo apt-get update
         sudo apt-get install -y nginx
     fi

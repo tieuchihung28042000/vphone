@@ -39,6 +39,10 @@ elif [[ "$OSTYPE" == "linux-gnu"* ]]; then
     # Linux
     echo "🐧 Cài đặt MongoDB trên Linux..."
     if ! command -v mongod &> /dev/null; then
+        # Sửa lỗi repository trước khi cài đặt
+        echo "🔧 Sửa lỗi repository..."
+        sudo rm -f /etc/apt/sources.list.d/cloudflare.list 2>/dev/null || true
+        
         curl -fsSL https://www.mongodb.org/static/pgp/server-7.0.asc | sudo gpg -o /usr/share/keyrings/mongodb-server-7.0.gpg --dearmor
         echo "deb [ arch=amd64,arm64 signed-by=/usr/share/keyrings/mongodb-server-7.0.gpg ] https://repo.mongodb.org/apt/ubuntu jammy/mongodb-org/7.0 multiverse" | sudo tee /etc/apt/sources.list.d/mongodb-org-7.0.list
         sudo apt-get update
@@ -90,6 +94,26 @@ try {
 echo "🔍 Kiểm tra kết nối..."
 if mongosh -u admin -p 12345 --authenticationDatabase admin --eval "db.adminCommand('ping')" --quiet; then
     echo "✅ MongoDB đã sẵn sàng!"
+    
+    # Kiểm tra chi tiết database
+    echo "📊 Kiểm tra database $DATABASE_NAME..."
+    mongosh -u admin -p 12345 --authenticationDatabase admin --eval "
+    use $DATABASE_NAME
+    print('📋 Collections trong database:')
+    db.getCollectionNames().forEach(function(collection) {
+        var count = db.getCollection(collection).countDocuments()
+        print('  - ' + collection + ': ' + count + ' documents')
+    })
+    
+    print('\\n📈 Thống kê database:')
+    var stats = db.stats()
+    print('  - Tổng collections: ' + stats.collections)
+    print('  - Tổng documents: ' + stats.objects)
+    print('  - Kích thước data: ' + (stats.dataSize / 1024 / 1024).toFixed(2) + ' MB')
+    print('  - Kích thước storage: ' + (stats.storageSize / 1024 / 1024).toFixed(2) + ' MB')
+    " --quiet
+    
+    echo ""
     echo "📊 Thông tin kết nối:"
     echo "   - Host: localhost:27017"
     echo "   - Admin User: admin"
