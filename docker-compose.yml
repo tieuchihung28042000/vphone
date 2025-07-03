@@ -1,34 +1,4 @@
 services:
-  # MongoDB Database
-  mongodb:
-    image: mongo:7-jammy
-    container_name: vphone-mongodb
-    restart: unless-stopped
-    environment:
-      MONGO_INITDB_ROOT_USERNAME: admin
-      MONGO_INITDB_ROOT_PASSWORD: 123456
-      MONGO_INITDB_DATABASE: vphone_production
-    ports:
-      - "27017:27017"
-    volumes:
-      - mongodb_data:/data/db
-      - mongodb_config:/data/configdb
-    networks:
-      - vphone-network
-    healthcheck:
-      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 40s
-    deploy:
-      resources:
-        limits:
-          cpus: '0.4'
-          memory: 400M
-        reservations:
-          memory: 256M
-
   # Backend API
   backend:
     build:
@@ -40,17 +10,14 @@ services:
       # Backend Environment Variables
       NODE_ENV: production
       PORT: 4000
-      # MongoDB connection to Docker service
-      MONGODB_URI: mongodb://admin:123456@mongodb:27017/vphone_production?authSource=admin
+      # MongoDB connection to native MongoDB (localhost)
+      MONGODB_URI: mongodb://admin:12345@host.docker.internal:27017/vphone_production?authSource=admin
       # JWT and Email configuration
       JWT_SECRET: VPhone2025_Production_JWT_NguyenKieuAnh_SecureKey
       EMAIL_USER: vphone24h3@gmail.com
       EMAIL_PASS: ftxhkismjvdqzawp
     ports:
       - "4000:4000"
-    depends_on:
-      mongodb:
-        condition: service_healthy
     networks:
       - vphone-network
     volumes:
@@ -98,48 +65,9 @@ services:
         reservations:
           memory: 64M
 
-  # Nginx Reverse Proxy (HTTP only)
-  nginx:
-    image: nginx:alpine
-    container_name: vphone-nginx
-    restart: unless-stopped
-    ports:
-      - "80:80"
-    volumes:
-      - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
-      - nginx_logs:/var/log/nginx
-    environment:
-      - DOMAIN=${DOMAIN:-localhost}
-    depends_on:
-      backend:
-        condition: service_healthy
-      frontend:
-        condition: service_healthy
-    networks:
-      - vphone-network
-    healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:80/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 30s
-    deploy:
-      resources:
-        limits:
-          cpus: '0.1'
-          memory: 96M
-        reservations:
-          memory: 32M
-
 # Named volumes for data persistence
 volumes:
-  mongodb_data:
-    driver: local
-  mongodb_config:
-    driver: local
   backend_logs:
-    driver: local
-  nginx_logs:
     driver: local
 
 # Network for inter-service communication
