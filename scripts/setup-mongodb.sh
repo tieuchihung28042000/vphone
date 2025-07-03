@@ -139,10 +139,14 @@ processManagement:
   timeZoneInfo: /usr/share/zoneinfo
 EOF
 
-    # Xóa environment variables gây xung đột
-    echo "🧹 Xóa environment variables gây xung đột..."
-    sudo systemctl edit --full mongod --force || true
-         sudo tee /etc/systemd/system/mongod.service > /dev/null << 'EOF'
+         # Dừng và disable service cũ
+     echo "🛑 Dừng service MongoDB cũ..."
+     sudo systemctl stop mongod 2>/dev/null || true
+     sudo systemctl disable mongod 2>/dev/null || true
+     
+     # Tạo systemd service mới
+     echo "🧹 Tạo systemd service mới..."
+     sudo tee /etc/systemd/system/mongod.service > /dev/null << 'EOF'
 [Unit]
 Description=MongoDB Database Server
 Documentation=https://docs.mongodb.org/manual
@@ -304,6 +308,71 @@ if [ "$MONGODB_RUNNING" = "true" ]; then
           print('⚠️  Admin user có thể đã tồn tại: ' + e.message)
         }
         " --quiet
+        
+        # Bật authentication trong cấu hình MongoDB
+        echo "🔐 Bật authentication trong MongoDB..."
+        if [[ "$OSTYPE" == "linux-gnu"* ]]; then
+            # Cập nhật cấu hình MongoDB để bật authentication
+            sudo tee /etc/mongod.conf > /dev/null << 'EOF'
+# where to write logging data.
+systemLog:
+  destination: file
+  logAppend: true
+  path: /var/log/mongodb/mongod.log
+
+# Where and how to store data.
+storage:
+  dbPath: /var/lib/mongodb
+
+# network interfaces
+net:
+  port: 27017
+  bindIp: 127.0.0.1
+
+# how the process runs
+processManagement:
+  timeZoneInfo: /usr/share/zoneinfo
+
+# security
+security:
+  authorization: enabled
+EOF
+            
+            # Restart MongoDB để áp dụng cấu hình mới
+            echo "🔄 Restart MongoDB để áp dụng authentication..."
+            sudo systemctl restart mongod
+            sleep 5
+            
+            # Kiểm tra MongoDB có khởi động lại thành công không
+            if sudo systemctl is-active --quiet mongod; then
+                echo "✅ MongoDB đã restart thành công với authentication!"
+            else
+                echo "❌ Lỗi restart MongoDB, kiểm tra logs..."
+                sudo journalctl -u mongod --no-pager --lines=10
+                exit 1
+            fi
+        elif [[ "$OSTYPE" == "darwin"* ]]; then
+            # macOS - restart MongoDB với authentication
+            echo "🔄 Restart MongoDB với authentication..."
+            pkill mongod 2>/dev/null || true
+            sleep 2
+            mongod --dbpath /usr/local/var/mongodb --logpath /usr/local/var/log/mongodb/mongo.log --auth --fork
+            sleep 3
+        fi
+        
+        # Kiểm tra authentication đã hoạt động chưa
+        echo "🔍 Kiểm tra authentication..."
+        if mongosh -u admin -p 12345 --authenticationDatabase admin --eval "db.adminCommand('ping')" --quiet 2>/dev/null; then
+            echo "✅ Authentication đã được bật thành công!"
+        else
+            echo "❌ Lỗi bật authentication, kiểm tra lại..."
+            # Thử kết nối không có auth để debug
+            if mongosh --eval "db.adminCommand('ping')" --quiet 2>/dev/null; then
+                echo "⚠️  MongoDB vẫn chạy mà không có authentication"
+            else
+                echo "❌ MongoDB không thể kết nối"
+            fi
+        fi
     else
         echo "✅ MongoDB đã có authentication"
     fi
