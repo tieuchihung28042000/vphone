@@ -40,7 +40,7 @@ services:
       context: ./iphone-inventory
       dockerfile: Dockerfile
       args:
-        VITE_API_URL: https://nguyenkieuanh.com/api
+        VITE_API_URL: https://nguyenkieuanh.com
     container_name: vphone-frontend
     restart: unless-stopped
     network_mode: "host"
