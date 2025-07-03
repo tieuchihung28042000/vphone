@@ -89,15 +89,27 @@ function XuatHang() {
   const fetchAvailableItems = async () => {
     try {
       const apiUrl = import.meta.env.VITE_API_URL || window.location.origin;
-      const res = await fetch(`${apiUrl}/api/nhap-hang`);
+      // ✅ Sửa: Gọi API tồn kho thay vì nhập hàng để có dữ liệu đã tính toán đúng
+      const res = await fetch(`${apiUrl}/api/ton-kho`);
       
       if (!res.ok) throw new Error(`API Error: ${res.status}`);
       
       const data = await res.json();
       if (!data.items) return;
       
-      const available = data.items.filter(item => item.status !== 'sold');
+      // ✅ Chỉ lấy những item có quantity > 0 (thực tế còn tồn kho)
+      const available = data.items.filter(item => {
+        if (item.imei) {
+          // Sản phẩm có IMEI: chỉ lấy nếu status !== 'sold'
+          return item.status !== 'sold';
+        } else {
+          // Phụ kiện: chỉ lấy nếu quantity > 0 (đã được tính toán từ API tồn kho)
+          return (item.quantity || 0) > 0;
+        }
+      });
+      
       setAvailableItems(available);
+      console.log('✅ Fetched available items from ton-kho API:', available.length);
     } catch (err) {
       console.error("❌ Lỗi khi tải sản phẩm khả dụng:", err);
     }
@@ -165,9 +177,13 @@ function XuatHang() {
     }
     
     try {
-      const res = await fetch(`${import.meta.env.VITE_API_URL}/api/ton-kho`);
+      // ✅ Thêm timestamp để tránh cache
+      const timestamp = Date.now();
+      const res = await fetch(`${import.meta.env.VITE_API_URL}/api/ton-kho?t=${timestamp}`);
       const data = await res.json();
       const lowerQuery = query.trim().toLowerCase();
+      
+      // API đã được đơn giản hóa
       
       const filtered = (data.items || []).filter(
         item =>
@@ -191,14 +207,25 @@ function XuatHang() {
             price_import: item.price_import || 0
           };
         }
-        if (item.imei) {
+        if (item.imei && item.status !== 'sold') {
+          // Chỉ thêm IMEI nếu chưa bán
           group[key].imeis.push(item.imei);
-        } else {
-          group[key].soLuong += Number(item.soLuongConLai || item.quantity || 1);
+        } else if (!item.imei) {
+          // ✅ Phụ kiện: sử dụng quantity trực tiếp (logic đơn giản)
+          group[key].soLuong += Number(item.quantity || 0);
         }
       });
       
-      setSuggestList(Object.values(group));
+      // ✅ Lọc bỏ những sản phẩm không có tồn kho
+      const availableItems = Object.values(group).filter(item => {
+        if (item.isAccessory) {
+          return item.soLuong > 0; // Phụ kiện phải có số lượng > 0
+        } else {
+          return item.imeis.length > 0; // Sản phẩm IMEI phải có ít nhất 1 IMEI chưa bán
+        }
+      });
+      
+      setSuggestList(availableItems);
       setShowSuggest(true);
     } catch (err) {
       console.error("Error fetching suggestions:", err);
@@ -282,6 +309,10 @@ function XuatHang() {
     });
     setEditingItemId(null);
     setIsAccessory(false); // Reset trạng thái phụ kiện
+    
+    // ✅ Reset suggestion list khi reset form
+    setSuggestList([]);
+    setShowSuggest(false);
   };
 
   const handleSubmit = async (e) => {
@@ -338,6 +369,13 @@ function XuatHang() {
           fetchSoldItems(),
           fetchAvailableItems()
         ]);
+        
+        // ✅ Refresh suggestion list nếu đang hiển thị
+        if (showSuggest && formData.product_name) {
+          console.log('🔄 Refreshing suggestion list after successful operation...');
+          await fetchSuggestList(formData.product_name);
+        }
+        
         console.log('✅ Data refresh completed');
         
         setTimeout(() => setMessage(""), 3000);
@@ -415,6 +453,12 @@ function XuatHang() {
           fetchSoldItems(),
           fetchAvailableItems()
         ]);
+        
+        // ✅ Refresh suggestion list nếu đang hiển thị
+        if (showSuggest && formData.product_name) {
+          console.log('🔄 Refreshing suggestion list after delete operation...');
+          await fetchSuggestList(formData.product_name);
+        }
         
         // Reset editing state if we're deleting the item being edited
         if (editingItemId === id) {
@@ -985,7 +1029,9 @@ function XuatHang() {
               <option value="">-- Hoặc chọn từ danh sách --</option>
               {availableItems.map((item) => (
                 <option key={item._id} value={item._id}>
-                  {item.product_name || item.tenSanPham} - {item.imei} - {formatNumber(item.price_import)}đ
+                  {item.product_name || item.tenSanPham} - 
+                  {item.imei ? ` IMEI: ${item.imei}` : ` SL: ${item.quantity || 0}`} - 
+                  {formatNumber(item.price_import)}đ
                 </option>
               ))}
             </select>

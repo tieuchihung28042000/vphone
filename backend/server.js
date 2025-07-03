@@ -379,9 +379,9 @@ app.post('/api/xuat-hang', async (req, res) => {
         return res.status(404).json({ message: '❌ Phụ kiện đã hết hàng.' });
       }
       
-      // Kiểm tra số lượng
-      const currentQuantity = item.quantity || 0;
+      // ✅ Kiểm tra số lượng trực tiếp từ Inventory (logic đơn giản)
       const sellQuantity = parseInt(quantity) || 1;
+      const currentQuantity = item.quantity || 0;
       
       if (currentQuantity < sellQuantity) {
         return res.status(400).json({ 
@@ -403,8 +403,10 @@ app.post('/api/xuat-hang', async (req, res) => {
 
     // ✅ Xử lý khác nhau cho phụ kiện và sản phẩm IMEI
     if (is_accessory || !imei) {
-      // Phụ kiện: giảm số lượng, không đổi status
+      // ✅ PHỤ KIỆN: TRỪ trực tiếp quantity trong Inventory (logic đơn giản)
       const sellQuantity = parseInt(quantity) || 1;
+      
+      // ✅ Trừ trực tiếp quantity trong Inventory
       item.quantity = (item.quantity || 0) - sellQuantity;
       
       // Nếu hết hàng thì chuyển status
@@ -454,6 +456,7 @@ app.post('/api/xuat-hang', async (req, res) => {
       }); // ✅ Debug log
       
       await soldAccessory.save();
+      // ✅ Save item vì đã thay đổi quantity
       await item.save();
       
       // ✅ DEBUG: Kiểm tra record sau khi lưu
@@ -660,37 +663,46 @@ app.get('/api/imei-detail/:imei', async (req, res) => {
   }
 });
 
-// API tồn kho - ✅ FIXED: Tính toán đúng số lượng còn lại cho phụ kiện
+// API tồn kho (logic đơn giản)
 app.get('/api/ton-kho', async (req, res) => {
   try {
-    // Lấy tất cả phụ kiện (IMEI null) và máy iPhone (có IMEI) có status in_stock
-    const inventories = await Inventory.find({ status: 'in_stock' });
-
-    // Lấy tổng xuất theo từng sku (chỉ cho phụ kiện)
-    const exportAgg = await ExportHistory.aggregate([
-      { $match: { imei: { $in: [null, ""] } } }, // Chỉ phụ kiện (không IMEI)
-      { $group: { _id: "$sku", totalExported: { $sum: "$quantity" } } }
-    ]);
-    const exportMap = {};
-    exportAgg.forEach(e => exportMap[e._id] = e.totalExported);
-
-    // Gom phụ kiện thành 1 dòng duy nhất mỗi SKU
-    const accessoriesMap = {};
-    const imeiItems = [];
+    console.log('🔍 API /api/ton-kho được gọi (logic đơn giản)');
     
-    for (const item of inventories) {
+    // ✅ Chỉ lấy từ Inventory, không cần tính toán phức tạp
+    const items = await Inventory.find({});
+    
+    // ✅ Phân loại sản phẩm: iPhone (có IMEI) vs phụ kiện (không IMEI)
+    const imeiItems = []; // Máy có IMEI
+    const accessoriesMap = {}; // Phụ kiện gom nhóm theo SKU
+    
+    for (const item of items) {
       if (item.imei) {
-        // Máy có IMEI: giữ nguyên
-        imeiItems.push(item);
+        // ✅ Sản phẩm có IMEI: giữ nguyên từng item riêng biệt
+        imeiItems.push({
+          _id: item._id,
+          imei: item.imei,
+          product_name: item.product_name || item.tenSanPham,
+          tenSanPham: item.tenSanPham || item.product_name,
+          sku: item.sku,
+          price_import: item.price_import || 0,
+          import_date: item.import_date,
+          supplier: item.supplier,
+          branch: item.branch,
+          category: item.category,
+          note: item.note,
+          status: item.status || 'in_stock',
+          quantity: 1 // iPhone luôn là 1 cái
+        });
       } else {
-        // Phụ kiện: gom theo SKU + tên + thư mục + chi nhánh
-        const key = (item.sku || '') + '|' + (item.product_name || item.tenSanPham || '') + '|' + (item.category || '') + '|' + (item.branch || '');
+        // ✅ Phụ kiện: gom nhóm theo SKU + branch + category
+        const key = `${item.sku || 'unknown'}_${item.branch || ''}_${item.category || ''}`;
         if (!accessoriesMap[key]) {
           accessoriesMap[key] = {
-            _id: item._id,
-            sku: item.sku || "",
-            product_name: item.product_name || item.tenSanPham || "",
-            tenSanPham: item.product_name || item.tenSanPham || "",
+            _id: item._id, // Lấy ID của item đầu tiên
+            imei: null,
+            product_name: item.product_name || item.tenSanPham,
+            tenSanPham: item.tenSanPham || item.product_name,
+            sku: item.sku,
             price_import: item.price_import || 0,
             import_date: item.import_date,
             supplier: item.supplier,
@@ -698,31 +710,22 @@ app.get('/api/ton-kho', async (req, res) => {
             category: item.category,
             note: item.note,
             status: 'in_stock',
-            quantity: 0, // Tổng số nhập
-            soLuongConLai: 0, // Tổng tồn kho
+            quantity: 0 // Tổng số còn lại
           };
         }
-        accessoriesMap[key].quantity += Number(item.quantity) || 1;
+        // ✅ Chỉ cộng quantity nếu status = 'in_stock'
+        if (item.status !== 'sold') {
+          accessoriesMap[key].quantity += Number(item.quantity) || 0;
+        }
       }
     }
     
-    // ✅ Tính số lượng còn lại cho phụ kiện = số nhập - số xuất
-    for (const key in accessoriesMap) {
-      const acc = accessoriesMap[key];
-      const totalExported = exportMap[acc.sku] || 0;
-      acc.soLuongConLai = acc.quantity - totalExported;
-      if (acc.soLuongConLai < 0) acc.soLuongConLai = 0;
-      
-      // ✅ Cập nhật quantity thành số lượng còn lại thực tế
-      acc.quantity = acc.soLuongConLai;
-    }
-    
-    // Kết quả trả về: iPhone (IMEI riêng) + phụ kiện (mỗi loại 1 dòng với số lượng đã tính đúng)
+    // Kết quả trả về: iPhone (IMEI riêng) + phụ kiện (mỗi loại 1 dòng)
     const accessoriesItems = Object.values(accessoriesMap);
     const allItems = [...imeiItems, ...accessoriesItems];
 
     res.status(200).json({
-      message: '✅ Danh sách tồn kho (đã tính đúng số lượng phụ kiện)',
+      message: '✅ Danh sách tồn kho (logic đơn giản)',
       total: allItems.length,
       items: allItems,
       imeiItems, // Máy có IMEI
@@ -923,17 +926,18 @@ app.delete('/api/xuat-hang/:id', async (req, res) => {
       }
     }
     
-    // Nếu là phụ kiện, tăng lại số lượng trong Inventory
+    // ✅ Nếu là phụ kiện, CỘNG lại số lượng trong Inventory (logic đơn giản)
     if (!exportRecord.imei && exportRecord.sku) {
       const inventoryItem = await Inventory.findOne({ 
         sku: exportRecord.sku, 
         status: { $in: ['in_stock', 'sold'] }
       });
       if (inventoryItem) {
-        const returnQuantity = exportRecord.quantity || 1; // ✅ Khôi phục đúng số lượng đã xuất
+        const returnQuantity = exportRecord.quantity || 1;
         inventoryItem.quantity = (inventoryItem.quantity || 0) + returnQuantity;
         inventoryItem.status = 'in_stock';
         await inventoryItem.save();
+        console.log(`✅ Đã cộng lại ${returnQuantity} vào inventory cho SKU: ${exportRecord.sku}`);
       }
     }
 

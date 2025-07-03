@@ -245,18 +245,24 @@ router.post('/xuat-hang', async (req, res) => {
         return res.status(400).json({ message: "❌ Số lượng phụ kiện không hợp lệ" });
       }
 
-      // Tìm 1 dòng phụ kiện còn quantity đủ
+      // ✅ Tìm phụ kiện và kiểm tra số lượng thực tế
       const acc = await Inventory.findOne({
         sku,
         product_name,
         status: 'in_stock',
-        $or: [{ imei: null }, { imei: "" }],
-        quantity: { $gte: quantity }
+        $or: [{ imei: null }, { imei: "" }]
       });
+      
       if (!acc) {
-        return res.status(400).json({ message: `❌ Không đủ phụ kiện trong kho (còn ${acc?.quantity || 0}, cần ${quantity})` });
+        return res.status(400).json({ message: `❌ Không tìm thấy phụ kiện trong kho` });
       }
+      
+                    // ✅ Kiểm tra số lượng trực tiếp từ Inventory (logic đơn giản)
+       if (acc.quantity < quantity) {
+         return res.status(400).json({ message: `❌ Không đủ phụ kiện trong kho (còn ${acc.quantity}, cần ${quantity})` });
+       }
 
+      // ✅ Cập nhật quantity trong Inventory (logic đơn giản)
       let updateObj = {};
       let soldAccessory = null;
       if (acc.quantity > quantity) {
@@ -264,17 +270,19 @@ router.post('/xuat-hang', async (req, res) => {
         updateObj = { $inc: { quantity: -quantity } };
         soldAccessory = await Inventory.findByIdAndUpdate(acc._id, updateObj, { new: true });
       } else if (acc.quantity === quantity) {
-        // Hết đúng: cập nhật quantity = 0 NHƯNG VẪN GIỮ status = 'in_stock'
+        // Hết đúng: cập nhật quantity = 0 và status = 'sold'
         updateObj = {
           $set: {
             quantity: 0,
-            // KHÔNG thay đổi status, giữ in_stock để có thể trả hàng về sau
+            status: 'sold'
           }
         };
         soldAccessory = await Inventory.findByIdAndUpdate(acc._id, updateObj, { new: true });
       } else {
         return res.status(400).json({ message: `❌ Số lượng không hợp lệ` });
       }
+      
+      console.log('✅ Xuất phụ kiện - ĐÃ trừ quantity trong Inventory');
 
       // === GHI LỊCH SỬ XUẤT PHỤ KIỆN ===
       await ExportHistory.create({
