@@ -89,48 +89,105 @@ elif [[ "$OSTYPE" == "linux-gnu"* ]]; then
     # Tạo thư mục cần thiết
     sudo mkdir -p /var/lib/mongodb
     sudo mkdir -p /var/log/mongodb
+    sudo mkdir -p /var/run/mongodb
     sudo chown -R mongodb:mongodb /var/lib/mongodb
     sudo chown -R mongodb:mongodb /var/log/mongodb
+    sudo chown -R mongodb:mongodb /var/run/mongodb
     
-    # Kiểm tra file cấu hình
-    if [ ! -f /etc/mongod.conf ]; then
-        echo "⚠️  File cấu hình MongoDB không tồn tại, tạo mới..."
-                 sudo tee /etc/mongod.conf > /dev/null << 'EOF'
-# MongoDB configuration file
-storage:
-  dbPath: /var/lib/mongodb
-
+    # Xóa PID file cũ
+    sudo rm -f /var/run/mongodb/mongod.pid
+    
+    # Xóa file cấu hình cũ và tạo mới (fix lỗi storage.journal.enabled)
+    echo "🔧 Tạo lại file cấu hình MongoDB..."
+    sudo rm -f /etc/mongod.conf
+    sudo tee /etc/mongod.conf > /dev/null << 'EOF'
+# where to write logging data.
 systemLog:
   destination: file
   logAppend: true
   path: /var/log/mongodb/mongod.log
 
+# Where and how to store data.
+storage:
+  dbPath: /var/lib/mongodb
+
+# network interfaces
 net:
   port: 27017
   bindIp: 127.0.0.1
 
+# how the process runs
 processManagement:
   timeZoneInfo: /usr/share/zoneinfo
 EOF
-    fi
+
+    # Xóa environment variables gây xung đột
+    echo "🧹 Xóa environment variables gây xung đột..."
+    sudo systemctl edit --full mongod --force || true
+    sudo tee /etc/systemd/system/mongod.service > /dev/null << 'EOF'
+[Unit]
+Description=MongoDB Database Server
+Documentation=https://docs.mongodb.org/manual
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=forking
+User=mongodb
+Group=mongodb
+ExecStart=/usr/bin/mongod --config /etc/mongod.conf
+ExecReload=/bin/kill -HUP $MAINPID
+PIDFile=/var/run/mongodb/mongod.pid
+TimeoutStartSec=300
+KillMode=mixed
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+    # Reload systemd
+    sudo systemctl daemon-reload
+    
+    # Dừng MongoDB trước khi khởi động lại
+    echo "🛑 Dừng MongoDB service cũ..."
+    sudo systemctl stop mongod 2>/dev/null || true
     
     # Khởi động MongoDB
+    echo "▶️  Khởi động MongoDB..."
     sudo systemctl start mongod
     sudo systemctl enable mongod
     sleep 5
     
-    # Kiểm tra trạng thái
-    if ! sudo systemctl is-active --quiet mongod; then
-        echo "❌ MongoDB service failed, kiểm tra logs..."
-        sudo journalctl -u mongod --no-pager --lines=10
-        echo "🔄 Thử khởi động lại..."
-        sudo systemctl restart mongod
-        sleep 3
-        
-        if ! sudo systemctl is-active --quiet mongod; then
-            echo "❌ Không thể khởi động MongoDB service"
-            exit 1
+    # Kiểm tra trạng thái với retry
+    RETRY_COUNT=0
+    MAX_RETRIES=3
+    
+    while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
+        if sudo systemctl is-active --quiet mongod; then
+            echo "✅ MongoDB service đã khởi động thành công!"
+            break
+        else
+            RETRY_COUNT=$((RETRY_COUNT + 1))
+            echo "⚠️  Lần thử $RETRY_COUNT/$MAX_RETRIES: MongoDB chưa khởi động"
+            
+            if [ $RETRY_COUNT -lt $MAX_RETRIES ]; then
+                echo "🔄 Thử khởi động lại..."
+                sudo systemctl stop mongod 2>/dev/null || true
+                sleep 2
+                sudo systemctl start mongod
+                sleep 5
+            fi
         fi
+    done
+    
+    # Kiểm tra cuối cùng
+    if ! sudo systemctl is-active --quiet mongod; then
+        echo "❌ MongoDB service vẫn không khởi động được sau $MAX_RETRIES lần thử"
+        echo "📋 Logs cuối cùng:"
+        sudo journalctl -u mongod --no-pager --lines=15
+        exit 1
     fi
 else
     echo "❌ Hệ điều hành không được hỗ trợ"
