@@ -20,6 +20,24 @@ fi
 
 echo "🚀 Setup MongoDB native với database: $DATABASE_NAME"
 
+# Kiểm tra MongoDB có đang chạy trên port 27017 không
+if netstat -tlnp | grep -q :27017; then
+    echo "⚠️  Port 27017 đã được sử dụng, kiểm tra process..."
+    MONGO_PID=$(sudo lsof -t -i:27017 2>/dev/null || echo "")
+    if [ -n "$MONGO_PID" ]; then
+        echo "🔍 Tìm thấy MongoDB process: $MONGO_PID"
+        echo "🛑 Dừng MongoDB process cũ..."
+        sudo kill -TERM $MONGO_PID 2>/dev/null || true
+        sleep 3
+        # Force kill nếu cần
+        if sudo kill -0 $MONGO_PID 2>/dev/null; then
+            echo "🔨 Force kill MongoDB process..."
+            sudo kill -KILL $MONGO_PID 2>/dev/null || true
+            sleep 2
+        fi
+    fi
+fi
+
 # Kiểm tra MongoDB đã được cài đặt chưa
 if command -v mongod &> /dev/null; then
     echo "✅ MongoDB đã được cài đặt"
@@ -124,7 +142,7 @@ EOF
     # Xóa environment variables gây xung đột
     echo "🧹 Xóa environment variables gây xung đột..."
     sudo systemctl edit --full mongod --force || true
-    sudo tee /etc/systemd/system/mongod.service > /dev/null << 'EOF'
+         sudo tee /etc/systemd/system/mongod.service > /dev/null << 'EOF'
 [Unit]
 Description=MongoDB Database Server
 Documentation=https://docs.mongodb.org/manual
@@ -132,12 +150,10 @@ After=network-online.target
 Wants=network-online.target
 
 [Service]
-Type=forking
+Type=simple
 User=mongodb
 Group=mongodb
 ExecStart=/usr/bin/mongod --config /etc/mongod.conf
-ExecReload=/bin/kill -HUP $MAINPID
-PIDFile=/var/run/mongodb/mongod.pid
 TimeoutStartSec=300
 KillMode=mixed
 Restart=on-failure
@@ -248,37 +264,51 @@ else
 fi
 fi  # Kết thúc block SKIP_INSTALL
 
-# Kiểm tra MongoDB có authentication chưa
-echo "🔍 Kiểm tra trạng thái authentication..."
-AUTH_STATUS=$(mongosh --eval "db.adminCommand('connectionStatus')" --quiet 2>/dev/null | grep -c "authenticated" || echo "0")
-
-if [ "$AUTH_STATUS" -eq 0 ]; then
-    # MongoDB chưa có authentication, tạo admin user
-    echo "👤 Tạo admin user (MongoDB chưa có authentication)..."
-    mongosh --eval "
-    use admin
-    try {
-      db.createUser({
-        user: 'admin',
-        pwd: '12345',
-        roles: [
-          { role: 'userAdminAnyDatabase', db: 'admin' },
-          { role: 'readWriteAnyDatabase', db: 'admin' },
-          { role: 'dbAdminAnyDatabase', db: 'admin' }
-        ]
-      })
-      print('✅ Admin user được tạo thành công')
-    } catch(e) {
-      print('⚠️  Admin user có thể đã tồn tại: ' + e.message)
-    }
-    " --quiet
-    
-    # Restart MongoDB để bật authentication
-    echo "🔄 Restart MongoDB để bật authentication..."
-    sudo systemctl restart mongod
-    sleep 3
+# Kiểm tra MongoDB có thể kết nối được không
+echo "🔍 Kiểm tra kết nối MongoDB..."
+if mongosh --eval "db.adminCommand('ping')" --quiet 2>/dev/null; then
+    echo "✅ MongoDB đã chạy và có thể kết nối!"
+    MONGODB_RUNNING=true
 else
-    echo "✅ MongoDB đã có authentication"
+    echo "⚠️  MongoDB chưa chạy hoặc không thể kết nối"
+    MONGODB_RUNNING=false
+fi
+
+# Kiểm tra MongoDB có authentication chưa (chỉ khi MongoDB đang chạy)
+if [ "$MONGODB_RUNNING" = "true" ]; then
+    echo "🔍 Kiểm tra trạng thái authentication..."
+    AUTH_STATUS=$(mongosh --eval "db.adminCommand('connectionStatus')" --quiet 2>/dev/null | grep -c "authenticated" || echo "0")
+else
+    AUTH_STATUS=0
+fi
+
+if [ "$MONGODB_RUNNING" = "true" ]; then
+    # MongoDB đang chạy, kiểm tra authentication
+    if [ "$AUTH_STATUS" -eq 0 ]; then
+        # MongoDB chưa có authentication, tạo admin user
+        echo "👤 Tạo admin user (MongoDB chưa có authentication)..."
+        mongosh --eval "
+        use admin
+        try {
+          db.createUser({
+            user: 'admin',
+            pwd: '12345',
+            roles: [
+              { role: 'userAdminAnyDatabase', db: 'admin' },
+              { role: 'readWriteAnyDatabase', db: 'admin' },
+              { role: 'dbAdminAnyDatabase', db: 'admin' }
+            ]
+          })
+          print('✅ Admin user được tạo thành công')
+        } catch(e) {
+          print('⚠️  Admin user có thể đã tồn tại: ' + e.message)
+        }
+        " --quiet
+    else
+        echo "✅ MongoDB đã có authentication"
+    fi
+else
+    echo "⚠️  MongoDB chưa chạy, bỏ qua tạo admin user"
 fi
 
 # Tạo database và user
@@ -309,9 +339,10 @@ else
     " --quiet
 fi
 
-# Kiểm tra kết nối
-echo "🔍 Kiểm tra kết nối..."
-if mongosh -u admin -p 12345 --authenticationDatabase admin --eval "db.adminCommand('ping')" --quiet; then
+# Kiểm tra kết nối cuối cùng
+echo "🔍 Kiểm tra kết nối cuối cùng..."
+# Thử kết nối với admin user trước
+if mongosh -u admin -p 12345 --authenticationDatabase admin --eval "db.adminCommand('ping')" --quiet 2>/dev/null; then
     echo "✅ MongoDB đã sẵn sàng!"
     
     # Kiểm tra chi tiết database
@@ -339,7 +370,16 @@ if mongosh -u admin -p 12345 --authenticationDatabase admin --eval "db.adminComm
     echo "   - Admin Password: 12345"
     echo "   - Database: $DATABASE_NAME"
     echo "   - Connection String: mongodb://admin:12345@localhost:27017/$DATABASE_NAME?authSource=admin"
+elif mongosh --eval "db.adminCommand('ping')" --quiet 2>/dev/null; then
+    echo "✅ MongoDB đang chạy nhưng chưa có authentication!"
+    echo "📊 Thông tin kết nối:"
+    echo "   - Host: localhost:27017"
+    echo "   - Database: $DATABASE_NAME"
+    echo "   - Connection String: mongodb://localhost:27017/$DATABASE_NAME"
+    echo "⚠️  Lưu ý: MongoDB chưa có authentication, cần bảo mật!"
 else
     echo "❌ Không thể kết nối MongoDB"
+    echo "🔧 Thử chạy lại script để sửa lỗi:"
+    echo "./scripts/setup-mongodb.sh $DATABASE_NAME"
     exit 1
 fi 
