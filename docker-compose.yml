@@ -11,7 +11,7 @@ services:
       NODE_ENV: production
       PORT: 4000
       # MongoDB connection to native MongoDB (localhost)
-      MONGODB_URI: mongodb://admin:12345@host.docker.internal:27017/vphone_production?authSource=admin
+      MONGODB_URI: mongodb://nguyenkieuanh:123456@host.docker.internal:27017/nguyenkieuanh?authSource=nguyenkieuanh
       # JWT and Email configuration
       JWT_SECRET: VPhone2025_Production_JWT_NguyenKieuAnh_SecureKey
       EMAIL_USER: vphone24h3@gmail.com
@@ -42,7 +42,7 @@ services:
       context: ./iphone-inventory
       dockerfile: Dockerfile
       args:
-        VITE_API_URL: https://nguyenkieuanh.com
+        VITE_API_URL: https://nguyenkieuanh.com/api
     container_name: vphone-frontend
     restart: unless-stopped
     environment:
