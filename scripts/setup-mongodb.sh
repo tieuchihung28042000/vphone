@@ -58,37 +58,66 @@ else
     exit 1
 fi
 
-# Tạo admin user
-echo "👤 Tạo admin user..."
-mongosh --eval "
-use admin
-try {
-  db.createUser({
-    user: 'admin',
-    pwd: '12345',
-    roles: [
-      { role: 'userAdminAnyDatabase', db: 'admin' },
-      { role: 'readWriteAnyDatabase', db: 'admin' },
-      { role: 'dbAdminAnyDatabase', db: 'admin' }
-    ]
-  })
-  print('✅ Admin user được tạo thành công')
-} catch(e) {
-  print('⚠️  Admin user có thể đã tồn tại')
-}
-" --quiet
+# Kiểm tra MongoDB có authentication chưa
+echo "🔍 Kiểm tra trạng thái authentication..."
+AUTH_STATUS=$(mongosh --eval "db.adminCommand('connectionStatus')" --quiet 2>/dev/null | grep -c "authenticated" || echo "0")
+
+if [ "$AUTH_STATUS" -eq 0 ]; then
+    # MongoDB chưa có authentication, tạo admin user
+    echo "👤 Tạo admin user (MongoDB chưa có authentication)..."
+    mongosh --eval "
+    use admin
+    try {
+      db.createUser({
+        user: 'admin',
+        pwd: '12345',
+        roles: [
+          { role: 'userAdminAnyDatabase', db: 'admin' },
+          { role: 'readWriteAnyDatabase', db: 'admin' },
+          { role: 'dbAdminAnyDatabase', db: 'admin' }
+        ]
+      })
+      print('✅ Admin user được tạo thành công')
+    } catch(e) {
+      print('⚠️  Admin user có thể đã tồn tại: ' + e.message)
+    }
+    " --quiet
+    
+    # Restart MongoDB để bật authentication
+    echo "🔄 Restart MongoDB để bật authentication..."
+    sudo systemctl restart mongod
+    sleep 3
+else
+    echo "✅ MongoDB đã có authentication"
+fi
 
 # Tạo database và user
 echo "🗄️  Tạo database $DATABASE_NAME..."
-mongosh -u admin -p 12345 --authenticationDatabase admin --eval "
-use $DATABASE_NAME
-try {
-  db.createCollection('_init')
-  print('✅ Database $DATABASE_NAME được tạo thành công')
-} catch(e) {
-  print('⚠️  Database có thể đã tồn tại')
-}
-" --quiet
+# Thử kết nối với admin user
+if mongosh -u admin -p 12345 --authenticationDatabase admin --eval "db.adminCommand('ping')" --quiet 2>/dev/null; then
+    echo "✅ Kết nối với admin user thành công"
+    mongosh -u admin -p 12345 --authenticationDatabase admin --eval "
+    use $DATABASE_NAME
+    try {
+      db.createCollection('_init')
+      print('✅ Database $DATABASE_NAME được tạo thành công')
+    } catch(e) {
+      print('⚠️  Database có thể đã tồn tại: ' + e.message)
+    }
+    " --quiet
+else
+    # Thử kết nối không có authentication
+    echo "⚠️  Thử kết nối không có authentication..."
+    mongosh --eval "
+    use $DATABASE_NAME
+    try {
+      db.createCollection('_init')
+      print('✅ Database $DATABASE_NAME được tạo thành công')
+    } catch(e) {
+      print('❌ Lỗi tạo database: ' + e.message)
+    }
+    " --quiet
+fi
 
 # Kiểm tra kết nối
 echo "🔍 Kiểm tra kết nối..."
