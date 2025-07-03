@@ -281,7 +281,14 @@ fi
 # Kiểm tra MongoDB có authentication chưa (chỉ khi MongoDB đang chạy)
 if [ "$MONGODB_RUNNING" = "true" ]; then
     echo "🔍 Kiểm tra trạng thái authentication..."
-    AUTH_STATUS=$(mongosh --eval "db.adminCommand('connectionStatus')" --quiet 2>/dev/null | grep -c "authenticated" || echo "0")
+    # Kiểm tra authentication bằng cách thử truy cập admin database mà không có credentials
+    if mongosh --eval "use admin; db.runCommand({listCollections: 1})" --quiet 2>/dev/null | grep -q "collections"; then
+        AUTH_STATUS=0  # Không có authentication
+        echo "⚠️  MongoDB đang chạy mà không có authentication"
+    else
+        AUTH_STATUS=1  # Có authentication
+        echo "✅ MongoDB đã có authentication"
+    fi
 else
     AUTH_STATUS=0
 fi
@@ -289,14 +296,14 @@ fi
 if [ "$MONGODB_RUNNING" = "true" ]; then
     # MongoDB đang chạy, kiểm tra authentication
     if [ "$AUTH_STATUS" -eq 0 ]; then
-        # MongoDB chưa có authentication, tạo admin user
+        # MongoDB chưa có authentication, tạo admin user và database user
         echo "👤 Tạo admin user (MongoDB chưa có authentication)..."
         mongosh --eval "
         use admin
         try {
           db.createUser({
             user: 'admin',
-            pwd: '12345',
+            pwd: '@654321',
             roles: [
               { role: 'userAdminAnyDatabase', db: 'admin' },
               { role: 'readWriteAnyDatabase', db: 'admin' },
@@ -306,6 +313,25 @@ if [ "$MONGODB_RUNNING" = "true" ]; then
           print('✅ Admin user được tạo thành công')
         } catch(e) {
           print('⚠️  Admin user có thể đã tồn tại: ' + e.message)
+        }
+        " --quiet
+        
+        # Tạo user riêng cho database
+        echo "👤 Tạo user cho database $DATABASE_NAME..."
+        mongosh --eval "
+        use $DATABASE_NAME
+        try {
+          db.createUser({
+            user: '$DATABASE_NAME',
+            pwd: '@654321',
+            roles: [
+              { role: 'readWrite', db: '$DATABASE_NAME' },
+              { role: 'dbAdmin', db: '$DATABASE_NAME' }
+            ]
+          })
+          print('✅ Database user được tạo thành công')
+        } catch(e) {
+          print('⚠️  Database user có thể đã tồn tại: ' + e.message)
         }
         " --quiet
         
@@ -360,19 +386,19 @@ EOF
             sleep 3
         fi
         
-        # Kiểm tra authentication đã hoạt động chưa
-        echo "🔍 Kiểm tra authentication..."
-        if mongosh -u admin -p 12345 --authenticationDatabase admin --eval "db.adminCommand('ping')" --quiet 2>/dev/null; then
-            echo "✅ Authentication đã được bật thành công!"
-        else
-            echo "❌ Lỗi bật authentication, kiểm tra lại..."
-            # Thử kết nối không có auth để debug
-            if mongosh --eval "db.adminCommand('ping')" --quiet 2>/dev/null; then
-                echo "⚠️  MongoDB vẫn chạy mà không có authentication"
-            else
-                echo "❌ MongoDB không thể kết nối"
-            fi
-        fi
+                 # Kiểm tra authentication đã hoạt động chưa
+         echo "🔍 Kiểm tra authentication..."
+         if mongosh -u admin -p '@654321' --authenticationDatabase admin --eval "db.adminCommand('ping')" --quiet 2>/dev/null; then
+             echo "✅ Authentication đã được bật thành công!"
+         else
+             echo "❌ Lỗi bật authentication, kiểm tra lại..."
+             # Thử kết nối không có auth để debug
+             if mongosh --eval "db.adminCommand('ping')" --quiet 2>/dev/null; then
+                 echo "⚠️  MongoDB vẫn chạy mà không có authentication"
+             else
+                 echo "❌ MongoDB không thể kết nối"
+             fi
+         fi
     else
         echo "✅ MongoDB đã có authentication"
     fi
@@ -380,12 +406,12 @@ else
     echo "⚠️  MongoDB chưa chạy, bỏ qua tạo admin user"
 fi
 
-# Tạo database và user
+# Tạo database và collection
 echo "🗄️  Tạo database $DATABASE_NAME..."
 # Thử kết nối với admin user
-if mongosh -u admin -p 12345 --authenticationDatabase admin --eval "db.adminCommand('ping')" --quiet 2>/dev/null; then
+if mongosh -u admin -p '@654321' --authenticationDatabase admin --eval "db.adminCommand('ping')" --quiet 2>/dev/null; then
     echo "✅ Kết nối với admin user thành công"
-    mongosh -u admin -p 12345 --authenticationDatabase admin --eval "
+    mongosh -u admin -p '@654321' --authenticationDatabase admin --eval "
     use $DATABASE_NAME
     try {
       db.createCollection('_init')
@@ -411,12 +437,12 @@ fi
 # Kiểm tra kết nối cuối cùng
 echo "🔍 Kiểm tra kết nối cuối cùng..."
 # Thử kết nối với admin user trước
-if mongosh -u admin -p 12345 --authenticationDatabase admin --eval "db.adminCommand('ping')" --quiet 2>/dev/null; then
-    echo "✅ MongoDB đã sẵn sàng!"
+if mongosh -u admin -p '@654321' --authenticationDatabase admin --eval "db.adminCommand('ping')" --quiet 2>/dev/null; then
+    echo "✅ MongoDB đã sẵn sàng với authentication!"
     
     # Kiểm tra chi tiết database
     echo "📊 Kiểm tra database $DATABASE_NAME..."
-    mongosh -u admin -p 12345 --authenticationDatabase admin --eval "
+    mongosh -u admin -p '@654321' --authenticationDatabase admin --eval "
     use $DATABASE_NAME
     print('📋 Collections trong database:')
     db.getCollectionNames().forEach(function(collection) {
@@ -435,10 +461,11 @@ if mongosh -u admin -p 12345 --authenticationDatabase admin --eval "db.adminComm
     echo ""
     echo "📊 Thông tin kết nối:"
     echo "   - Host: localhost:27017"
-    echo "   - Admin User: admin"
-    echo "   - Admin Password: 12345"
+    echo "   - Admin User: admin / Password: @654321"
+    echo "   - Database User: $DATABASE_NAME / Password: @654321"
     echo "   - Database: $DATABASE_NAME"
-    echo "   - Connection String: mongodb://admin:12345@localhost:27017/$DATABASE_NAME?authSource=admin"
+    echo "   - Connection String (Admin): mongodb://admin:@654321@localhost:27017/$DATABASE_NAME?authSource=admin"
+    echo "   - Connection String (Database): mongodb://$DATABASE_NAME:@654321@localhost:27017/$DATABASE_NAME"
 elif mongosh --eval "db.adminCommand('ping')" --quiet 2>/dev/null; then
     echo "✅ MongoDB đang chạy nhưng chưa có authentication!"
     echo "📊 Thông tin kết nối:"
