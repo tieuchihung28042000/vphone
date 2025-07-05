@@ -323,13 +323,13 @@ function XuatHang() {
         ? `${import.meta.env.VITE_API_URL}/api/xuat-hang/${editingItemId}`
         : `${import.meta.env.VITE_API_URL}/api/xuat-hang`;
 
-      // ✅ Chuẩn bị data với tính toán tự động
+      // ✅ Chuẩn bị data - không tự động tính da_thanh_toan
       const salePrice = parseFloat(parseNumber(formData.sale_price)) || 0;
       const quantity = parseInt(formData.quantity) || 1;
       const daTT = parseFloat(parseNumber(formData.da_thanh_toan)) || 0; // ✅ Chuyển thành number
       
-      // ✅ Chỉ tự động tính khi tạo mới (không edit) và khi thực sự trống
-      const finalDaTT = editingItemId ? daTT : (daTT || (salePrice * quantity)); // Edit: giữ nguyên giá trị, Create: tự động tính
+      // ✅ FIX: Không tự động tính da_thanh_toan, lưu đúng giá trị người dùng nhập (kể cả 0)
+      const finalDaTT = daTT; // Bỏ logic tự động tính
       
       const submitData = {
         ...formData,
@@ -617,7 +617,8 @@ function XuatHang() {
           const salePrice = parseNumber(importData.sale_price) || 0;
           const quantity = parseInt(importData.quantity) || 1;
           const daTT = parseNumber(importData.da_thanh_toan) || 0;
-          const finalDaTT = daTT || (salePrice * quantity);
+          // ✅ FIX: Không tự động tính da_thanh_toan, lưu đúng giá trị người dùng nhập (kể cả 0)
+          const finalDaTT = daTT; // Bỏ logic tự động tính: || (salePrice * quantity)
           
           const submitData = {
             ...importData,
@@ -1055,7 +1056,7 @@ function XuatHang() {
             <input
               name="da_thanh_toan"
               type="text"
-              placeholder="Để trống sẽ tự động = Giá bán × Số lượng"
+              placeholder="Nhập số tiền khách đã thanh toán (để trống = 0)"
               value={formatNumber(formData.da_thanh_toan)}
               onChange={handleChange}
               className="form-input"
@@ -1066,17 +1067,17 @@ function XuatHang() {
                 const quantity = parseInt(formData.quantity) || 1;
                 const daTT = parseNumber(formData.da_thanh_toan) || 0;
                 const autoAmount = salePrice * quantity;
-                const finalDaTT = daTT || autoAmount;
+                const finalDaTT = daTT; // ✅ Không tự động tính nữa
                 const congNo = Math.max(autoAmount - finalDaTT, 0);
                 
                 return (
                   <div className="p-2 bg-green-50 rounded border border-green-200">
-                    <div className="font-medium text-green-900">💡 Tính toán tự động:</div>
+                    <div className="font-medium text-green-900">💡 Tính toán:</div>
                     <div className="text-green-700">
                       <strong>Tổng tiền bán:</strong> {formatCurrency(salePrice)} × {quantity} = <strong>{formatCurrency(autoAmount)}</strong>
                     </div>
                     <div className="text-green-700">
-                      <strong>Khách thanh toán:</strong> {daTT > 0 ? formatCurrency(daTT) : `${formatCurrency(autoAmount)} (tự động)`}
+                      <strong>Khách thanh toán:</strong> {formatCurrency(finalDaTT)}
                     </div>
                     <div className={`font-semibold ${congNo > 0 ? 'text-red-600' : 'text-green-600'}`}>
                       <strong>Công nợ khách:</strong> {formatCurrency(congNo)} {congNo === 0 && '✅ Đã thanh toán đủ'}

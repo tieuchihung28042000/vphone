@@ -288,15 +288,36 @@ app.post('/api/nhap-hang', async (req, res) => {
 // API sửa hàng
 app.put('/api/nhap-hang/:id', async (req, res) => {
   try {
-    const updatedItem = await Inventory.findByIdAndUpdate(
-      req.params.id,
-      req.body,
-      { new: true },
-    );
-
-    if (!updatedItem) {
+    // ✅ FIX: Lấy record hiện tại trước khi cập nhật
+    const existingItem = await Inventory.findById(req.params.id);
+    if (!existingItem) {
       return res.status(404).json({ message: '❌ Không tìm thấy sản phẩm để cập nhật.' });
     }
+
+    // ✅ FIX: Tạo updateData và bảo vệ price_import khỏi bị thay đổi
+    const updateData = { ...req.body };
+    
+    // ✅ Bảo vệ price_import - chỉ cho phép cập nhật nếu có giá trị và khác 0
+    if (updateData.price_import !== undefined) {
+      const newPriceImport = Number(updateData.price_import) || 0;
+      if (newPriceImport <= 0) {
+        // Nếu giá trị mới <= 0, giữ nguyên giá trị cũ
+        updateData.price_import = existingItem.price_import;
+      }
+    }
+
+    console.log('🔄 Updating inventory item:', {
+      id: req.params.id,
+      oldPriceImport: existingItem.price_import,
+      newPriceImport: updateData.price_import,
+      note: 'Bảo vệ price_import khỏi bị thay đổi không mong muốn'
+    });
+
+    const updatedItem = await Inventory.findByIdAndUpdate(
+      req.params.id,
+      updateData,
+      { new: true },
+    );
 
     res.status(200).json({
       message: '✅ Cập nhật thành công!',
