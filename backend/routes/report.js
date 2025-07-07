@@ -204,7 +204,7 @@ router.post('/xuat-hang', async (req, res) => {
             customer_name,
             customer_phone,
             warranty,
-            note,
+            // ✅ REMOVED: note - không cập nhật ghi chú vào Inventory
             debt: debt || 0,
             branch
           }

@@ -113,7 +113,10 @@ function NhapHang() {
   // ✅ Stats calculation - Cập nhật theo bộ lọc và hiển thị số liệu chính xác
   const stats = {
     totalItems: filteredItems.length,
-    totalValue: filteredItems.reduce((sum, item) => sum + (item.price_import * (item.quantity || 1)), 0),
+    // ✅ SỬA: Chỉ tính giá trị nhập của những sản phẩm còn lại trong kho (status !== 'sold')
+    totalValue: filteredItems
+      .filter(item => item.status !== 'sold')
+      .reduce((sum, item) => sum + (item.price_import * (item.quantity || 1)), 0),
     soldItems: filteredItems.filter(item => item.status === 'sold').length,
     inStock: filteredItems.filter(item => item.status !== 'sold').length,
     // ✅ Thêm stats so sánh với xuất hàng
@@ -840,11 +843,11 @@ function NhapHang() {
           subtitle={`${stats.totalItemsAll.toLocaleString()} tổng (${filteredItems.length !== items.length ? 'đã lọc' : 'tất cả'})`}
         />
         <StatsCard
-          title="Giá trị nhập"
+          title="Giá trị nhập (còn lại)"
           value={formatCurrency(stats.totalValue)}
           icon="💰"
           color="green"
-          subtitle="Theo bộ lọc hiện tại"
+          subtitle="Chỉ tính sản phẩm còn trong kho"
         />
         <StatsCard
           title="Đã bán"
