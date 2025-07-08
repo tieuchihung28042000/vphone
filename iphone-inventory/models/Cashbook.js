@@ -22,4 +22,4 @@ const CashbookSchema = new mongoose.Schema({
   balance_after: { type: Number, default: 0 },                   // Số dư sau giao dịch
 });
 
-module.exports = mongoose.model("Cashbook", CashbookSchema);
+module.exports = mongoose.model("Cashbook", CashbookSchema); 

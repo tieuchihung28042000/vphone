@@ -29,6 +29,9 @@ const InventorySchema = new mongoose.Schema({
   da_tra: { type: Number, default: 0 },     // Đã trả (khách đã trả)
 
   status: { type: String, enum: ["in_stock", "sold"], default: "in_stock" },
+  
+  // ✅ Thêm field để đánh dấu hàng trả
+  is_return_item: { type: Boolean, default: false },
 }, {
   timestamps: true
 });

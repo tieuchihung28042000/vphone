@@ -12,7 +12,7 @@ function getDecodedToken() {
   }
 }
 
-function PrivateRoute({ children, requiredRole }) {
+function PrivateRoute({ children, requiredRole, requireReportAccess }) {
   const decoded = getDecodedToken();
 
   if (!decoded) {
@@ -22,7 +22,13 @@ function PrivateRoute({ children, requiredRole }) {
   // Kiểm tra token hết hạn (nếu token có trường exp)
   const now = Date.now().valueOf() / 1000;
   if (decoded.exp && decoded.exp < now) {
+    localStorage.removeItem("token");
     return <Navigate to="/login" replace />;
+  }
+
+  // Kiểm tra quyền truy cập báo cáo
+  if (requireReportAccess && decoded.role === 'thu_ngan') {
+    return <Navigate to="/not-authorized" replace />;
   }
 
   if (requiredRole) {

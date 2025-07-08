@@ -33,6 +33,9 @@ imei: { type: String, default: null },
   // ✅ Thêm field để đánh dấu phụ kiện
   is_accessory: { type: Boolean, default: false },
   
+  // ✅ Thêm field để đánh dấu hàng trả
+  is_return_item: { type: Boolean, default: false },
+  
 }, {
   timestamps: true
 });

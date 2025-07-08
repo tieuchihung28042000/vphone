@@ -7,7 +7,7 @@ function NavBar() {
     "px-3 py-1 rounded text-white font-medium hover:opacity-90";
 
   return (
-    <div className="flex justify-center gap-2 mb-6">
+    <div className="flex justify-center gap-2 mb-6 flex-wrap">
       <button
         onClick={() => navigate("/nhap-hang")}
         className={`${btnClass} bg-blue-600`}
@@ -43,6 +43,12 @@ function NavBar() {
         className={`${btnClass} bg-red-600`}
       >
         💳 Công nợ
+      </button>
+      <button
+        onClick={() => navigate("/quan-ly-user")}
+        className={`${btnClass} bg-indigo-600`}
+      >
+        👥 Quản lý User
       </button>
     </div>
   );

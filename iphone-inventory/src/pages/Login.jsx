@@ -30,7 +30,22 @@ function Login() {
           sessionStorage.setItem("token", data.token);
         }
 
-        navigate("/nhap-hang");
+        // Redirect theo role
+        try {
+          const decoded = JSON.parse(atob(data.token.split('.')[1]));
+          const role = decoded.role;
+          
+          if (role === 'nhan_vien_ban_hang') {
+            navigate("/xuat-hang"); // Nhân viên bán hàng vào xuất hàng
+          } else if (role === 'quan_ly' || role === 'admin') {
+            navigate("/bao-cao"); // Quản lý/Admin vào báo cáo
+          } else {
+            navigate("/nhap-hang"); // Thu ngân và các role khác vào nhập hàng
+          }
+        } catch (err) {
+          // Fallback nếu không decode được token
+          navigate("/xuat-hang");
+        }
       } else {
         alert(`❌ ${data.message}`);
       }

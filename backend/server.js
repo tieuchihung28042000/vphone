@@ -14,6 +14,8 @@ const categoryRoutes = require('./routes/category');
 const congNoRoutes = require('./routes/congno');
 const adminRoutes = require('./routes/admin');
 const cashbookRoutes = require('./routes/cashbook'); // THÊM DÒNG NÀY
+const returnImportRoutes = require('./routes/returnImport');
+const returnExportRoutes = require('./routes/returnExport');
 
 const app = express();
 
@@ -39,6 +41,8 @@ app.use('/api/branches', branchRoutes);
 app.use('/api/categories', categoryRoutes);
 app.use('/api/cong-no', congNoRoutes);
 app.use('/api/cashbook', cashbookRoutes); // ROUTE SỔ QUỸ
+app.use('/api/return-import', returnImportRoutes);
+app.use('/api/return-export', returnExportRoutes);
 
 // ==================== API: SUPER DEBUG BACKEND ====================
 app.get('/api/super-debug/:id', async (req, res) => {

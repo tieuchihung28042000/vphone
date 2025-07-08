@@ -1,17 +1,56 @@
 import { useState } from "react";
 import LogoutButton from "./LogoutButton";
+import * as jwt_decode from "jwt-decode";
 
 // Sidebar Component - Layout chung
 const Sidebar = ({ activeTab }) => {
-  const menuItems = [
-    { id: 'nhap-hang', label: 'Nhập hàng', icon: '📥', path: '/nhap-hang' },
-    { id: 'xuat-hang', label: 'Xuất hàng', icon: '📤', path: '/xuat-hang' },
-    { id: 'ton-kho', label: 'Tồn kho', icon: '📦', path: '/ton-kho-so-luong' },
-    { id: 'so-quy', label: 'Sổ quỹ', icon: '💰', path: '/so-quy' },
-    { id: 'cong-no', label: 'Công nợ', icon: '💳', path: '/cong-no' },
-    { id: 'bao-cao', label: 'Báo cáo', icon: '📊', path: '/bao-cao' },
-    { id: 'quan-ly-user', label: 'Quản lý User', icon: '👥', path: '/quan-ly-user' },
+  // Lấy thông tin user từ token
+  const getUserInfo = () => {
+    const token = localStorage.getItem("token") || sessionStorage.getItem("token");
+    if (!token) return null;
+    try {
+      const decoded = jwt_decode.default(token);
+      return {
+        role: decoded.role,
+        full_name: decoded.full_name,
+        branch_name: decoded.branch_name,
+        email: decoded.email
+      };
+    } catch {
+      return null;
+    }
+  };
+
+  const userInfo = getUserInfo();
+  const userRole = userInfo?.role;
+
+  // Định nghĩa tất cả menu items
+  const allMenuItems = [
+    { id: 'nhap-hang', label: 'Nhập hàng', icon: '📥', path: '/nhap-hang', roles: ['admin', 'quan_ly', 'thu_ngan'] },
+    { id: 'xuat-hang', label: 'Xuất hàng', icon: '📤', path: '/xuat-hang', roles: ['admin', 'quan_ly', 'thu_ngan', 'nhan_vien_ban_hang'] },
+    { id: 'ton-kho', label: 'Tồn kho', icon: '📦', path: '/ton-kho-so-luong', roles: ['admin', 'quan_ly', 'thu_ngan'] },
+    { id: 'so-quy', label: 'Sổ quỹ', icon: '💰', path: '/so-quy', roles: ['admin', 'quan_ly', 'thu_ngan', 'nhan_vien_ban_hang'] },
+    { id: 'cong-no', label: 'Công nợ', icon: '💳', path: '/cong-no', roles: ['admin', 'quan_ly', 'thu_ngan'] },
+    { id: 'bao-cao', label: 'Báo cáo', icon: '📊', path: '/bao-cao', roles: ['admin', 'quan_ly'] },
+    { id: 'quan-ly-user', label: 'Quản lý User', icon: '👥', path: '/quan-ly-user', roles: ['admin', 'quan_ly'] },
   ];
+
+  // Lọc menu theo quyền
+  const menuItems = allMenuItems.filter(item => {
+    if (!userRole || userRole === 'user') return true; // Fallback cho role cũ
+    return item.roles.includes(userRole);
+  });
+
+  const getRoleLabel = (role) => {
+    const roleLabels = {
+      admin: "👑 Admin",
+      quan_ly: "👨‍💼 Quản lý", 
+      thu_ngan: "💰 Thu ngân",
+      nhan_vien_ban_hang: "🛒 Nhân viên bán hàng",
+      user: "👤 User"
+    };
+    return roleLabels[role] || role;
+  };
 
   return (
     <div className="w-72 sidebar-gradient min-h-screen text-white shadow-2xl relative flex flex-col">
@@ -45,15 +84,34 @@ const Sidebar = ({ activeTab }) => {
       {/* Bottom User Profile */}
       <div className="m-8 mt-auto">
         <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-4">
-          <div className="flex items-center">
-            <div className="w-12 h-12 bg-white/20 rounded-xl flex items-center justify-center">
-              <span className="text-xl">👤</span>
+          {userInfo ? (
+            <div>
+              <div className="flex items-center mb-3">
+                <div className="w-12 h-12 bg-white/20 rounded-xl flex items-center justify-center">
+                  <span className="text-xl">👤</span>
+                </div>
+                <div className="ml-3">
+                  <p className="text-sm font-semibold">{userInfo.full_name || userInfo.email}</p>
+                  <p className="text-xs text-white/70">{getRoleLabel(userInfo.role)}</p>
+                </div>
+              </div>
+              {userInfo.branch_name && (
+                <div className="text-xs text-white/60 bg-white/5 rounded-lg px-2 py-1">
+                  🏢 {userInfo.branch_name}
+                </div>
+              )}
             </div>
-            <div className="ml-3">
-              <p className="text-sm font-semibold">Admin User</p>
-              <p className="text-xs text-white/70">Quản trị viên</p>
+          ) : (
+            <div className="flex items-center">
+              <div className="w-12 h-12 bg-white/20 rounded-xl flex items-center justify-center">
+                <span className="text-xl">👤</span>
+              </div>
+              <div className="ml-3">
+                <p className="text-sm font-semibold">Guest User</p>
+                <p className="text-xs text-white/70">Chưa đăng nhập</p>
+              </div>
             </div>
-          </div>
+          )}
         </div>
       </div>
     </div>

@@ -9,10 +9,21 @@ const router = express.Router();
 // ===== Đăng ký tài khoản user =====
 router.post('/register', async (req, res) => {
   try {
-    const { email, password, username } = req.body;
+    const { email, password, username, role, branch_id, branch_name, full_name, phone } = req.body;
 
     if (!email || !password) {
       return res.status(400).json({ message: '❌ Email và mật khẩu là bắt buộc' });
+    }
+
+    // Kiểm tra vai trò hợp lệ
+    const validRoles = ['user', 'admin', 'thu_ngan', 'quan_ly', 'nhan_vien_ban_hang'];
+    if (role && !validRoles.includes(role)) {
+      return res.status(400).json({ message: '❌ Vai trò không hợp lệ' });
+    }
+
+    // Kiểm tra branch_id cho các vai trò không phải admin
+    if (role && role !== 'admin' && !branch_id) {
+      return res.status(400).json({ message: '❌ Chi nhánh là bắt buộc cho vai trò này' });
     }
 
     // Kiểm tra email đã tồn tại
@@ -31,12 +42,23 @@ router.post('/register', async (req, res) => {
 
     const hashed = await bcrypt.hash(password, 10);
 
-    await User.create({
+    const userData = {
       email,
-      username: username || null, // Có thể null nếu không nhập
+      username: username || null,
       password: hashed,
-      role: 'user'
-    });
+      role: role || 'user',
+      full_name,
+      phone,
+      approved: true, // Tự động approve user được tạo bởi admin
+    };
+
+    // Chỉ thêm branch info nếu không phải admin
+    if (role !== 'admin') {
+      userData.branch_id = branch_id;
+      userData.branch_name = branch_name;
+    }
+
+    await User.create(userData);
 
     res.status(201).json({ message: '✅ Tạo tài khoản thành công' });
   } catch (err) {
@@ -75,6 +97,9 @@ router.post('/login', async (req, res) => {
         id: user._id,
         email: user.email,
         role: user.role,
+        branch_id: user.branch_id,
+        branch_name: user.branch_name,
+        full_name: user.full_name,
       },
       process.env.JWT_SECRET || 'vphone_secret_key',
       { expiresIn: '7d' }

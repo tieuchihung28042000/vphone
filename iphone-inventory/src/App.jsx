@@ -30,7 +30,7 @@ function App() {
       <Route
         path="/nhap-hang"
         element={
-          <PrivateRoute>
+          <PrivateRoute requiredRole={["admin", "quan_ly", "thu_ngan"]}>
             <NhapHang />
           </PrivateRoute>
         }
@@ -38,7 +38,7 @@ function App() {
       <Route
         path="/xuat-hang"
         element={
-          <PrivateRoute>
+          <PrivateRoute requiredRole={["admin", "quan_ly", "thu_ngan", "nhan_vien_ban_hang"]}>
             <XuatHang />
           </PrivateRoute>
         }
@@ -46,7 +46,7 @@ function App() {
       <Route
         path="/ton-kho-so-luong"
         element={
-          <PrivateRoute>
+          <PrivateRoute requiredRole={["admin", "quan_ly", "thu_ngan"]}>
             <TonKhoSoLuong />
           </PrivateRoute>
         }
@@ -54,7 +54,7 @@ function App() {
       <Route
         path="/bao-cao"
         element={
-          <PrivateRoute>
+          <PrivateRoute requiredRole={["admin", "quan_ly"]} requireReportAccess={true}>
             <BaoCao />
           </PrivateRoute>
         }
@@ -62,7 +62,7 @@ function App() {
       <Route
         path="/cong-no"
         element={
-          <PrivateRoute>
+          <PrivateRoute requiredRole={["admin", "quan_ly", "thu_ngan"]}>
             <CongNo />
           </PrivateRoute>
         }
@@ -71,7 +71,7 @@ function App() {
       <Route
         path="/canh-bao-ton-kho"
         element={
-          <PrivateRoute>
+          <PrivateRoute requiredRole={["admin", "quan_ly", "thu_ngan"]}>
             <DanhSachCanhBao />
           </PrivateRoute>
         }
@@ -81,7 +81,7 @@ function App() {
       <Route
         path="/so-quy"
         element={
-          <PrivateRoute>
+          <PrivateRoute requiredRole={["admin", "quan_ly", "thu_ngan", "nhan_vien_ban_hang"]}>
             <Cashbook />
           </PrivateRoute>
         }
@@ -91,7 +91,7 @@ function App() {
       <Route
         path="/quan-ly-user"
         element={
-          <PrivateRoute>
+          <PrivateRoute requiredRole={["admin", "quan_ly"]}>
             <QuanLyUser />
           </PrivateRoute>
         }

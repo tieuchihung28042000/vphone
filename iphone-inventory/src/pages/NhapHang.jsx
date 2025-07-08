@@ -82,6 +82,16 @@ function NhapHang() {
   const [suggestList, setSuggestList] = useState([]);
   const [showSuggest, setShowSuggest] = useState(false);
 
+  // ✅ States cho modal trả hàng
+  const [returnModal, setReturnModal] = useState({ open: false, item: null });
+  const [returnForm, setReturnForm] = useState({
+    return_amount: '',
+    return_cash: '',
+    return_transfer: '',
+    return_reason: '',
+    note: ''
+  });
+
   // ✅ Filter and pagination - Moved up to use in stats
   const filteredItems = items.filter((item) => {
     // ✅ Cải thiện tìm kiếm - xử lý null/undefined
@@ -324,17 +334,80 @@ function NhapHang() {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  const handleDelete = async (id) => {
-    if (!confirm("Bạn có chắc muốn xóa sản phẩm này?")) return;
+  // ✅ Xử lý mở modal trả hàng
+  const handleOpenReturnModal = (item) => {
+    setReturnModal({ open: true, item });
+    setReturnForm({
+      return_amount: item.price_import || '',
+      return_cash: '',
+      return_transfer: '',
+      return_reason: '',
+      note: ''
+    });
+  };
+
+  // ✅ Xử lý đóng modal trả hàng
+  const handleCloseReturnModal = () => {
+    setReturnModal({ open: false, item: null });
+    setReturnForm({
+      return_amount: '',
+      return_cash: '',
+      return_transfer: '',
+      return_reason: '',
+      note: ''
+    });
+  };
+
+  // ✅ Xử lý thay đổi form trả hàng
+  const handleReturnFormChange = (e) => {
+    const { name, value } = e.target;
+    if (name === "return_amount" || name === "return_cash" || name === "return_transfer") {
+      setReturnForm(prev => ({ ...prev, [name]: parseNumber(value) }));
+    } else {
+      setReturnForm(prev => ({ ...prev, [name]: value }));
+    }
+  };
+
+  // ✅ Xử lý submit trả hàng
+  const handleReturnSubmit = async (e) => {
+    e.preventDefault();
     
+    const returnAmount = parseFloat(parseNumber(returnForm.return_amount)) || 0;
+    const returnCash = parseFloat(parseNumber(returnForm.return_cash)) || 0;
+    const returnTransfer = parseFloat(parseNumber(returnForm.return_transfer)) || 0;
+    
+    // Kiểm tra tổng tiền trả
+    if (returnCash + returnTransfer !== returnAmount) {
+      setMessage("❌ Tổng tiền mặt + chuyển khoản phải bằng số tiền trả");
+      setTimeout(() => setMessage(""), 3000);
+      return;
+    }
+    
+    if (!returnForm.return_reason.trim()) {
+      setMessage("❌ Vui lòng nhập lý do trả hàng");
+      setTimeout(() => setMessage(""), 3000);
+      return;
+    }
+
     try {
-      const res = await fetch(`${import.meta.env.VITE_API_URL}/api/nhap-hang/${id}`, {
-        method: "DELETE"
+      const res = await fetch(`${import.meta.env.VITE_API_URL}/api/return-import`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          original_inventory_id: returnModal.item._id,
+          return_amount: returnAmount,
+          return_cash: returnCash,
+          return_transfer: returnTransfer,
+          return_reason: returnForm.return_reason,
+          note: returnForm.note
+        })
       });
+      
       const data = await res.json();
       
       if (res.ok) {
-        setMessage("✅ Đã xóa thành công");
+        setMessage("✅ Đã tạo phiếu trả hàng thành công");
+        handleCloseReturnModal();
         fetchItems();
         setTimeout(() => setMessage(""), 3000);
       } else {
@@ -342,7 +415,7 @@ function NhapHang() {
         setTimeout(() => setMessage(""), 3000);
       }
     } catch (err) {
-      setMessage("❌ Lỗi khi xóa");
+      setMessage("❌ Lỗi khi tạo phiếu trả hàng");
       setTimeout(() => setMessage(""), 3000);
     }
   };
@@ -819,9 +892,17 @@ function NhapHang() {
           <button onClick={() => handleEdit(item)} className="btn-action-edit">
             ✏️ Sửa
           </button>
-          <button onClick={() => handleDelete(item._id)} className="btn-action-delete">
-            🗑️ Xóa
-          </button>
+          {item.status !== 'sold' ? (
+            <button 
+              onClick={() => handleOpenReturnModal(item)} 
+              className="btn-action-return text-xs px-2 py-1 bg-orange-500 hover:bg-orange-600 text-white rounded transition-colors"
+              title="Trả hàng nhập"
+            >
+              🔄 Trả hàng
+            </button>
+          ) : (
+            <span className="text-xs text-gray-400 italic">Đã bán</span>
+          )}
         </div>
       )
     }
@@ -1395,6 +1476,136 @@ function NhapHang() {
                 </div>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Return Import Modal */}
+      {returnModal.open && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-2xl p-8 max-w-md w-full mx-4 max-h-[90vh] overflow-y-auto">
+            <h3 className="text-xl font-bold text-gray-900 mb-6">🔄 Trả hàng nhập</h3>
+            
+            {/* Thông tin sản phẩm */}
+            <div className="bg-gray-50 rounded-lg p-4 mb-6">
+              <h4 className="font-semibold text-gray-900 mb-2">📦 Thông tin sản phẩm</h4>
+              <div className="text-sm space-y-1">
+                <div><strong>Tên:</strong> {returnModal.item?.product_name}</div>
+                <div><strong>SKU:</strong> {returnModal.item?.sku}</div>
+                {returnModal.item?.imei && <div><strong>IMEI:</strong> {returnModal.item?.imei}</div>}
+                <div><strong>Giá nhập:</strong> {formatCurrency(returnModal.item?.price_import)}</div>
+                <div><strong>Nhà cung cấp:</strong> {returnModal.item?.supplier}</div>
+              </div>
+            </div>
+            
+            <form onSubmit={handleReturnSubmit} className="space-y-4">
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">Số tiền trả lại *</label>
+                <input
+                  type="text"
+                  name="return_amount"
+                  value={formatNumber(returnForm.return_amount)}
+                  onChange={handleReturnFormChange}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500"
+                  placeholder="Số tiền trả lại nhà cung cấp"
+                  required
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">Tiền mặt</label>
+                  <input
+                    type="text"
+                    name="return_cash"
+                    value={formatNumber(returnForm.return_cash)}
+                    onChange={handleReturnFormChange}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500"
+                    placeholder="0"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">Chuyển khoản</label>
+                  <input
+                    type="text"
+                    name="return_transfer"
+                    value={formatNumber(returnForm.return_transfer)}
+                    onChange={handleReturnFormChange}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500"
+                    placeholder="0"
+                  />
+                </div>
+              </div>
+
+              {/* Tính toán tự động */}
+              <div className="text-xs text-gray-500 bg-blue-50 p-3 rounded-lg">
+                {(() => {
+                  const returnAmount = parseFloat(parseNumber(returnForm.return_amount)) || 0;
+                  const returnCash = parseFloat(parseNumber(returnForm.return_cash)) || 0;
+                  const returnTransfer = parseFloat(parseNumber(returnForm.return_transfer)) || 0;
+                  const total = returnCash + returnTransfer;
+                  const isValid = total === returnAmount;
+                  
+                  return (
+                    <div>
+                      <div className="font-medium text-blue-900 mb-1">💡 Kiểm tra thanh toán:</div>
+                      <div className="text-blue-700">
+                        Tiền mặt: {formatCurrency(returnCash)} + Chuyển khoản: {formatCurrency(returnTransfer)} = <strong>{formatCurrency(total)}</strong>
+                      </div>
+                      <div className={`font-semibold ${isValid ? 'text-green-600' : 'text-red-600'}`}>
+                        {isValid ? '✅ Hợp lệ' : `❌ Chênh lệch: ${formatCurrency(Math.abs(returnAmount - total))}`}
+                      </div>
+                    </div>
+                  );
+                })()}
+              </div>
+
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">Lý do trả hàng *</label>
+                <select
+                  name="return_reason"
+                  value={returnForm.return_reason}
+                  onChange={handleReturnFormChange}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500"
+                  required
+                >
+                  <option value="">Chọn lý do trả hàng</option>
+                  <option value="hang_loi">Hàng lỗi</option>
+                  <option value="sai_don_hang">Sai đơn hàng</option>
+                  <option value="khong_can_nua">Không cần nữa</option>
+                  <option value="gia_cao">Giá cao</option>
+                  <option value="khac">Lý do khác</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">Ghi chú</label>
+                <textarea
+                  name="note"
+                  value={returnForm.note}
+                  onChange={handleReturnFormChange}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500"
+                  rows="3"
+                  placeholder="Ghi chú thêm về việc trả hàng..."
+                />
+              </div>
+
+              <div className="flex gap-3 pt-4">
+                <button
+                  type="button"
+                  onClick={handleCloseReturnModal}
+                  className="flex-1 bg-gray-500 hover:bg-gray-600 text-white py-3 px-4 rounded-xl font-medium transition-colors"
+                >
+                  ❌ Hủy
+                </button>
+                <button
+                  type="submit"
+                  className="flex-1 bg-orange-600 hover:bg-orange-700 text-white py-3 px-4 rounded-xl font-medium transition-colors"
+                >
+                  🔄 Tạo phiếu trả hàng
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

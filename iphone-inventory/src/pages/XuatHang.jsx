@@ -77,6 +77,15 @@ function XuatHang() {
   // ✅ Thêm state để track phụ kiện
   const [isAccessory, setIsAccessory] = useState(false);
 
+  // ✅ States cho modal trả hàng bán
+  const [returnModal, setReturnModal] = useState({ open: false, item: null });
+  const [returnForm, setReturnForm] = useState({
+    return_amount: '',
+    return_method: 'cash',
+    return_reason: '',
+    note: ''
+  });
+
   // Stats calculation
   const stats = {
     totalSold: soldItems.length,
@@ -427,26 +436,74 @@ function XuatHang() {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  const handleDelete = async (id) => {
-    if (!window.confirm("Bạn có chắc chắn muốn xóa giao dịch này? Hành động này không thể hoàn tác.")) return;
+  // ✅ Xử lý mở modal trả hàng bán
+  const handleOpenReturnModal = (item) => {
+    setReturnModal({ open: true, item });
+    setReturnForm({
+      return_amount: item.sale_price || '',
+      return_method: 'cash',
+      return_reason: '',
+      note: ''
+    });
+  };
+
+  // ✅ Xử lý đóng modal trả hàng bán
+  const handleCloseReturnModal = () => {
+    setReturnModal({ open: false, item: null });
+    setReturnForm({
+      return_amount: '',
+      return_method: 'cash',
+      return_reason: '',
+      note: ''
+    });
+  };
+
+  // ✅ Xử lý thay đổi form trả hàng
+  const handleReturnFormChange = (e) => {
+    const { name, value } = e.target;
+    if (name === "return_amount") {
+      setReturnForm(prev => ({ ...prev, [name]: parseNumber(value) }));
+    } else {
+      setReturnForm(prev => ({ ...prev, [name]: value }));
+    }
+  };
+
+  // ✅ Xử lý submit trả hàng bán
+  const handleReturnSubmit = async (e) => {
+    e.preventDefault();
     
-    setMessage("🔄 Đang xóa giao dịch...");
+    const returnAmount = parseFloat(parseNumber(returnForm.return_amount)) || 0;
     
+    if (returnAmount <= 0) {
+      setMessage("❌ Số tiền trả lại phải lớn hơn 0");
+      setTimeout(() => setMessage(""), 3000);
+      return;
+    }
+    
+    if (!returnForm.return_reason.trim()) {
+      setMessage("❌ Vui lòng nhập lý do trả hàng");
+      setTimeout(() => setMessage(""), 3000);
+      return;
+    }
+
     try {
-      console.log('🗑️ DELETE request for ID:', id); // Debug
-      
-      const res = await fetch(`${import.meta.env.VITE_API_URL}/api/xuat-hang/${id}`, {
-        method: "DELETE",
-        headers: {
-          "Content-Type": "application/json"
-        }
+      const res = await fetch(`${import.meta.env.VITE_API_URL}/api/return-export`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          original_export_id: returnModal.item._id,
+          return_amount: returnAmount,
+          return_method: returnForm.return_method,
+          return_reason: returnForm.return_reason,
+          note: returnForm.note
+        })
       });
       
       const data = await res.json();
-      console.log('🗑️ DELETE response:', data); // Debug
       
       if (res.ok) {
-        setMessage("✅ Đã xóa giao dịch thành công");
+        setMessage("✅ Đã tạo phiếu trả hàng thành công");
+        handleCloseReturnModal();
         
         // Refresh data
         await Promise.all([
@@ -454,26 +511,14 @@ function XuatHang() {
           fetchAvailableItems()
         ]);
         
-        // ✅ Refresh suggestion list nếu đang hiển thị
-        if (showSuggest && formData.product_name) {
-          console.log('🔄 Refreshing suggestion list after delete operation...');
-          await fetchSuggestList(formData.product_name);
-        }
-        
-        // Reset editing state if we're deleting the item being edited
-        if (editingItemId === id) {
-          resetForm();
-        }
-        
         setTimeout(() => setMessage(""), 3000);
       } else {
-        setMessage(`❌ Lỗi xóa: ${data.message || 'Không thể xóa giao dịch'}`);
-        setTimeout(() => setMessage(""), 5000);
+        setMessage(`❌ ${data.message}`);
+        setTimeout(() => setMessage(""), 3000);
       }
     } catch (err) {
-      console.error('❌ Delete error:', err);
-      setMessage("❌ Lỗi kết nối khi xóa giao dịch");
-      setTimeout(() => setMessage(""), 5000);
+      setMessage("❌ Lỗi khi tạo phiếu trả hàng");
+      setTimeout(() => setMessage(""), 3000);
     }
   };
 
@@ -843,11 +888,11 @@ function XuatHang() {
             ✏️ Sửa
           </button>
           <button 
-            onClick={() => handleDelete(item._id)} 
-            className="btn-action-delete text-xs px-2 py-1 bg-red-500 hover:bg-red-600 text-white rounded transition-colors"
-            title="Xóa giao dịch"
+            onClick={() => handleOpenReturnModal(item)} 
+            className="btn-action-return text-xs px-2 py-1 bg-orange-500 hover:bg-orange-600 text-white rounded transition-colors"
+            title="Phiếu trả hàng"
           >
-            🗑️ Xóa
+            🔄 Trả hàng
           </button>
         </div>
       )
@@ -1271,6 +1316,114 @@ function XuatHang() {
         totalItems={filteredItems.length}
         onPageChange={setPage}
       />
+
+      {/* Return Export Modal */}
+      {returnModal.open && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-2xl p-8 max-w-md w-full mx-4 max-h-[90vh] overflow-y-auto">
+            <h3 className="text-xl font-bold text-gray-900 mb-6">🔄 Phiếu trả hàng</h3>
+            
+            {/* Thông tin giao dịch */}
+            <div className="bg-gray-50 rounded-lg p-4 mb-6">
+              <h4 className="font-semibold text-gray-900 mb-2">📋 Thông tin giao dịch</h4>
+              <div className="text-sm space-y-1">
+                <div><strong>Sản phẩm:</strong> {returnModal.item?.product_name}</div>
+                <div><strong>SKU:</strong> {returnModal.item?.sku}</div>
+                {returnModal.item?.imei && <div><strong>IMEI:</strong> {returnModal.item?.imei}</div>}
+                <div><strong>Giá bán:</strong> {formatCurrency(returnModal.item?.sale_price)}</div>
+                <div><strong>Khách hàng:</strong> {returnModal.item?.buyer_name}</div>
+                <div><strong>SĐT:</strong> {returnModal.item?.buyer_phone}</div>
+                <div><strong>Ngày bán:</strong> {returnModal.item?.sale_date?.slice(0, 10)}</div>
+              </div>
+            </div>
+            
+            <form onSubmit={handleReturnSubmit} className="space-y-4">
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">Số tiền trả lại khách *</label>
+                <input
+                  type="text"
+                  name="return_amount"
+                  value={formatNumber(returnForm.return_amount)}
+                  onChange={handleReturnFormChange}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500"
+                  placeholder="Số tiền trả lại khách hàng"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">Phương thức trả tiền *</label>
+                <select
+                  name="return_method"
+                  value={returnForm.return_method}
+                  onChange={handleReturnFormChange}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500"
+                  required
+                >
+                  <option value="cash">💵 Tiền mặt</option>
+                  <option value="transfer">🏦 Chuyển khoản</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">Lý do trả hàng *</label>
+                <select
+                  name="return_reason"
+                  value={returnForm.return_reason}
+                  onChange={handleReturnFormChange}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500"
+                  required
+                >
+                  <option value="">Chọn lý do trả hàng</option>
+                  <option value="hang_loi">Hàng lỗi</option>
+                  <option value="khong_vua_y">Không vừa ý</option>
+                  <option value="sai_don_hang">Sai đơn hàng</option>
+                  <option value="khong_can_nua">Không cần nữa</option>
+                  <option value="bao_hanh">Bảo hành</option>
+                  <option value="khac">Lý do khác</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">Ghi chú</label>
+                <textarea
+                  name="note"
+                  value={returnForm.note}
+                  onChange={handleReturnFormChange}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500"
+                  rows="3"
+                  placeholder="Ghi chú thêm về việc trả hàng..."
+                />
+              </div>
+
+              <div className="bg-blue-50 p-3 rounded-lg text-sm">
+                <div className="font-medium text-blue-900 mb-1">💡 Lưu ý:</div>
+                <div className="text-blue-700">
+                  • Sản phẩm sẽ được đưa trở lại tồn kho<br/>
+                  • Phiếu trả hàng sẽ được ghi vào sổ quỹ<br/>
+                  • Hành động này không thể hoàn tác
+                </div>
+              </div>
+
+              <div className="flex gap-3 pt-4">
+                <button
+                  type="button"
+                  onClick={handleCloseReturnModal}
+                  className="flex-1 bg-gray-500 hover:bg-gray-600 text-white py-3 px-4 rounded-xl font-medium transition-colors"
+                >
+                  ❌ Hủy
+                </button>
+                <button
+                  type="submit"
+                  className="flex-1 bg-orange-600 hover:bg-orange-700 text-white py-3 px-4 rounded-xl font-medium transition-colors"
+                >
+                  🔄 Tạo phiếu trả hàng
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </Layout>
   );
 }
