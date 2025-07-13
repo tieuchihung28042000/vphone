@@ -487,9 +487,13 @@ function XuatHang() {
     }
 
     try {
+      const token = localStorage.getItem("token") || sessionStorage.getItem("token");
       const res = await fetch(`${import.meta.env.VITE_API_URL}/api/return-export`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { 
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`
+        },
         body: JSON.stringify({
           original_export_id: returnModal.item._id,
           return_amount: returnAmount,

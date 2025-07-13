@@ -390,9 +390,13 @@ function NhapHang() {
     }
     
     try {
+      const token = localStorage.getItem("token") || sessionStorage.getItem("token");
       const res = await fetch(`${import.meta.env.VITE_API_URL}/api/return-import`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { 
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`
+        },
         body: JSON.stringify({
           original_inventory_id: returnModal.item._id,
           return_amount: returnAmount,
