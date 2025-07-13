@@ -1,6 +1,7 @@
 const express = require('express');
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
+const mongoose = require('mongoose');
 const User = require('../models/User');
 const nodemailer = require('nodemailer');
 
@@ -9,6 +10,7 @@ const router = express.Router();
 // ===== Đăng ký tài khoản user =====
 router.post('/register', async (req, res) => {
   try {
+    console.log('🔧 [REGISTER] Received registration request:', req.body);
     const { email, password, username, role, branch_id, branch_name, full_name, phone } = req.body;
 
     if (!email || !password) {
@@ -24,6 +26,11 @@ router.post('/register', async (req, res) => {
     // Kiểm tra branch_id cho các vai trò không phải admin
     if (role && role !== 'admin' && !branch_id) {
       return res.status(400).json({ message: '❌ Chi nhánh là bắt buộc cho vai trò này' });
+    }
+
+    // Kiểm tra branch_id có phải ObjectId hợp lệ không
+    if (branch_id && !mongoose.Types.ObjectId.isValid(branch_id)) {
+      return res.status(400).json({ message: '❌ ID chi nhánh không hợp lệ' });
     }
 
     // Kiểm tra email đã tồn tại
@@ -58,10 +65,13 @@ router.post('/register', async (req, res) => {
       userData.branch_name = branch_name;
     }
 
+    console.log('🔧 [REGISTER] Creating user with data:', userData);
     await User.create(userData);
+    console.log('✅ [REGISTER] User created successfully');
 
     res.status(201).json({ message: '✅ Tạo tài khoản thành công' });
   } catch (err) {
+    console.error('❌ [REGISTER] Error creating user:', err);
     res.status(500).json({ message: '❌ Lỗi server', error: err.message });
   }
 });

@@ -88,7 +88,7 @@ function QuanLyUser() {
   useEffect(() => {
     fetchBranches();
     if (activeTab === "pending") {
-      fetchPendingUsers();
+    fetchPendingUsers();
     } else if (activeTab === "all") {
       fetchAllUsers();
     }
@@ -129,6 +129,9 @@ function QuanLyUser() {
         branch_name: selectedBranch ? selectedBranch.name : "",
       };
 
+      console.log("🔧 Creating user with data:", userData);
+      console.log("🔧 API URL:", `${import.meta.env.VITE_API_URL}/api/auth/register`);
+
       const res = await fetch(`${import.meta.env.VITE_API_URL}/api/auth/register`, {
         method: "POST",
         headers: {
@@ -138,7 +141,9 @@ function QuanLyUser() {
         body: JSON.stringify(userData),
       });
 
+      console.log("🔧 Response status:", res.status);
       const data = await res.json();
+      console.log("🔧 Response data:", data);
 
       if (res.ok) {
         alert("✅ Tạo tài khoản thành công");
@@ -321,19 +326,19 @@ function QuanLyUser() {
   ];
 
   const renderContent = () => {
-    if (loading) {
-      return (
+  if (loading) {
+    return (
         <div className="flex items-center justify-center py-20">
           <div className="text-center">
             <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-purple-600 mx-auto mb-4"></div>
             <p className="text-gray-600">Đang tải danh sách user...</p>
           </div>
         </div>
-      );
-    }
+    );
+  }
 
-    if (error) {
-      return (
+  if (error) {
+    return (
         <div className="bg-red-50 border-l-4 border-red-500 p-6 rounded-2xl">
           <div className="flex items-center">
             <div className="text-red-600 text-xl mr-3">❌</div>
@@ -363,8 +368,8 @@ function QuanLyUser() {
           itemsPerPage={users.length}
           totalItems={users.length}
         />
-      );
-    }
+    );
+  }
 
     if (activeTab === "all") {
       return (

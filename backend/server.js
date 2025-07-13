@@ -8,6 +8,8 @@ const Cashbook = require('./models/Cashbook'); // THÊM DÒNG NÀY
 const ExportHistory = require('./models/ExportHistory'); // THÊM MODEL EXPORT HISTORY
 const ReturnImport = require('./models/ReturnImport'); // THÊM MODEL RETURN IMPORT
 const ReturnExport = require('./models/ReturnExport'); // THÊM MODEL RETURN EXPORT
+const User = require('./models/User'); // THÊM MODEL USER
+const Branch = require('./models/Branch'); // THÊM MODEL BRANCH
 const authRoutes = require('./routes/auth');
 const userRoutes = require('./routes/user');
 const reportRoutes = require('./routes/report');
@@ -1042,6 +1044,20 @@ mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/vphone')
     console.error('❌ [MONGODB] ReturnExport model error:', error.message);
   }
   
+  try {
+    await User.init();
+    console.log('✅ [MONGODB] User model initialized');
+  } catch (error) {
+    console.error('❌ [MONGODB] User model error:', error.message);
+  }
+  
+  try {
+    await Branch.init();
+    console.log('✅ [MONGODB] Branch model initialized');
+  } catch (error) {
+    console.error('❌ [MONGODB] Branch model error:', error.message);
+  }
+  
   // Tự động tạo admin user nếu chưa có
   const { createDefaultAdmin } = require('./scripts/init-admin');
   await createDefaultAdmin();
@@ -1059,6 +1075,40 @@ app.get('/api/health', (req, res) => {
     timestamp: new Date().toISOString(),
     uptime: process.uptime()
   });
+});
+
+// Test endpoint for user creation
+app.get('/api/test-user-creation', async (req, res) => {
+  try {
+    console.log('🔧 [TEST] Testing user creation endpoint...');
+    
+    // Test User model
+    const userCount = await User.countDocuments();
+    console.log('✅ [TEST] User count:', userCount);
+    
+    // Test Branch model
+    const branchCount = await Branch.countDocuments();
+    console.log('✅ [TEST] Branch count:', branchCount);
+    
+    res.json({
+      status: 'success',
+      models: {
+        User: { count: userCount, available: true },
+        Branch: { count: branchCount, available: true }
+      },
+      endpoints: {
+        register: '/api/auth/register',
+        branches: '/api/branches'
+      }
+    });
+  } catch (error) {
+    console.error('❌ [TEST] User creation test error:', error);
+    res.status(500).json({
+      status: 'error',
+      message: error.message,
+      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+    });
+  }
 });
 
 // Test endpoint for return models
