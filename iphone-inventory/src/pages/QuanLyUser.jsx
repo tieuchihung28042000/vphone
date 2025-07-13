@@ -9,7 +9,7 @@ function QuanLyUser() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [approvingId, setApprovingId] = useState(null);
-  const [activeTab, setActiveTab] = useState("pending"); // pending, all, create
+  const [activeTab, setActiveTab] = useState("all"); // pending, all, create - Mặc định là "all"
   const [allUsers, setAllUsers] = useState([]);
 
   // State cho form tạo user mới

@@ -81,7 +81,7 @@ function App() {
       <Route
         path="/so-quy"
         element={
-          <PrivateRoute requiredRole={["admin", "quan_ly", "thu_ngan", "nhan_vien_ban_hang"]}>
+          <PrivateRoute requiredRole={["admin", "quan_ly"]}>
             <Cashbook />
           </PrivateRoute>
         }
