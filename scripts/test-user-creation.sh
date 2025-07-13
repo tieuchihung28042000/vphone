@@ -15,21 +15,27 @@ curl -s http://localhost:4000/api/test-user-creation
 echo "3. Testing branches endpoint..."
 curl -s http://localhost:4000/api/branches
 
-# Test 4: Test user registration (with dummy data)
-echo "4. Testing user registration..."
+# Test 4: Get real branch ID
+echo "4. Getting real branch ID..."
+BRANCH_ID=$(curl -s http://localhost:4000/api/branches | jq -r '.[0]._id')
+BRANCH_NAME=$(curl -s http://localhost:4000/api/branches | jq -r '.[0].name')
+echo "Using branch: $BRANCH_NAME ($BRANCH_ID)"
+
+# Test 5: Test user registration (with real branch data)
+echo "5. Testing user registration..."
 curl -s -X POST http://localhost:4000/api/auth/register \
   -H "Content-Type: application/json" \
-  -d '{
-    "email": "test@example.com",
-    "password": "123456",
-    "full_name": "Test User",
-    "role": "nhan_vien_ban_hang",
-    "branch_id": "test-branch-id",
-    "branch_name": "Test Branch"
-  }'
+  -d "{
+    \"email\": \"test$(date +%s)@example.com\",
+    \"password\": \"123456\",
+    \"full_name\": \"Test User\",
+    \"role\": \"nhan_vien_ban_hang\",
+    \"branch_id\": \"$BRANCH_ID\",
+    \"branch_name\": \"$BRANCH_NAME\"
+  }"
 
-# Test 5: Check Docker logs for user creation
-echo "5. Checking Docker logs for user creation..."
+# Test 6: Check Docker logs for user creation
+echo "6. Checking Docker logs for user creation..."
 docker logs vphone-backend --tail 30 | grep -i "register\|user\|error"
 
 echo "✅ User creation test completed!" 
