@@ -14,6 +14,10 @@ RUN npm ci --only=production
 # Copy source code
 COPY . .
 
+# Ensure models directory exists and is copied
+RUN ls -la /app/models/
+RUN ls -la /app/routes/
+
 # Tạo user non-root để bảo mật
 RUN addgroup -g 1001 -S nodejs
 RUN adduser -S nodeuser -u 1001

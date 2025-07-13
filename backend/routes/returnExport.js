@@ -7,6 +7,15 @@ const { authenticateToken, requireRole, filterByBranch } = require('../middlewar
 
 const router = express.Router();
 
+// Error handling middleware
+const handleError = (res, error, message = 'Internal server error') => {
+  console.error(`[ReturnExport Error] ${message}:`, error);
+  res.status(500).json({ 
+    message, 
+    error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error' 
+  });
+};
+
 // Lấy danh sách trả hàng bán
 router.get('/', authenticateToken, filterByBranch, async (req, res) => {
   try {

@@ -6,6 +6,8 @@ require('dotenv').config();
 const Inventory = require('./models/Inventory');
 const Cashbook = require('./models/Cashbook'); // THÊM DÒNG NÀY
 const ExportHistory = require('./models/ExportHistory'); // THÊM MODEL EXPORT HISTORY
+const ReturnImport = require('./models/ReturnImport'); // THÊM MODEL RETURN IMPORT
+const ReturnExport = require('./models/ReturnExport'); // THÊM MODEL RETURN EXPORT
 const authRoutes = require('./routes/auth');
 const userRoutes = require('./routes/user');
 const reportRoutes = require('./routes/report');
@@ -33,6 +35,7 @@ app.options('*', cors());
 app.use(express.json());
 
 // ==== Đăng ký các route API ====
+console.log('🔧 [SERVER] Đang đăng ký routes...');
 app.use('/api', adminRoutes);
 app.use('/api', reportRoutes); // ĐÃ SỬA, đặt đúng path
 app.use('/api/auth', authRoutes);
@@ -41,8 +44,10 @@ app.use('/api/branches', branchRoutes);
 app.use('/api/categories', categoryRoutes);
 app.use('/api/cong-no', congNoRoutes);
 app.use('/api/cashbook', cashbookRoutes); // ROUTE SỔ QUỸ
+console.log('🔧 [SERVER] Đang đăng ký return routes...');
 app.use('/api/return-import', returnImportRoutes);
 app.use('/api/return-export', returnExportRoutes);
+console.log('✅ [SERVER] Đã đăng ký tất cả routes');
 
 // ==================== API: SUPER DEBUG BACKEND ====================
 app.get('/api/super-debug/:id', async (req, res) => {
@@ -1020,6 +1025,22 @@ app.post('/api/thu-no-khach', async (req, res) => {
 mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/vphone')
 .then(async () => {
   console.log('✅ Kết nối MongoDB thành công');
+  console.log('🔧 [MONGODB] Checking models...');
+  
+  // Kiểm tra models có hoạt động không
+  try {
+    await ReturnImport.init();
+    console.log('✅ [MONGODB] ReturnImport model initialized');
+  } catch (error) {
+    console.error('❌ [MONGODB] ReturnImport model error:', error.message);
+  }
+  
+  try {
+    await ReturnExport.init();
+    console.log('✅ [MONGODB] ReturnExport model initialized');
+  } catch (error) {
+    console.error('❌ [MONGODB] ReturnExport model error:', error.message);
+  }
   
   // Tự động tạo admin user nếu chưa có
   const { createDefaultAdmin } = require('./scripts/init-admin');
@@ -1038,6 +1059,36 @@ app.get('/api/health', (req, res) => {
     timestamp: new Date().toISOString(),
     uptime: process.uptime()
   });
+});
+
+// Test endpoint for return models
+app.get('/api/test-return-models', async (req, res) => {
+  try {
+    console.log('🔧 [TEST] Testing return models...');
+    
+    // Test ReturnImport model
+    const returnImportCount = await ReturnImport.countDocuments();
+    console.log('✅ [TEST] ReturnImport count:', returnImportCount);
+    
+    // Test ReturnExport model
+    const returnExportCount = await ReturnExport.countDocuments();
+    console.log('✅ [TEST] ReturnExport count:', returnExportCount);
+    
+    res.json({
+      status: 'success',
+      models: {
+        ReturnImport: { count: returnImportCount, available: true },
+        ReturnExport: { count: returnExportCount, available: true }
+      }
+    });
+  } catch (error) {
+    console.error('❌ [TEST] Return models error:', error);
+    res.status(500).json({
+      status: 'error',
+      message: error.message,
+      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+    });
+  }
 });
 
 const PORT = process.env.PORT || 4000;
