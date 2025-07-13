@@ -102,11 +102,11 @@ const Sidebar = ({ activeTab }) => {
               )}
             </div>
           ) : (
-            <div className="flex items-center">
-              <div className="w-12 h-12 bg-white/20 rounded-xl flex items-center justify-center">
-                <span className="text-xl">👤</span>
-              </div>
-              <div className="ml-3">
+          <div className="flex items-center">
+            <div className="w-12 h-12 bg-white/20 rounded-xl flex items-center justify-center">
+              <span className="text-xl">👤</span>
+            </div>
+            <div className="ml-3">
                 <p className="text-sm font-semibold">Guest User</p>
                 <p className="text-xs text-white/70">Chưa đăng nhập</p>
               </div>

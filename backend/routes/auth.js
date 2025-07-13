@@ -51,7 +51,7 @@ router.post('/register', async (req, res) => {
 
     const userData = {
       email,
-      username: username || null,
+      username: (username && username.trim()) ? username.trim() : null, // Xử lý empty string và spaces
       password: hashed,
       role: role || 'user',
       full_name,
