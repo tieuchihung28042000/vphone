@@ -26,9 +26,9 @@ const Sidebar = ({ activeTab }) => {
 
   // Định nghĩa tất cả menu items
   const allMenuItems = [
-    { id: 'nhap-hang', label: 'Nhập hàng', icon: '📥', path: '/nhap-hang', roles: ['admin', 'quan_ly', 'thu_ngan'] },
+    { id: 'nhap-hang', label: 'Nhập hàng', icon: '📥', path: '/nhap-hang', roles: ['admin', 'quan_ly'] },
     { id: 'xuat-hang', label: 'Xuất hàng', icon: '📤', path: '/xuat-hang', roles: ['admin', 'quan_ly', 'thu_ngan', 'nhan_vien_ban_hang'] },
-    { id: 'ton-kho', label: 'Tồn kho', icon: '📦', path: '/ton-kho-so-luong', roles: ['admin', 'quan_ly', 'thu_ngan'] },
+    { id: 'ton-kho', label: 'Tồn kho', icon: '📦', path: '/ton-kho-so-luong', roles: ['admin', 'quan_ly'] },
     { id: 'so-quy', label: 'Sổ quỹ', icon: '💰', path: '/so-quy', roles: ['admin', 'quan_ly'] },
     { id: 'cong-no', label: 'Công nợ', icon: '💳', path: '/cong-no', roles: ['admin', 'quan_ly', 'thu_ngan'] },
     { id: 'bao-cao', label: 'Báo cáo', icon: '📊', path: '/bao-cao', roles: ['admin', 'quan_ly'] },
