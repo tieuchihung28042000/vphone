@@ -1,3 +1,49 @@
+# OS/Editor
+.DS_Store
+.idea/
+.vscode/
+
+# Env
+.env
+*.env.local
+
+# Dependencies
+node_modules/
+backend/node_modules/
+iphone-inventory/node_modules/
+
+# Builds/Dist
+dist/
+build/
+backend/dist/
+iphone-inventory/dist/
+
+# Logs
+logs/
+**/*.log
+backend/server.log
+iphone-inventory/server.log
+
+# App data and databases
+data/
+data/**
+!data/mongodb_config/**
+
+# MongoDB/WiredTiger artifacts (safety if outside data/)
+**/WiredTiger*
+**/*.wt
+**/journal/
+**/diagnostic.data/
+
+# Vercel/Deploy
+.vercel/
+iphone-inventory/.vercel/
+
+# Misc
+coverage/
+.nyc_output/
+*.local
+
 # ==========================================
 # GITIGNORE FOR FULL-STACK NODE.JS PROJECT
 # ==========================================
