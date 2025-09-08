@@ -2,6 +2,8 @@ const express = require('express');
 const router = express.Router();
 const Cashbook = require('../models/Cashbook');
 const XLSX = require('xlsx');
+const ActivityLog = require('../models/ActivityLog');
+const { authenticateToken } = require('../middleware/auth');
 
 // Helper function: Tạo mã phiếu thu/chi
 function generateReceiptCode(type, date = new Date()) {
@@ -31,7 +33,7 @@ async function calculateBalance(source, branch, amount, type) {
 }
 
 // 1. Thêm mới giao dịch (POST)
-router.post('/', async (req, res) => {
+router.post('/', authenticateToken, async (req, res) => {
   try {
     const { 
       type, content, amount, source, branch, category, 
@@ -67,6 +69,18 @@ router.post('/', async (req, res) => {
     });
 
     await cashbook.save();
+    try {
+      await ActivityLog.create({
+        user_id: req.user?._id,
+        username: req.user?.username || req.user?.email || '',
+        role: req.user?.role,
+        action: 'create',
+        module: 'cashbook',
+        payload_snapshot: cashbook.toObject(),
+        ref_id: String(cashbook._id),
+        branch: cashbook.branch
+      });
+    } catch (e) { /* ignore log error */ }
     res.json({ message: '✅ Thêm giao dịch thành công', cashbook });
   } catch (err) {
     res.status(400).json({ message: '❌ Lỗi thêm giao dịch', error: err.message });
@@ -74,7 +88,7 @@ router.post('/', async (req, res) => {
 });
 
 // 2. Sửa giao dịch (PUT)
-router.put('/:id', async (req, res) => {
+router.put('/:id', authenticateToken, async (req, res) => {
   try {
     const transaction = await Cashbook.findById(req.params.id);
     if (!transaction) {
@@ -99,6 +113,18 @@ router.put('/:id', async (req, res) => {
     }
 
     const updated = await Cashbook.findByIdAndUpdate(req.params.id, updateData, { new: true });
+    try {
+      await ActivityLog.create({
+        user_id: req.user?._id,
+        username: req.user?.username || req.user?.email || '',
+        role: req.user?.role,
+        action: 'update',
+        module: 'cashbook',
+        payload_snapshot: { before: transaction.toObject(), after: updated.toObject() },
+        ref_id: String(updated._id),
+        branch: updated.branch
+      });
+    } catch (e) { /* ignore log error */ }
     res.json({ message: '✅ Đã cập nhật giao dịch', cashbook: updated });
   } catch (err) {
     res.status(400).json({ message: '❌ Lỗi cập nhật giao dịch', error: err.message });
@@ -106,7 +132,7 @@ router.put('/:id', async (req, res) => {
 });
 
 // 3. Xoá giao dịch (DELETE)
-router.delete('/:id', async (req, res) => {
+router.delete('/:id', authenticateToken, async (req, res) => {
   try {
     const transaction = await Cashbook.findById(req.params.id);
     if (!transaction) {
@@ -119,6 +145,18 @@ router.delete('/:id', async (req, res) => {
     }
 
     await Cashbook.findByIdAndDelete(req.params.id);
+    try {
+      await ActivityLog.create({
+        user_id: req.user?._id,
+        username: req.user?.username || req.user?.email || '',
+        role: req.user?.role,
+        action: 'delete',
+        module: 'cashbook',
+        payload_snapshot: transaction.toObject(),
+        ref_id: String(transaction._id),
+        branch: transaction.branch
+      });
+    } catch (e) { /* ignore log error */ }
     res.json({ message: '✅ Đã xoá giao dịch' });
   } catch (err) {
     res.status(400).json({ message: '❌ Lỗi xoá giao dịch', error: err.message });
@@ -681,6 +719,27 @@ router.get('/total-summary', async (req, res) => {
     });
   } catch (error) {
     res.status(500).json({ message: '❌ Lỗi server khi lấy tổng hợp sổ quỹ', error: error.message });
+  }
+});
+
+// 11. Gợi ý nội dung đã dùng (distinct content + count)
+router.get('/contents', authenticateToken, async (req, res) => {
+  try {
+    const { type, branch, limit = 50 } = req.query;
+    const match = {};
+    if (type && type !== 'all') match.type = type;
+    if (branch && branch !== 'all') match.branch = branch;
+
+    const results = await Cashbook.aggregate([
+      { $match: match },
+      { $group: { _id: '$content', count: { $sum: 1 } } },
+      { $sort: { count: -1 } },
+      { $limit: Number(limit) }
+    ]);
+
+    res.json(results.map(r => ({ content: r._id, count: r.count })));
+  } catch (err) {
+    res.status(400).json({ message: '❌ Lỗi lấy danh sách nội dung', error: err.message });
   }
 });
 

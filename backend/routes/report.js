@@ -3,8 +3,14 @@ const router = express.Router();
 const Inventory = require('../models/Inventory');
 const ExportHistory = require('../models/ExportHistory'); // Thêm dòng này
 const { sendResetPasswordEmail } = require('../utils/mail');
+const { authenticateToken, requireReportAccess } = require('../middleware/auth');
+const ReturnExport = require('../models/ReturnExport');
+const Cashbook = require('../models/Cashbook');
 
 // ==================== API: Báo cáo lợi nhuận có lọc ====================
+// Bảo vệ toàn bộ router báo cáo bằng auth + chặn thu_ngan
+router.use(authenticateToken, requireReportAccess);
+
 router.get('/bao-cao-loi-nhuan', async (req, res) => {
   try {
     const { from, to, branch } = req.query;
@@ -42,6 +48,59 @@ router.get('/bao-cao-loi-nhuan', async (req, res) => {
   } catch (err) {
     console.error('❌ Lỗi khi lấy báo cáo lợi nhuận:', err);
     res.status(500).json({ message: '❌ Lỗi server khi lấy báo cáo' });
+  }
+});
+
+// ==================== API: Báo cáo tài chính 7 chỉ tiêu ====================
+router.get('/financial-report/summary', async (req, res) => {
+  try {
+    const { from, to, branch } = req.query;
+    if (!from || !to) {
+      return res.status(400).json({ message: 'Thiếu khoảng thời gian' });
+    }
+    const fromDate = new Date(from);
+    const toDate = new Date(to);
+    toDate.setDate(toDate.getDate() + 1);
+
+    const exportQuery = { sold_date: { $gte: fromDate, $lt: toDate } };
+    if (branch && branch !== 'all') exportQuery.branch = branch;
+
+    const exports = await ExportHistory.find(exportQuery);
+    const totalRevenue = exports.reduce((s, e) => s + (e.price_sell || 0) * (e.quantity || 1), 0);
+
+    const returnQuery = { return_date: { $gte: fromDate, $lt: toDate } };
+    if (branch && branch !== 'all') returnQuery.branch = branch;
+    const returns = await ReturnExport.find(returnQuery);
+    const totalReturnRevenue = returns.reduce((s, r) => s + (r.return_amount || 0), 0);
+
+    const netRevenue = totalRevenue - totalReturnRevenue;
+
+    const cbQuery = { date: { $gte: fromDate, $lt: toDate } };
+    if (branch && branch !== 'all') cbQuery.branch = branch;
+    const cashItems = await Cashbook.find(cbQuery);
+
+    const totalExpense = cashItems
+      .filter(i => i.type === 'chi')
+      .reduce((s, i) => s + (i.amount || 0), 0);
+
+    const otherIncome = cashItems
+      .filter(i => i.type === 'thu' && (!i.related_type || i.related_type === 'manual'))
+      .reduce((s, i) => s + (i.amount || 0), 0);
+
+    const operatingProfit = netRevenue - totalExpense;
+    const netProfit = operatingProfit + otherIncome;
+
+    res.json({
+      totalRevenue,
+      totalReturnRevenue,
+      netRevenue,
+      totalExpense,
+      operatingProfit,
+      otherIncome,
+      netProfit
+    });
+  } catch (err) {
+    res.status(500).json({ message: '❌ Lỗi báo cáo tài chính', error: err.message });
   }
 });
 

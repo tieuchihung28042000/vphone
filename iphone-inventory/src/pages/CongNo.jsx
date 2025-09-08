@@ -50,10 +50,16 @@ function CongNo() {
     data: null 
   });
   const [editForm, setEditForm] = useState({ 
-    name: "", 
-    phone: "", 
-    da_thanh_toan: "" 
+    name: '', 
+    phone: '', 
+    da_thanh_toan: '' 
   });
+  // STORY 07: multi-payment
+  const [payments, setPayments] = useState([{ source: 'tien_mat', amount: '' }]);
+  const addPayRow = () => setPayments(prev => [...prev, { source: 'tien_mat', amount: '' }]);
+  const rmPayRow = (idx) => setPayments(prev => prev.filter((_, i) => i !== idx));
+  const upPayRow = (idx, key, val) => setPayments(prev => prev.map((p, i) => i===idx ? { ...p, [key]: key==='amount'? parseNumber(val): val } : p));
+  const sumPayments = () => payments.reduce((s,p)=> s + (parseFloat(p.amount||0) || 0), 0);
 
   // Stats calculation - tách riêng cho 2 tab
   const customerStats = {
@@ -142,29 +148,48 @@ function CongNo() {
     
     try {
       const { type, data } = editModal;
+      // Nếu có nhập multi-payment thì gọi pay API tương ứng
+      const payList = payments.map(p=>({ source:p.source, amount: parseFloat(p.amount||0) || 0 })).filter(p=>p.amount>0);
+      let ok = true;
+      if (payList.length>0) {
+        if (type === 'customer') {
+          const res = await fetch(`${import.meta.env.VITE_API_URL}/api/cong-no/cong-no-pay-customer`, {
+            method: 'PUT',
+            headers: { 'Content-Type':'application/json' },
+            body: JSON.stringify({ customer_name: data.customer_name, customer_phone: data.customer_phone, payments: payList })
+          });
+          ok = res.ok;
+        } else {
+          const res = await fetch(`${import.meta.env.VITE_API_URL}/api/cong-no/supplier-debt-pay`, {
+            method: 'PUT',
+            headers: { 'Content-Type':'application/json' },
+            body: JSON.stringify({ supplier_name: data.supplier_name || data.supplier, payments: payList })
+          });
+          ok = res.ok;
+        }
+      }
+      // Cập nhật thông tin tên/điện thoại nếu có
       const apiEndpoint = type === 'customer' ? 'update-customer' : 'update-supplier';
       const payload = type === 'customer' ? {
         old_customer_name: data.customer_name,
-        old_customer_phone: data.customer_phone || "",
+        old_customer_phone: data.customer_phone || '',
         new_customer_name: editForm.name.trim(),
         new_customer_phone: editForm.phone.trim(),
         da_thanh_toan: parseNumber(editForm.da_thanh_toan) || 0
       } : {
-        old_supplier_name: data.supplier_name,
-        old_supplier_phone: data.supplier_phone || "",
+        old_supplier_name: data.supplier_name || data.supplier,
+        old_supplier_phone: data.supplier_phone || '',
         new_supplier_name: editForm.name.trim(),
         new_supplier_phone: editForm.phone.trim(),
         da_thanh_toan: parseNumber(editForm.da_thanh_toan) || 0
       };
-      
-      const res = await fetch(`${import.meta.env.VITE_API_URL}/api/cong-no/${apiEndpoint}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
+      const res2 = await fetch(`${import.meta.env.VITE_API_URL}/api/cong-no/${apiEndpoint}`, {
+        method: 'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)
       });
-      
-      const result = await res.json();
-      if (res.ok) {
+      ok = ok && res2.ok;
+       
+      const result = await res2.json().catch(()=>({}));
+      if (ok) {
         alert(`✅ Đã cập nhật thông tin ${type === 'customer' ? 'khách hàng' : 'nhà cung cấp'}!`);
         type === 'customer' ? await fetchDebts() : await fetchSupplierDebts();
       } else {
@@ -173,6 +198,7 @@ function CongNo() {
       
       setEditModal({ open: false, type: '', data: null });
       setEditForm({ name: "", phone: "", da_thanh_toan: "" });
+      setPayments([{ source: 'tien_mat', amount: '' }]);
     } catch (err) {
       console.error('❌ Error saving edit:', err);
       alert("❌ Lỗi kết nối khi cập nhật!");
@@ -495,8 +521,27 @@ function CongNo() {
                   Để trống nếu không muốn thay đổi số tiền đã thanh toán
                 </p>
               </div>
+              {/* Multi-payment rows */}
+              <div className="pt-2 border-t">
+                <div className="text-sm font-semibold mb-2">Thanh toán đa nguồn (tùy chọn)</div>
+                {payments.map((p, idx)=> (
+                  <div key={idx} className="grid grid-cols-5 gap-2 items-center mb-2">
+                    <select className="form-input col-span-2" value={p.source} onChange={e=>upPayRow(idx,'source',e.target.value)}>
+                      <option value="tien_mat">💵 Tiền mặt</option>
+                      <option value="the">💳 Thẻ</option>
+                      <option value="vi_dien_tu">📱 Ví điện tử</option>
+                    </select>
+                    <input className="form-input col-span-2" placeholder="Số tiền" value={formatNumber(p.amount)} onChange={e=>upPayRow(idx,'amount',e.target.value)} />
+                    <button type="button" className="text-red-600" onClick={()=>rmPayRow(idx)}>Xóa</button>
+                  </div>
+                ))}
+                <div className="flex items-center justify-between">
+                  <button type="button" onClick={addPayRow} className="bg-gray-100 px-3 py-2 rounded">+ Thêm nguồn</button>
+                  <div className="text-xs text-gray-600">Tổng: {formatCurrency(sumPayments())}</div>
+                </div>
               </div>
-            
+            </div>
+           
             <div className="flex gap-3 mt-6">
               <button
                 onClick={handleSaveEdit}
@@ -504,15 +549,16 @@ function CongNo() {
               >
                 ✅ Lưu
               </button>
-                <button
-                  onClick={() => {
+              <button
+                onClick={() => {
                   setEditModal({ open: false, type: '', data: null });
                   setEditForm({ name: "", phone: "", da_thanh_toan: "" });
-                  }}
+                  setPayments([{ source: 'tien_mat', amount: '' }]);
+                }}
                 className="flex-1 bg-gray-300 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-400 transition-colors"
-                >
-                  ❌ Hủy
-                </button>
+              >
+                ❌ Hủy
+              </button>
             </div>
           </div>
         </div>

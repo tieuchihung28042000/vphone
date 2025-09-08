@@ -86,6 +86,16 @@ function XuatHang() {
     note: ''
   });
 
+  // ===== STORY 05: Batch xuất hàng + payments + kênh/nhân viên + In bill =====
+  const [batchMode, setBatchMode] = useState(false);
+  const [batchItems, setBatchItems] = useState([]); // {imei, sku, product_name, quantity, price_sell}
+  const [batchRow, setBatchRow] = useState({ imei: '', sku: '', product_name: '', quantity: '1', price_sell: '' });
+  const [batchPayments, setBatchPayments] = useState([{ source: 'tien_mat', amount: '' }]);
+  const [salesChannel, setSalesChannel] = useState('');
+  const [salesperson, setSalesperson] = useState('');
+  const [autoCashbook, setAutoCashbook] = useState(true);
+  const [lastBatchResponse, setLastBatchResponse] = useState(null);
+
   // Stats calculation
   const stats = {
     totalSold: soldItems.length,
@@ -524,6 +534,103 @@ function XuatHang() {
       setMessage("❌ Lỗi khi tạo phiếu trả hàng");
       setTimeout(() => setMessage(""), 3000);
     }
+  };
+
+  // ---- Batch helpers ----
+  const addBatchItem = () => {
+    if (!(batchRow.product_name || batchRow.imei || batchRow.sku)) return;
+    const q = parseInt(batchRow.quantity) || 1;
+    const p = parseFloat(parseNumber(batchRow.price_sell)) || 0;
+    setBatchItems(prev => [...prev, { ...batchRow, quantity: String(q), price_sell: String(p) }]);
+    setBatchRow({ imei: '', sku: '', product_name: '', quantity: '1', price_sell: '' });
+  };
+  const removeBatchItem = (idx) => setBatchItems(prev => prev.filter((_, i) => i !== idx));
+  const addPaymentRow = () => setBatchPayments(prev => [...prev, { source: 'tien_mat', amount: '' }]);
+  const removePaymentRow = (idx) => setBatchPayments(prev => prev.filter((_, i) => i !== idx));
+  const updatePaymentRow = (idx, key, val) => {
+    setBatchPayments(prev => prev.map((p, i) => i === idx ? { ...p, [key]: key === 'amount' ? parseNumber(val) : val } : p));
+  };
+  const totalBatchPayment = () => batchPayments.reduce((s, p) => s + (parseFloat(parseNumber(p.amount)) || 0), 0);
+
+  const handleSubmitBatch = async () => {
+    if (batchItems.length === 0) {
+      setMessage('❌ Vui lòng thêm ít nhất 1 dòng sản phẩm');
+      setTimeout(() => setMessage(''), 3000);
+      return;
+    }
+    const items = batchItems.map(i => ({
+      imei: i.imei || undefined,
+      sku: i.sku || undefined,
+      product_name: i.product_name || undefined,
+      quantity: parseInt(i.quantity) || 1,
+      price_sell: parseFloat(parseNumber(i.price_sell)) || 0
+    }));
+    const payments = batchPayments
+      .map(p => ({ source: p.source, amount: parseFloat(parseNumber(p.amount)) || 0 }))
+      .filter(p => p.amount > 0);
+
+    try {
+      const token = localStorage.getItem('token') || sessionStorage.getItem('token');
+      const res = await fetch(`${import.meta.env.VITE_API_URL}/api/report/xuat-hang-batch`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+        },
+        body: JSON.stringify({
+          items,
+          customer_name: formData.buyer_name,
+          customer_phone: formData.buyer_phone,
+          branch: formData.branch,
+          sold_date: formData.sale_date,
+          note: formData.note,
+          payments,
+          sales_channel: salesChannel,
+          salesperson,
+          auto_cashbook: autoCashbook
+        })
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setLastBatchResponse(data);
+        setMessage('✅ Tạo đơn batch thành công');
+        // reset
+        setBatchItems([]);
+        setBatchPayments([{ source: 'tien_mat', amount: '' }]);
+        await Promise.all([fetchSoldItems(), fetchAvailableItems()]);
+        setTimeout(() => setMessage(''), 3000);
+      } else {
+        setMessage(`❌ ${data.message || 'Tạo batch thất bại'}`);
+        setTimeout(() => setMessage(''), 3000);
+      }
+    } catch (e) {
+      setMessage('❌ Lỗi kết nối khi tạo batch');
+      setTimeout(() => setMessage(''), 3000);
+    }
+  };
+
+  const handlePrintLastBatch = () => {
+    if (!lastBatchResponse) return;
+    const { batch_id, items = [] } = lastBatchResponse;
+    const wnd = window.open('', '_blank');
+    const total = items.reduce((s, it) => s + (it.price_sell || 0) * (it.quantity || 1), 0);
+    wnd.document.write(`
+      <html><head><title>Hóa đơn ${batch_id}</title>
+      <style>body{font-family:Arial;padding:16px} table{width:100%;border-collapse:collapse} td,th{border:1px solid #ccc;padding:6px;text-align:left}</style>
+      </head><body>
+      <h2>VPHONE - HÓA ĐƠN BÁN HÀNG</h2>
+      <p>Mã phiếu: <strong>${batch_id}</strong></p>
+      <p>Khách hàng: ${formData.buyer_name || ''} - ${formData.buyer_phone || ''}</p>
+      <p>Chi nhánh: ${formData.branch || ''} - Ngày: ${formData.sale_date}</p>
+      <p>Kênh bán: ${salesChannel || ''} - Nhân viên: ${salesperson || ''}</p>
+      <table><thead><tr><th>Tên hàng</th><th>SKU/IMEI</th><th>SL</th><th>Đơn giá</th><th>Thành tiền</th></tr></thead><tbody>
+      ${items.map(it => `<tr><td>${it.product_name || ''}</td><td>${it.sku || it.imei || ''}</td><td>${it.quantity || 1}</td><td>${(it.price_sell||0).toLocaleString()}</td><td>${(((it.price_sell||0)*(it.quantity||1))||0).toLocaleString()}</td></tr>`).join('')}
+      </tbody></table>
+      <h3 style="text-align:right">Tổng: ${total.toLocaleString()} đ</h3>
+      <script>window.print();</script>
+      </body></html>
+    `);
+    wnd.document.close();
   };
 
   // Clear filters function
@@ -1223,6 +1330,75 @@ function XuatHang() {
             </button>
           </div>
         </form>
+      </FormCard>
+
+      {/* STORY 05: Batch export */}
+      <FormCard
+        title={batchMode ? '📦 Xuất hàng batch (nhiều dòng)' : '📦 Xuất hàng batch (bấm để bật)'}
+        subtitle="Thêm nhiều dòng sản phẩm, thanh toán đa nguồn, kênh/nhân viên"
+        onReset={() => { setBatchMode(!batchMode); }}
+        showReset
+        resetLabel={batchMode ? 'Tắt batch' : 'Bật batch'}
+        message={lastBatchResponse ? `✅ Đã tạo: ${lastBatchResponse.batch_id}` : ''}
+      >
+        {batchMode && (
+          <div className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-6 gap-3">
+              <input className="form-input" placeholder="IMEI" value={batchRow.imei} onChange={e=>setBatchRow({...batchRow, imei:e.target.value})} />
+              <input className="form-input" placeholder="SKU" value={batchRow.sku} onChange={e=>setBatchRow({...batchRow, sku:e.target.value})} />
+              <input className="form-input" placeholder="Tên sản phẩm" value={batchRow.product_name} onChange={e=>setBatchRow({...batchRow, product_name:e.target.value})} />
+              <input className="form-input" placeholder="SL" type="number" value={batchRow.quantity} onChange={e=>setBatchRow({...batchRow, quantity:e.target.value})} />
+              <input className="form-input" placeholder="Giá bán" value={batchRow.price_sell} onChange={e=>setBatchRow({...batchRow, price_sell:e.target.value})} />
+              <button type="button" onClick={addBatchItem} className="bg-blue-600 text-white rounded-lg px-3">+ Thêm dòng</button>
+            </div>
+            {batchItems.length>0 && (
+              <div className="overflow-x-auto">
+                <table className="min-w-full text-sm">
+                  <thead><tr><th className="p-2 border">Tên</th><th className="p-2 border">SKU/IMEI</th><th className="p-2 border">SL</th><th className="p-2 border">Giá</th><th className="p-2 border"></th></tr></thead>
+                  <tbody>
+                    {batchItems.map((it, idx)=> (
+                      <tr key={idx}>
+                        <td className="p-2 border">{it.product_name}</td>
+                        <td className="p-2 border">{it.sku||it.imei}</td>
+                        <td className="p-2 border">{it.quantity}</td>
+                        <td className="p-2 border">{formatCurrency(parseFloat(parseNumber(it.price_sell))||0)}</td>
+                        <td className="p-2 border text-right"><button className="text-red-600" onClick={()=>removeBatchItem(idx)}>Xóa</button></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <input className="form-input" placeholder="Kênh bán (Facebook/Zalo/Shop...)" value={salesChannel} onChange={e=>setSalesChannel(e.target.value)} />
+              <input className="form-input" placeholder="Nhân viên bán" value={salesperson} onChange={e=>setSalesperson(e.target.value)} />
+            </div>
+            <div className="space-y-2">
+              <div className="font-semibold">Thanh toán đa nguồn</div>
+              {batchPayments.map((p, idx)=> (
+                <div key={idx} className="grid grid-cols-1 md:grid-cols-4 gap-2 items-center">
+                  <select className="form-input" value={p.source} onChange={e=>updatePaymentRow(idx,'source',e.target.value)}>
+                    <option value="tien_mat">💵 Tiền mặt</option>
+                    <option value="the">💳 Thẻ</option>
+                    <option value="vi_dien_tu">📱 Ví điện tử</option>
+                  </select>
+                  <input className="form-input" placeholder="Số tiền" value={formatNumber(p.amount)} onChange={e=>updatePaymentRow(idx,'amount',e.target.value)} />
+                  <div className="text-sm text-gray-600">Tổng hiện tại: {formatCurrency(totalBatchPayment())}</div>
+                  <button type="button" className="text-red-600" onClick={()=>removePaymentRow(idx)}>Xóa</button>
+                </div>
+              ))}
+              <button type="button" onClick={addPaymentRow} className="bg-gray-100 px-3 py-2 rounded">+ Thêm nguồn</button>
+            </div>
+            <label className="inline-flex items-center gap-2">
+              <input type="checkbox" checked={autoCashbook} onChange={e=>setAutoCashbook(e.target.checked)} />
+              <span>Tự động ghi sổ quỹ</span>
+            </label>
+            <div className="flex gap-3">
+              <button type="button" onClick={handleSubmitBatch} className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg">💾 Gửi batch</button>
+              <button type="button" disabled={!lastBatchResponse} onClick={handlePrintLastBatch} className="bg-purple-600 hover:bg-purple-700 disabled:bg-gray-400 text-white px-4 py-2 rounded-lg">🖨️ In bill</button>
+            </div>
+          </div>
+        )}
       </FormCard>
 
       {/* Filters */}

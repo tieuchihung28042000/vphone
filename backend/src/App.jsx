@@ -10,6 +10,7 @@ import BaoCao from "./BaoCao"; // Nếu BaoCao.jsx nằm ngoài thư mục pages
 import PrivateRoute from "./components/PrivateRoute";
 import CongNo from "./pages/CongNo";
 import NotAuthorized from "./pages/NotAuthorized";
+import LichSuHoatDong from "./pages/LichSuHoatDong";
 
 function App() {
   return (
@@ -25,7 +26,7 @@ function App() {
       <Route
         path="/nhap-hang"
         element={
-          <PrivateRoute>
+          <PrivateRoute requiredRole={["admin","quan_ly","thu_ngan"]}>
             <NhapHang />
           </PrivateRoute>
         }
@@ -49,7 +50,7 @@ function App() {
       <Route
         path="/bao-cao"
         element={
-          <PrivateRoute>
+          <PrivateRoute requireReportAccess>
             <BaoCao />
           </PrivateRoute>
         }
@@ -59,6 +60,14 @@ function App() {
         element={
           <PrivateRoute>
             <CongNo />
+          </PrivateRoute>
+        }
+      />
+      <Route
+        path="/lich-su-hoat-dong"
+        element={
+          <PrivateRoute requiredRole={["admin","quan_ly"]}>
+            <LichSuHoatDong />
           </PrivateRoute>
         }
       />

@@ -4,6 +4,7 @@ const ExportHistory = require('../models/ExportHistory');
 const Inventory = require('../models/Inventory');
 const Cashbook = require('../models/Cashbook');
 const { authenticateToken, requireRole, filterByBranch } = require('../middleware/auth');
+const ActivityLog = require('../models/ActivityLog');
 
 const router = express.Router();
 
@@ -73,6 +74,7 @@ router.post('/', authenticateToken, requireRole(['admin', 'quan_ly', 'thu_ngan',
       original_export_id,
       return_amount,
       return_method,
+      payments = [], // [{source, amount}]
       return_reason,
       note = ''
     } = req.body;
@@ -117,6 +119,18 @@ router.post('/', authenticateToken, requireRole(['admin', 'quan_ly', 'thu_ngan',
     });
 
     await returnExport.save();
+    try {
+      await ActivityLog.create({
+        user_id: req.user?._id,
+        username: req.user?.full_name || req.user?.email || '',
+        role: req.user?.role,
+        action: 'create',
+        module: 'return_export',
+        payload_snapshot: returnExport.toObject(),
+        ref_id: String(returnExport._id),
+        branch: returnExport.branch
+      });
+    } catch (e) { }
 
     // Tạo lại sản phẩm trong tồn kho (nếu cần)
     if (returnExport.return_to_inventory) {
@@ -144,22 +158,44 @@ router.post('/', authenticateToken, requireRole(['admin', 'quan_ly', 'thu_ngan',
       'transfer': 'the'
     };
 
-    await Cashbook.create({
-      type: 'chi',
-      amount: return_amount,
-      content: `Trả hàng bán: ${returnExport.product_name}${returnExport.imei ? ` (IMEI: ${returnExport.imei})` : ''}`,
-      category: 'tra_hang_ban',
-      source: sourceMapping[return_method] || 'tien_mat',
-      customer: returnExport.customer_name,
-      date: new Date(),
-      branch: returnExport.branch,
-      related_id: returnExport._id.toString(),
-      related_type: 'tra_hang_ban',
-      note: `Lý do: ${return_reason}. KH: ${returnExport.customer_name}${returnExport.customer_phone ? ` - ${returnExport.customer_phone}` : ''}. ${note || ''}`,
-      user: req.user.full_name || req.user.email,
-      is_auto: true,
-      editable: false
-    });
+    if (Array.isArray(payments) && payments.length > 0) {
+      for (const p of payments) {
+        if (!p || !p.amount) continue;
+        await Cashbook.create({
+          type: 'chi',
+          amount: Number(p.amount),
+          content: `Trả hàng bán: ${returnExport.product_name}${returnExport.imei ? ` (IMEI: ${returnExport.imei})` : ''}`,
+          category: 'tra_hang_ban',
+          source: p.source || 'tien_mat',
+          customer: returnExport.customer_name,
+          date: new Date(),
+          branch: returnExport.branch,
+          related_id: returnExport._id.toString(),
+          related_type: 'tra_hang_ban',
+          note: `Lý do: ${return_reason}. KH: ${returnExport.customer_name}${returnExport.customer_phone ? ` - ${returnExport.customer_phone}` : ''}. ${note || ''}`,
+          user: req.user.full_name || req.user.email,
+          is_auto: true,
+          editable: false
+        });
+      }
+    } else {
+      await Cashbook.create({
+        type: 'chi',
+        amount: return_amount,
+        content: `Trả hàng bán: ${returnExport.product_name}${returnExport.imei ? ` (IMEI: ${returnExport.imei})` : ''}`,
+        category: 'tra_hang_ban',
+        source: sourceMapping[return_method] || 'tien_mat',
+        customer: returnExport.customer_name,
+        date: new Date(),
+        branch: returnExport.branch,
+        related_id: returnExport._id.toString(),
+        related_type: 'tra_hang_ban',
+        note: `Lý do: ${return_reason}. KH: ${returnExport.customer_name}${returnExport.customer_phone ? ` - ${returnExport.customer_phone}` : ''}. ${note || ''}`,
+        user: req.user.full_name || req.user.email,
+        is_auto: true,
+        editable: false
+      });
+    }
 
     res.status(201).json({
       message: 'Tạo phiếu trả hàng và cập nhật sổ quỹ thành công',
@@ -204,6 +240,19 @@ router.delete('/:id', authenticateToken, requireRole(['admin']), async (req, res
     // Cập nhật trạng thái thành cancelled
     returnExport.status = 'cancelled';
     await returnExport.save();
+
+    try {
+      await ActivityLog.create({
+        user_id: req.user?._id,
+        username: req.user?.full_name || req.user?.email || '',
+        role: req.user?.role,
+        action: 'delete',
+        module: 'return_export',
+        payload_snapshot: returnExport.toObject(),
+        ref_id: String(returnExport._id),
+        branch: returnExport.branch
+      });
+    } catch (e) { }
 
     res.json({ message: 'Hủy phiếu trả hàng thành công' });
   } catch (error) {

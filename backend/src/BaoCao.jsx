@@ -4,6 +4,7 @@ import { useNavigate } from "react-router-dom";
 
 function BaoCao() {
   const [data, setData] = useState(null);
+  const [financial, setFinancial] = useState(null); // 7 chỉ tiêu tài chính
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
   const [filter, setFilter] = useState("Hôm nay");
@@ -89,9 +90,24 @@ function BaoCao() {
       const json = await res.json();
       console.log("📊 Backend dữ liệu báo cáo trả về:", json); // DEBUG XEM API TRẢ VỀ
       setData(json);
+
+      // Đồng thời gọi thêm Báo cáo tài chính 7 chỉ tiêu
+      try {
+        let api2 = `${import.meta.env.VITE_API_URL}/api/report/financial-report/summary`;
+        if (fromDate && toDate) {
+          api2 += `?from=${fromDate}&to=${toDate}&branch=${branchParam}`;
+        }
+        const r2 = await fetch(api2);
+        const j2 = await r2.json();
+        setFinancial(j2);
+      } catch (e) {
+        console.error('❌ Lỗi load báo cáo tài chính 7 chỉ tiêu:', e);
+        setFinancial(null);
+      }
     } catch (err) {
       console.error("❌ Lỗi khi fetch báo cáo:", err);
       setData(null);
+      setFinancial(null);
     }
   };
 
@@ -161,7 +177,8 @@ function BaoCao() {
         </button>
       </div>
 
-      <h2 className="text-2xl font-bold mb-4">📊 Báo cáo lợi nhuận</h2>
+      <h2 className="text-2xl font-bold mb-1">📊 Báo cáo lợi nhuận</h2>
+      <p className="text-sm text-gray-500 mb-4">Kèm tóm tắt Báo cáo tài chính (7 chỉ tiêu)</p>
 
       {/* Bộ lọc */}
       <div className="flex flex-wrap gap-3 mb-4">
@@ -237,6 +254,43 @@ function BaoCao() {
         </div>
       ) : (
         <p className="text-gray-500 mt-4">Đang tải dữ liệu...</p>
+      )}
+
+      {/* Báo cáo tài chính 7 chỉ tiêu */}
+      {financial && (
+        <div className="bg-white rounded-lg shadow p-4 mb-6">
+          <h3 className="font-bold mb-3">🧮 Tóm tắt 7 chỉ tiêu</h3>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+            <div className="p-3 border rounded">
+              <p className="text-gray-500">(1) Doanh thu bán hàng</p>
+              <p className="font-semibold text-blue-600">{(financial.totalRevenue||0).toLocaleString()} đ</p>
+            </div>
+            <div className="p-3 border rounded">
+              <p className="text-gray-500">(2) Doanh thu trả hàng</p>
+              <p className="font-semibold text-red-600">{(financial.totalReturnRevenue||0).toLocaleString()} đ</p>
+            </div>
+            <div className="p-3 border rounded">
+              <p className="text-gray-500">(3) Doanh thu thuần</p>
+              <p className="font-semibold">{(financial.netRevenue||0).toLocaleString()} đ</p>
+            </div>
+            <div className="p-3 border rounded">
+              <p className="text-gray-500">(4) Chi phí</p>
+              <p className="font-semibold text-orange-600">{(financial.totalExpense||0).toLocaleString()} đ</p>
+            </div>
+            <div className="p-3 border rounded">
+              <p className="text-gray-500">(5) LN HĐKD</p>
+              <p className="font-semibold text-green-700">{(financial.operatingProfit||0).toLocaleString()} đ</p>
+            </div>
+            <div className="p-3 border rounded">
+              <p className="text-gray-500">(6) Thu nhập khác</p>
+              <p className="font-semibold">{(financial.otherIncome||0).toLocaleString()} đ</p>
+            </div>
+            <div className="p-3 border rounded">
+              <p className="text-gray-500">(7) Lợi nhuận thuần</p>
+              <p className="font-semibold text-purple-700">{(financial.netProfit||0).toLocaleString()} đ</p>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Danh sách đơn hàng bán chi tiết - LUÔN HIỂN THỊ */}

@@ -3,6 +3,7 @@ const ReturnImport = require('../models/ReturnImport');
 const Inventory = require('../models/Inventory');
 const Cashbook = require('../models/Cashbook');
 const { authenticateToken, requireRole, filterByBranch } = require('../middleware/auth');
+const ActivityLog = require('../models/ActivityLog');
 
 const router = express.Router();
 
@@ -72,6 +73,7 @@ router.post('/', authenticateToken, requireRole(['admin', 'quan_ly', 'thu_ngan']
       return_amount,
       return_cash = 0,
       return_transfer = 0,
+      payments = [],
       return_reason,
       note = ''
     } = req.body;
@@ -93,8 +95,16 @@ router.post('/', authenticateToken, requireRole(['admin', 'quan_ly', 'thu_ngan']
     }
 
     // Kiểm tra tổng tiền trả
-    if (return_cash + return_transfer !== return_amount) {
-      return res.status(400).json({ message: 'Tổng tiền trả không khớp' });
+    const hasPayments = Array.isArray(payments) && payments.length > 0;
+    if (!hasPayments) {
+      if ((Number(return_cash) + Number(return_transfer)) !== Number(return_amount)) {
+        return res.status(400).json({ message: 'Tổng tiền trả không khớp' });
+      }
+    } else {
+      const sum = payments.reduce((s, p) => s + Number(p?.amount || 0), 0);
+      if (sum !== Number(return_amount)) {
+        return res.status(400).json({ message: 'Tổng payments không khớp return_amount' });
+      }
     }
 
     // Tạo phiếu trả hàng
@@ -116,47 +126,86 @@ router.post('/', authenticateToken, requireRole(['admin', 'quan_ly', 'thu_ngan']
     });
 
     await returnImport.save();
+    try {
+      await ActivityLog.create({
+        user_id: req.user?._id,
+        username: req.user?.full_name || req.user?.email || '',
+        role: req.user?.role,
+        action: 'create',
+        module: 'return_import',
+        payload_snapshot: returnImport.toObject(),
+        ref_id: String(returnImport._id),
+        branch: returnImport.branch
+      });
+    } catch (e) { }
 
     // Xóa sản phẩm khỏi tồn kho
     await Inventory.findByIdAndDelete(original_inventory_id);
 
-    // ✅ Tích hợp với sổ quỹ - tạo phiếu chi khi trả hàng nhập
-    if (returnCash > 0) {
-      await Cashbook.create({
-        type: 'chi',
-        amount: returnCash,
-        content: `Trả hàng nhập: ${returnImport.product_name}${returnImport.imei ? ` (IMEI: ${returnImport.imei})` : ''}`,
-        category: 'tra_hang_nhap',
-        source: 'tien_mat',
-        supplier: returnImport.supplier,
-        date: new Date(),
-        branch: returnImport.branch,
-        related_id: returnImport._id.toString(),
-        related_type: 'tra_hang_nhap',
-        note: `Lý do: ${returnForm.return_reason}. ${returnImport.note || ''}`,
-        user: req.user.full_name || req.user.email,
-        is_auto: true,
-        editable: false
-      });
+    // ✅ Tích hợp với sổ quỹ - tạo phiếu chi khi trả hàng nhập (legacy fields)
+    const returnCash = Number(return_cash) || 0;
+    const returnTransfer = Number(return_transfer) || 0;
+    if (!hasPayments) {
+      if (returnCash > 0) {
+        await Cashbook.create({
+          type: 'chi',
+          amount: returnCash,
+          content: `Trả hàng nhập: ${returnImport.product_name}${returnImport.imei ? ` (IMEI: ${returnImport.imei})` : ''}`,
+          category: 'tra_hang_nhap',
+          source: 'tien_mat',
+          supplier: returnImport.supplier,
+          date: new Date(),
+          branch: returnImport.branch,
+          related_id: returnImport._id.toString(),
+          related_type: 'tra_hang_nhap',
+          note: `Lý do: ${return_reason}. ${note || ''}`,
+          user: req.user.full_name || req.user.email,
+          is_auto: true,
+          editable: false
+        });
+      }
+
+      if (returnTransfer > 0) {
+        await Cashbook.create({
+          type: 'chi',
+          amount: returnTransfer,
+          content: `Trả hàng nhập: ${returnImport.product_name}${returnImport.imei ? ` (IMEI: ${returnImport.imei})` : ''}`,
+          category: 'tra_hang_nhap',
+          source: 'the',
+          supplier: returnImport.supplier,
+          date: new Date(),
+          branch: returnImport.branch,
+          related_id: returnImport._id.toString(),
+          related_type: 'tra_hang_nhap',
+          note: `Lý do: ${return_reason}. ${note || ''}`,
+          user: req.user.full_name || req.user.email,
+          is_auto: true,
+          editable: false
+        });
+      }
     }
 
-    if (returnTransfer > 0) {
-      await Cashbook.create({
-        type: 'chi',
-        amount: returnTransfer,
-        content: `Trả hàng nhập: ${returnImport.product_name}${returnImport.imei ? ` (IMEI: ${returnImport.imei})` : ''}`,
-        category: 'tra_hang_nhap',
-        source: 'the',
-        supplier: returnImport.supplier,
-        date: new Date(),
-        branch: returnImport.branch,
-        related_id: returnImport._id.toString(),
-        related_type: 'tra_hang_nhap',
-        note: `Lý do: ${return_reason}. ${note || ''}`,
-        user: req.user.full_name || req.user.email,
-        is_auto: true,
-        editable: false
-      });
+    // payments[] đa nguồn
+    if (hasPayments) {
+      for (const p of payments) {
+        if (!p || !p.amount) continue;
+        await Cashbook.create({
+          type: 'chi',
+          amount: Number(p.amount),
+          content: `Trả hàng nhập: ${returnImport.product_name}${returnImport.imei ? ` (IMEI: ${returnImport.imei})` : ''}`,
+          category: 'tra_hang_nhap',
+          source: p.source || 'tien_mat',
+          supplier: returnImport.supplier,
+          date: new Date(),
+          branch: returnImport.branch,
+          related_id: returnImport._id.toString(),
+          related_type: 'tra_hang_nhap',
+          note: `Lý do: ${return_reason}. ${note || ''}`,
+          user: req.user.full_name || req.user.email,
+          is_auto: true,
+          editable: false
+        });
+      }
     }
 
     res.status(201).json({
@@ -202,6 +251,19 @@ router.delete('/:id', authenticateToken, requireRole(['admin']), async (req, res
     // Cập nhật trạng thái thành cancelled
     returnImport.status = 'cancelled';
     await returnImport.save();
+
+    try {
+      await ActivityLog.create({
+        user_id: req.user?._id,
+        username: req.user?.full_name || req.user?.email || '',
+        role: req.user?.role,
+        action: 'delete',
+        module: 'return_import',
+        payload_snapshot: returnImport.toObject(),
+        ref_id: String(returnImport._id),
+        branch: returnImport.branch
+      });
+    } catch (e) { }
 
     res.json({ message: 'Hủy phiếu trả hàng thành công' });
   } catch (error) {

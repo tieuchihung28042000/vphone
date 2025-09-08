@@ -15,5 +15,8 @@ const ExportHistorySchema = new mongoose.Schema({
   branch: String,
   category: String,
   export_type: { type: String, default: 'normal' }, // phân biệt phụ kiện / iPhone
+  batch_id: { type: String },
+  sales_channel: { type: String },
+  salesperson: { type: String },
 });
 module.exports = mongoose.model('ExportHistory', ExportHistorySchema);

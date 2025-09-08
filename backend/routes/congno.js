@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const Inventory = require('../models/Inventory');
 const ExportHistory = require('../models/ExportHistory');
+const Cashbook = require('../models/Cashbook');
 
 // ✅ API lấy danh sách khách hàng còn công nợ (tính từ ExportHistory)
 router.get('/cong-no-list', async (req, res) => {
@@ -114,14 +115,17 @@ router.put('/cong-no-pay-customer', async (req, res) => {
   try {
     console.log('💰 API cong-no-pay-customer received:', req.body);
     
-    const { customer_name, customer_phone, amount, note } = req.body;
+    const { customer_name, customer_phone, amount, note, branch, payments = [] } = req.body;
     
     if (!customer_name || typeof customer_name !== 'string' || customer_name.trim().length === 0) {
       return res.status(400).json({ message: "❌ Thiếu thông tin tên khách hàng" });
     }
     
-    if (!amount || isNaN(amount) || Number(amount) <= 0) {
-      return res.status(400).json({ message: "❌ Số tiền trả phải lớn hơn 0" });
+    const hasPayments = Array.isArray(payments) && payments.length > 0;
+    if (!hasPayments) {
+      if (!amount || isNaN(amount) || Number(amount) <= 0) {
+        return res.status(400).json({ message: "❌ Số tiền trả phải lớn hơn 0" });
+      }
     }
 
     const query = { customer_name };
@@ -130,7 +134,12 @@ router.put('/cong-no-pay-customer', async (req, res) => {
     // Lấy các đơn còn nợ
     const orders = await ExportHistory.find(query).sort({ sold_date: 1 });
 
-    let remain = Number(amount);
+    const totalInput = hasPayments ? payments.reduce((s, p) => s + Number(p?.amount || 0), 0) : Number(amount);
+    if (!totalInput || isNaN(totalInput) || Number(totalInput) <= 0) {
+      return res.status(400).json({ message: "❌ Số tiền trả phải lớn hơn 0" });
+    }
+
+    let remain = Number(totalInput);
     let totalPaid = 0;
     let totalDebt = 0;
 
@@ -170,6 +179,27 @@ router.put('/cong-no-pay-customer', async (req, res) => {
       paid_amount: totalPaid,
       remaining_debt: totalDebt
     });
+
+    // Ghi sổ quỹ: thu tiền nợ theo payments (hoặc 1 dòng nếu không có payments)
+    try {
+      const payList = hasPayments ? payments : [{ source: 'tien_mat', amount: totalPaid }];
+      for (const p of payList) {
+        if (!p || !p.amount) continue;
+        await Cashbook.create({
+          type: 'thu',
+          amount: Number(p.amount),
+          content: `Thu nợ khách: ${customer_name}`,
+          note: note || '',
+          date: new Date(),
+          branch: branch || '',
+          source: p.source || 'tien_mat',
+          customer: customer_name,
+          related_type: 'tra_no',
+          is_auto: true,
+          editable: false
+        });
+      }
+    } catch (e) { /* ignore */ }
   } catch (err) {
     console.error('❌ Error in cong-no-pay-customer:', err);
     res.status(500).json({ message: '❌ Lỗi server khi trả nợ', error: err.message });
@@ -181,7 +211,7 @@ router.put('/cong-no-add-customer', async (req, res) => {
   try {
     console.log('📈 API cong-no-add-customer received:', req.body);
     
-    const { customer_name, customer_phone, amount, note } = req.body;
+    const { customer_name, customer_phone, amount, note, branch } = req.body;
     
     if (!customer_name || typeof customer_name !== 'string' || customer_name.trim().length === 0) {
       return res.status(400).json({ message: "❌ Thiếu thông tin tên khách hàng" });
@@ -225,6 +255,23 @@ router.put('/cong-no-add-customer', async (req, res) => {
       added_amount: amountToAdd,
       total_debt: totalDebt
     });
+
+    // Ghi sổ quỹ: chi công nợ (cộng nợ)
+    try {
+      await Cashbook.create({
+        type: 'chi',
+        amount: Number(amountToAdd),
+        content: `Cộng nợ khách: ${customer_name}`,
+        note: note || '',
+        date: new Date(),
+        branch: branch || '',
+        source: 'cong_no',
+        customer: customer_name,
+        related_type: 'tra_no',
+        is_auto: true,
+        editable: false
+      });
+    } catch (e) { /* ignore */ }
   } catch (err) {
     console.error('❌ Error in cong-no-add-customer:', err);
     res.status(500).json({ message: '❌ Lỗi server khi cộng nợ', error: err.message });
@@ -319,7 +366,7 @@ router.get('/supplier-debt-list', async (req, res) => {
 // ✅ API trả nợ nhà cung cấp
 router.put('/supplier-debt-pay', async (req, res) => {
   try {
-  const { supplier_name, amount, note } = req.body;
+  const { supplier_name, amount, note, branch, payments = [] } = req.body;
     
     if (!supplier_name || !amount || isNaN(amount) || Number(amount) <= 0) {
       return res.status(400).json({ message: "❌ Thông tin không hợp lệ" });
@@ -328,7 +375,13 @@ router.put('/supplier-debt-pay', async (req, res) => {
     const query = { supplier: supplier_name };
     const orders = await Inventory.find(query).sort({ import_date: 1 });
 
-    let remain = Number(amount);
+    const hasPayments = Array.isArray(payments) && payments.length > 0;
+    const totalInput = hasPayments ? payments.reduce((s, p) => s + Number(p?.amount || 0), 0) : Number(amount);
+    if (!totalInput || isNaN(totalInput) || Number(totalInput) <= 0) {
+      return res.status(400).json({ message: "❌ Số tiền trả phải lớn hơn 0" });
+    }
+
+    let remain = Number(totalInput);
     let totalPaid = 0;
 
     for (const order of orders) {
@@ -355,6 +408,27 @@ router.put('/supplier-debt-pay', async (req, res) => {
       message: `✅ Đã trả nợ ${totalPaid.toLocaleString()}đ cho NCC ${supplier_name}`,
       paid_amount: totalPaid
     });
+
+    // Ghi sổ quỹ: chi tiền trả NCC theo payments
+    try {
+      const payList = hasPayments ? payments : [{ source: 'tien_mat', amount: totalPaid }];
+      for (const p of payList) {
+        if (!p || !p.amount) continue;
+        await Cashbook.create({
+          type: 'chi',
+          amount: Number(p.amount),
+          content: `Trả nợ NCC: ${supplier_name}`,
+          note: note || '',
+          date: new Date(),
+          branch: branch || '',
+          source: p.source || 'tien_mat',
+          supplier: supplier_name,
+          related_type: 'tra_no_ncc',
+          is_auto: true,
+          editable: false
+        });
+      }
+    } catch (e) { /* ignore */ }
   } catch (err) {
     console.error('❌ Error in supplier-debt-pay:', err);
     res.status(500).json({ message: '❌ Lỗi server khi trả nợ NCC', error: err.message });
@@ -364,7 +438,7 @@ router.put('/supplier-debt-pay', async (req, res) => {
 // ✅ API cộng nợ nhà cung cấp
 router.put('/supplier-debt-add', async (req, res) => {
   try {
-  const { supplier_name, amount, note } = req.body;
+  const { supplier_name, amount, note, branch } = req.body;
     
     if (!supplier_name || !amount || isNaN(amount) || Number(amount) <= 0) {
       return res.status(400).json({ message: "❌ Thông tin không hợp lệ" });
@@ -389,6 +463,23 @@ router.put('/supplier-debt-add', async (req, res) => {
       message: `✅ Đã cộng nợ ${amountToAdd.toLocaleString()}đ cho NCC ${supplier_name}`,
       added_amount: amountToAdd
     });
+
+    // Ghi sổ quỹ: thu hồi (giảm chi) hoặc ghi nhận điều chỉnh nợ NCC
+    try {
+      await Cashbook.create({
+        type: 'chi',
+        amount: Number(amountToAdd),
+        content: `Cộng nợ NCC: ${supplier_name}`,
+        note: note || '',
+        date: new Date(),
+        branch: branch || '',
+        source: 'cong_no',
+        supplier: supplier_name,
+        related_type: 'tra_no_ncc',
+        is_auto: true,
+        editable: false
+      });
+    } catch (e) { /* ignore */ }
   } catch (err) {
     console.error('❌ Error in supplier-debt-add:', err);
     res.status(500).json({ message: '❌ Lỗi server khi cộng nợ NCC', error: err.message });

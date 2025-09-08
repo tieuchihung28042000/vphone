@@ -41,6 +41,13 @@ router.post('/approve-user/:id', authenticateToken, requireRole(['admin', 'quan_
       return res.status(404).json({ message: 'User không tồn tại' });
     }
 
+    // Nếu không phải admin, chỉ được duyệt user trong chi nhánh của mình
+    if (req.user.role !== 'admin') {
+      if (!req.user.branch_id || !user.branch_id || String(user.branch_id) !== String(req.user.branch_id)) {
+        return res.status(403).json({ message: 'Chỉ được duyệt user trong chi nhánh của bạn' });
+      }
+    }
+
     if (user.approved) {
       return res.status(400).json({ message: 'User đã được phê duyệt trước đó' });
     }
@@ -73,6 +80,13 @@ router.put('/update-role/:id', authenticateToken, requireRole(['admin', 'quan_ly
     // Chỉ admin mới có thể cập nhật vai trò admin
     if (role === 'admin' && req.user.role !== 'admin') {
       return res.status(403).json({ message: 'Chỉ admin mới có thể tạo admin' });
+    }
+
+    // Nếu không phải admin, chỉ được đổi vai trò user trong chi nhánh của mình
+    if (req.user.role !== 'admin') {
+      if (!req.user.branch_id || !user.branch_id || String(user.branch_id) !== String(req.user.branch_id)) {
+        return res.status(403).json({ message: 'Chỉ được cập nhật user trong chi nhánh của bạn' });
+      }
     }
 
     user.role = role;

@@ -13,6 +13,7 @@ const Branch = require('./models/Branch'); // THÊM MODEL BRANCH
 const authRoutes = require('./routes/auth');
 const userRoutes = require('./routes/user');
 const reportRoutes = require('./routes/report');
+const reportBatchRoutes = require('./routes/reportBatch');
 const branchRoutes = require('./routes/branch');
 const categoryRoutes = require('./routes/category');
 const congNoRoutes = require('./routes/congno');
@@ -20,6 +21,7 @@ const adminRoutes = require('./routes/admin');
 const cashbookRoutes = require('./routes/cashbook'); // THÊM DÒNG NÀY
 const returnImportRoutes = require('./routes/returnImport');
 const returnExportRoutes = require('./routes/returnExport');
+const activityLogRoutes = require('./routes/activityLogs');
 
 const app = express();
 
@@ -39,13 +41,16 @@ app.use(express.json());
 // ==== Đăng ký các route API ====
 console.log('🔧 [SERVER] Đang đăng ký routes...');
 app.use('/api', adminRoutes);
-app.use('/api', reportRoutes); // ĐÃ SỬA, đặt đúng path
+// Mount báo cáo dưới /api/report để tránh middleware báo cáo chặn toàn bộ /api
+app.use('/api/report', reportRoutes);
+app.use('/api', reportBatchRoutes);
 app.use('/api/auth', authRoutes);
 app.use('/api/user', userRoutes);
 app.use('/api/branches', branchRoutes);
 app.use('/api/categories', categoryRoutes);
 app.use('/api/cong-no', congNoRoutes);
 app.use('/api/cashbook', cashbookRoutes); // ROUTE SỔ QUỸ
+app.use('/api/activity-logs', activityLogRoutes);
 console.log('🔧 [SERVER] Đang đăng ký return routes...');
 app.use('/api/return-import', returnImportRoutes);
 app.use('/api/return-export', returnExportRoutes);
@@ -170,7 +175,8 @@ app.post('/api/nhap-hang', async (req, res) => {
       quantity,
       category,
       source, // Nguồn tiền: Tiền mặt/Thẻ/Công nợ (từ frontend)
-      da_thanh_toan_nhap // Số tiền đã thanh toán cho nhà cung cấp
+      da_thanh_toan_nhap, // Số tiền đã thanh toán cho nhà cung cấp
+      payments // [{source, amount}] nếu đa nguồn
     } = req.body;
 
     if (imei) {
@@ -198,16 +204,20 @@ app.post('/api/nhap-hang', async (req, res) => {
       });
       await newItem.save();
 
-      // --- Ghi SỔ QUỸ: chỉ ghi số tiền đã thanh toán thực tế ---
-      if (daTTNhapNum > 0) {
+      // --- Ghi SỔ QUỸ: hỗ trợ đa nguồn ---
+      const payList = Array.isArray(payments) && payments.length > 0
+        ? payments
+        : (daTTNhapNum > 0 ? [{ source: source || 'tien_mat', amount: daTTNhapNum }] : []);
+      for (const p of payList) {
+        if (!p || !p.amount) continue;
         await Cashbook.create({
           type: 'chi',
-          amount: daTTNhapNum,
+          amount: Number(p.amount),
           content: `Nhập hàng: ${product_name} (IMEI: ${imei})`,
           note: note || '',
           date: import_date || new Date(),
           branch,
-          source: source || 'Tiền mặt',
+          source: p.source || 'tien_mat',
           supplier: supplier || '',
           related_id: newItem._id,
         });
@@ -270,16 +280,20 @@ app.post('/api/nhap-hang', async (req, res) => {
       });
       await newItem.save();
 
-      // --- Ghi SỔ QUỸ: chỉ ghi số tiền đã thanh toán thực tế ---
-      if (daTTNhapNum > 0) {
+      // --- Ghi SỔ QUỸ: hỗ trợ đa nguồn ---
+      const payList2 = Array.isArray(payments) && payments.length > 0
+        ? payments
+        : (daTTNhapNum > 0 ? [{ source: source || 'tien_mat', amount: daTTNhapNum }] : []);
+      for (const p of payList2) {
+        if (!p || !p.amount) continue;
         await Cashbook.create({
           type: 'chi',
-          amount: daTTNhapNum,
+          amount: Number(p.amount),
           content: `Nhập phụ kiện: ${product_name}`,
           note: note || '',
           date: import_date || new Date(),
           branch,
-          source: source || 'Tiền mặt',
+          source: p.source || 'tien_mat',
           supplier: supplier || '',
           related_id: newItem._id,
         });

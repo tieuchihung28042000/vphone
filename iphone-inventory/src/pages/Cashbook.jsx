@@ -106,6 +106,50 @@ export default function Cashbook() {
     date: format(new Date(), 'yyyy-MM-dd')
   });
 
+  // ======= GỢI Ý NỘI DUNG (STORY 03) =======
+  const [suggestList, setSuggestList] = useState([]);
+  const [showSuggest, setShowSuggest] = useState(false);
+  const [suggestLoading, setSuggestLoading] = useState(false);
+  const [selectedSuggestFilter, setSelectedSuggestFilter] = useState('');
+
+  const fetchSuggestList = async (query) => {
+    try {
+      if (!query || query.trim().length < 2) {
+        setSuggestList([]);
+        setShowSuggest(false);
+        return;
+      }
+      setSuggestLoading(true);
+      const url = `${import.meta.env.VITE_API_URL}/api/cashbook/contents?limit=50`;
+      const res = await fetch(url);
+      const json = await res.json();
+      if (Array.isArray(json)) {
+        // Ưu tiên những content khớp với query
+        const q = query.toLowerCase();
+        const filtered = json
+          .filter(i => (i.content || '').toLowerCase().includes(q))
+          .slice(0, 10);
+        setSuggestList(filtered);
+        setShowSuggest(filtered.length > 0);
+      } else {
+        setSuggestList([]);
+        setShowSuggest(false);
+      }
+    } catch (err) {
+      console.error('Error fetching cashbook suggestions:', err);
+      setSuggestList([]);
+      setShowSuggest(false);
+    } finally {
+      setSuggestLoading(false);
+    }
+  };
+
+  const handleSelectSuggest = (item) => {
+    if (!item) return;
+    setFormData(prev => ({ ...prev, content: item.content || '' }));
+    setShowSuggest(false);
+  };
+
   // Load danh sách chi nhánh từ database
   const loadBranches = async () => {
     try {
@@ -900,10 +944,36 @@ export default function Cashbook() {
                 name="content"
                 placeholder="Mô tả chi tiết giao dịch"
                 value={formData.content}
-                onChange={(e) => setFormData(prev => ({ ...prev, content: e.target.value }))}
+                onChange={async (e) => {
+                  const val = e.target.value;
+                  setFormData(prev => ({ ...prev, content: val }));
+                  fetchSuggestList(val);
+                }}
                 className="form-input"
                 required
               />
+              {/* Gợi ý nội dung */}
+              {showSuggest && (
+                <div className="mt-2 bg-white border rounded-xl shadow-sm max-h-56 overflow-auto">
+                  {suggestLoading && (
+                    <div className="px-3 py-2 text-sm text-gray-500">Đang tải gợi ý...</div>
+                  )}
+                  {!suggestLoading && suggestList.map((it, idx) => (
+                    <button
+                      key={idx}
+                      type="button"
+                      onClick={() => handleSelectSuggest(it)}
+                      className="w-full text-left px-3 py-2 hover:bg-gray-50 flex items-center justify-between"
+                    >
+                      <span className="text-sm text-gray-800">{it.content}</span>
+                      <span className="text-xs text-gray-500">{it.count}</span>
+                    </button>
+                  ))}
+                  {!suggestLoading && suggestList.length === 0 && (
+                    <div className="px-3 py-2 text-sm text-gray-500">Không có gợi ý</div>
+                  )}
+                </div>
+              )}
             </div>
 
             <div>
@@ -1021,6 +1091,32 @@ export default function Cashbook() {
             >
               📊 Xuất Excel
           </button>
+          </div>
+          {/* Lọc nhanh theo nội dung đã dùng */}
+          <div className="lg:col-span-2">
+            <div className="flex items-center gap-2">
+              <select
+                value={selectedSuggestFilter}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setSelectedSuggestFilter(val);
+                  handleFilterChange('search', val || '');
+                }}
+                className="form-input"
+              >
+                <option value="">Lọc theo nội dung đã dùng (nếu có)</option>
+                {suggestList.map((s, i) => (
+                  <option key={i} value={s.content}>{s.content} ({s.count})</option>
+                ))}
+              </select>
+              <button
+                type="button"
+                onClick={() => fetchSuggestList(filters.search || formData.content || '')}
+                className="px-3 py-2 rounded-xl bg-blue-600 text-white hover:bg-blue-700"
+              >
+                🔄 Nạp gợi ý
+              </button>
+            </div>
           </div>
         </div>
       </FilterCard>
