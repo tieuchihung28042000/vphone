@@ -10,10 +10,8 @@ function Login() {
   const handleLogin = async (e) => {
     e.preventDefault();
 
-    const apiUrl = import.meta.env.VITE_API_URL || window.location.origin;
-
     try {
-      const res = await fetch(`${apiUrl}/api/auth/login`, {
+      const res = await fetch(`/api/auth/login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, password }),

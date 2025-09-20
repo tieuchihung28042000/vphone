@@ -34,7 +34,9 @@ services:
       NODE_ENV: production
       PORT: ${BACKEND_PORT:-4000}
       # Compose-internal Mongo URI using service hostname "mongodb"
-      MONGODB_URI: mongodb://${MONGO_ROOT_USERNAME}:${MONGO_ROOT_PASSWORD}@mongodb:27017/${MONGO_DB_NAME}?authSource=admin
+      # NOTE: Nếu mật khẩu có ký tự đặc biệt (ví dụ @), dùng bản URL-encoded
+      # Ưu tiên biến MONGO_ROOT_PASSWORD_URLENCODED nếu có, fallback về MONGO_ROOT_PASSWORD
+      MONGODB_URI: mongodb://${MONGO_ROOT_USERNAME}:${MONGO_ROOT_PASSWORD_URLENCODED:-${MONGO_ROOT_PASSWORD}}@mongodb:27017/${MONGO_DB_NAME}?authSource=admin
       JWT_SECRET: ${JWT_SECRET}
       EMAIL_USER: ${EMAIL_USER}
       EMAIL_PASS: ${EMAIL_PASS}

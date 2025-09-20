@@ -107,9 +107,8 @@ function XuatHang() {
   // API functions
   const fetchAvailableItems = async () => {
     try {
-      const apiUrl = import.meta.env.VITE_API_URL || window.location.origin;
-      // ✅ Sửa: Gọi API tồn kho thay vì nhập hàng để có dữ liệu đã tính toán đúng
-      const res = await fetch(`${apiUrl}/api/ton-kho`);
+      // ✅ Sửa: Gọi API tồn kho (đường dẫn tương đối)
+      const res = await fetch(`/api/ton-kho`);
       
       if (!res.ok) throw new Error(`API Error: ${res.status}`);
       
@@ -136,8 +135,7 @@ function XuatHang() {
 
   const fetchSoldItems = async () => {
     try {
-      const apiUrl = import.meta.env.VITE_API_URL || window.location.origin;
-      const res = await fetch(`${apiUrl}/api/xuat-hang-list`);
+      const res = await fetch(`/api/xuat-hang-list`);
       
       if (!res.ok) throw new Error(`API Error: ${res.status}`);
       
@@ -160,8 +158,7 @@ function XuatHang() {
 
   const fetchBranches = async () => {
     try {
-      const apiUrl = import.meta.env.VITE_API_URL || window.location.origin;
-      const res = await fetch(`${apiUrl}/api/branches`);
+      const res = await fetch(`/api/branches`);
       const data = await res.json();
       setBranches(data);
     } catch (err) {
@@ -171,8 +168,7 @@ function XuatHang() {
 
   const fetchCategories = async () => {
     try {
-      const apiUrl = import.meta.env.VITE_API_URL || window.location.origin;
-      const res = await fetch(`${apiUrl}/api/categories`);
+      const res = await fetch(`/api/categories`);
       const data = await res.json();
       setCategories(data);
     } catch (err) {
@@ -198,7 +194,7 @@ function XuatHang() {
     try {
       // ✅ Thêm timestamp để tránh cache
       const timestamp = Date.now();
-      const res = await fetch(`${import.meta.env.VITE_API_URL}/api/ton-kho?t=${timestamp}`);
+      const res = await fetch(`/api/ton-kho?t=${timestamp}`);
       const data = await res.json();
       const lowerQuery = query.trim().toLowerCase();
       
@@ -286,7 +282,7 @@ function XuatHang() {
     } else if (name === "imei" && value.trim()) {
       // Auto-fill product info when IMEI is entered
       try {
-        const res = await fetch(`${import.meta.env.VITE_API_URL}/api/find-by-imei?imei=${value.trim()}`);
+        const res = await fetch(`/api/find-by-imei?imei=${value.trim()}`);
         if (res.ok) {
           const data = await res.json();
           setFormData((prev) => ({ 
@@ -339,8 +335,8 @@ function XuatHang() {
     try {
       const method = editingItemId ? "PUT" : "POST";
       const url = editingItemId
-        ? `${import.meta.env.VITE_API_URL}/api/xuat-hang/${editingItemId}`
-        : `${import.meta.env.VITE_API_URL}/api/xuat-hang`;
+        ? `/api/xuat-hang/${editingItemId}`
+        : `/api/xuat-hang`;
 
       // ✅ Chuẩn bị data - không tự động tính da_thanh_toan
       const salePrice = parseFloat(parseNumber(formData.sale_price)) || 0;
@@ -498,7 +494,7 @@ function XuatHang() {
 
     try {
       const token = localStorage.getItem("token") || sessionStorage.getItem("token");
-      const res = await fetch(`${import.meta.env.VITE_API_URL}/api/return-export`, {
+      const res = await fetch(`/api/return-export`, {
         method: "POST",
         headers: { 
           "Content-Type": "application/json",
@@ -571,7 +567,7 @@ function XuatHang() {
 
     try {
       const token = localStorage.getItem('token') || sessionStorage.getItem('token');
-      const res = await fetch(`${import.meta.env.VITE_API_URL}/api/report/xuat-hang-batch`, {
+      const res = await fetch(`/api/report/xuat-hang-batch`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
