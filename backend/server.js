@@ -30,7 +30,7 @@ import reportRoutes from './routes/report.js';
 import reportBatchRoutes from './routes/reportBatch.js';
 import branchRoutes from './routes/branch.js';
 import categoryRoutes from './routes/category.js';
-import congNoRoutes from './routes/congNo.js';
+import congNoRoutes from './routes/congno.js';
 import adminRoutes from './routes/admin.js';
 import cashbookRoutes from './routes/cashbook.js'; // THÊM DÒNG NÀY
 import returnImportRoutes from './routes/returnImport.js';

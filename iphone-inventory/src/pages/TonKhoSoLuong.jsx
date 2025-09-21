@@ -28,7 +28,7 @@ function TonKhoSoLuong() {
   const navigate = useNavigate();
 
   useEffect(() => {
-    fetch(`${process.env.VITE_API_URL || 'http://localhost:4000'}/api/ton-kho`)
+    fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:4000'}/api/ton-kho`)
       .then((res) => res.json())
       .then((res) => {
         console.log("API trả về:", res.items);
@@ -175,7 +175,7 @@ function TonKhoSoLuong() {
       
       const imeiDetailsPromises = row.imeis.map(async (imei) => {
         try {
-          const res = await fetch(`${process.env.VITE_API_URL || 'http://localhost:4000'}/api/imei-detail/${imei}`);
+          const res = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:4000'}/api/imei-detail/${imei}`);
           console.log(`📱 IMEI ${imei} response status:`, res.status); // Debug
           
           if (res.ok) {

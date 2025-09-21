@@ -16,7 +16,7 @@ function DanhSachCanhBao() {
   const navigate = useNavigate();
 
   useEffect(() => {
-    fetch(`${process.env.VITE_API_URL || 'http://localhost:4000'}/api/canh-bao-ton-kho`)
+    fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:4000'}/api/canh-bao-ton-kho`)
       .then((res) => res.json())
       .then((res) => {
         // Group by SKU + BRANCH

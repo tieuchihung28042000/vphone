@@ -11,9 +11,6 @@ export default defineConfig(({ mode }) => {
     server: {
       port: 5174,
       open: true,
-      proxy: {
-        '/api': env.VITE_API_URL || 'http://localhost:4000',
-      },
     },
     build: {
       outDir: 'dist',

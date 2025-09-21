@@ -29,7 +29,7 @@ const BaoCao = () => {
   const loadFinancialReport = async () => {
     try {
       setLoading(true);
-      const url = `${process.env.VITE_API_URL || 'http://localhost:4000'}/api/report/financial-report/summary?from=2024-01-01&to=2024-12-31`;
+      const url = `${import.meta.env.VITE_API_URL || 'http://localhost:4000'}/api/report/financial-report/summary?from=2024-01-01&to=2024-12-31`;
       const res = await fetch(url, {
         headers: getAuthHeaders()
       });

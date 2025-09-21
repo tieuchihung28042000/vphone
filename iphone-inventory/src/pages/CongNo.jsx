@@ -86,7 +86,7 @@ function CongNo() {
       if (searchText.trim()) params.append('search', searchText.trim());
       if (showAll) params.append('show_all', 'true');
       
-        const res = await fetch(`${process.env.VITE_API_URL || 'http://localhost:4000'}/api/cong-no/cong-no-list?${params}`);
+        const res = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:4000'}/api/cong-no/cong-no-list?${params}`);
       const data = await res.json();
       setDebts(data.items || []);
     } catch (err) {
@@ -104,7 +104,7 @@ function CongNo() {
     
     try {
       setSupplierLoading(true);
-        const res = await fetch(`${process.env.VITE_API_URL || 'http://localhost:4000'}/api/cong-no/supplier-debt-list?${params}`);
+        const res = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:4000'}/api/cong-no/supplier-debt-list?${params}`);
       
       if (!res.ok) {
         throw new Error(`HTTP ${res.status}: ${res.statusText}`);
@@ -153,14 +153,14 @@ function CongNo() {
       let ok = true;
       if (payList.length>0) {
         if (type === 'customer') {
-              const res = await fetch(`${process.env.VITE_API_URL || 'http://localhost:4000'}/api/cong-no/cong-no-pay-customer`, {
+              const res = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:4000'}/api/cong-no/cong-no-pay-customer`, {
             method: 'PUT',
             headers: { 'Content-Type':'application/json' },
             body: JSON.stringify({ customer_name: data.customer_name, customer_phone: data.customer_phone, payments: payList })
           });
           ok = res.ok;
         } else {
-          const res = await fetch(`${process.env.VITE_API_URL || 'http://localhost:4000'}/api/cong-no/supplier-debt-pay`, {
+          const res = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:4000'}/api/cong-no/supplier-debt-pay`, {
             method: 'PUT',
             headers: { 'Content-Type':'application/json' },
             body: JSON.stringify({ supplier_name: data.supplier_name || data.supplier, payments: payList })
@@ -183,7 +183,7 @@ function CongNo() {
         new_supplier_phone: editForm.phone.trim(),
         da_thanh_toan: parseNumber(editForm.da_thanh_toan) || 0
       };
-      const res2 = await fetch(`${process.env.VITE_API_URL || 'http://localhost:4000'}/api/cong-no/${apiEndpoint}`, {
+      const res2 = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:4000'}/api/cong-no/${apiEndpoint}`, {
         method: 'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)
       });
       ok = ok && res2.ok;

@@ -45,7 +45,7 @@ jest.mock('../pages/XuatHang', () => {
       }
       
       try {
-        const response = await fetch('/api/return-export', {
+        const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:4000'}/api/return-export`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',

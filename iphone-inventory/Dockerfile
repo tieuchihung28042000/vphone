@@ -5,7 +5,7 @@ WORKDIR /app
 
 # Copy package files and install deps
 COPY package*.json ./
-RUN npm ci && npm i -g serve
+RUN npm install && npm i -g serve
 
 # Copy source and build
 COPY . .
