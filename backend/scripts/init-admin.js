@@ -1,6 +1,6 @@
-const mongoose = require('mongoose');
-const bcrypt = require('bcrypt');
-const User = require('../models/User');
+import mongoose from 'mongoose';
+import bcrypt from 'bcryptjs';
+import User from '../models/User.js';
 
 const DEFAULT_ADMIN = {
   email: 'admin@vphone.vn',
@@ -52,4 +52,38 @@ async function createDefaultAdmin() {
   }
 }
 
-module.exports = { createDefaultAdmin }; 
+export { createDefaultAdmin };
+
+// Nếu file được chạy trực tiếp
+if (import.meta.url === `file://${process.argv[1]}`) {
+  import('dotenv').then(({ default: dotenv }) => {
+    import('path').then(({ default: path }) => {
+      // Load environment variables from root .env
+      dotenv.config({ path: path.join(process.cwd(), '..', '.env') });
+      
+      // Set MONGODB_URI if not already set
+      if (!process.env.MONGODB_URI) {
+        const mongoPort = process.env.MONGODB_PORT || '27017';
+        process.env.MONGODB_URI = `mongodb://${process.env.MONGO_ROOT_USERNAME}:${process.env.MONGO_ROOT_PASSWORD}@localhost:${mongoPort}/${process.env.MONGO_DB_NAME}?authSource=admin`;
+      }
+      
+      console.log('🔧 MONGODB_URI:', process.env.MONGODB_URI);
+      
+      import('mongoose').then(({ default: mongoose }) => {
+        mongoose.connect(process.env.MONGODB_URI)
+          .then(() => {
+            console.log('✅ Connected to MongoDB');
+            return createDefaultAdmin();
+          })
+          .then(() => {
+            console.log('✅ Script completed');
+            process.exit(0);
+          })
+          .catch(err => {
+            console.error('❌ Error:', err);
+            process.exit(1);
+          });
+      });
+    });
+  });
+} 

@@ -4,6 +4,8 @@ import StatsCard from "../components/StatsCard";
 import FormCard from "../components/FormCard";
 import FilterCard from "../components/FilterCard";
 import DataTable from "../components/DataTable";
+import { generateInvoicePDF } from "../components/InvoicePDF";
+import InvoiceDisplay from "../components/InvoiceDisplay";
 import * as XLSX from 'xlsx';
 
 // Utility functions
@@ -39,6 +41,9 @@ function XuatHang() {
   const [branches, setBranches] = useState([]);
   const [categories, setCategories] = useState([]);
   const [availableItems, setAvailableItems] = useState([]);
+  const [inventoryItems, setInventoryItems] = useState([]); // Danh sách sản phẩm cho dropdown
+  const [showInvoice, setShowInvoice] = useState(false); // Hiển thị hóa đơn inline
+  const [currentInvoice, setCurrentInvoice] = useState(null); // Dữ liệu hóa đơn hiện tại
   
   const getLocalBranch = () => localStorage.getItem('lastBranch') || "";
 
@@ -133,6 +138,26 @@ function XuatHang() {
     }
   };
 
+  // Fetch danh sách sản phẩm cho dropdown batch
+  const fetchInventoryItems = async () => {
+    try {
+      const token = localStorage.getItem('token') || sessionStorage.getItem('token');
+      const branchParam = formData.branch ? `&branch=${formData.branch}` : '';
+      const res = await fetch(`/api/inventory?limit=1000${branchParam}`, {
+        headers: token ? { 'Authorization': `Bearer ${token}` } : {}
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setInventoryItems(data.data || []);
+        console.log('✅ Fetched inventory items for batch:', data.data?.length || 0);
+      } else {
+        console.error('❌ API Error:', data.message);
+      }
+    } catch (e) {
+      console.error('Lỗi fetch inventory items:', e);
+    }
+  };
+
   const fetchSoldItems = async () => {
     try {
       const res = await fetch(`/api/xuat-hang-list`);
@@ -179,6 +204,7 @@ function XuatHang() {
   useEffect(() => {
     fetchSoldItems();
     fetchAvailableItems();
+    fetchInventoryItems();
     fetchBranches();
     fetchCategories();
   }, []);
@@ -258,11 +284,20 @@ function XuatHang() {
 
   // ✅ Thêm function để chọn suggestion
   const handleSelectSuggest = (item) => {
+    // Tìm item đầy đủ từ availableItems để lấy thông tin chi tiết
+    const fullItem = availableItems.find(availItem => 
+      (availItem.product_name || availItem.tenSanPham) === item.name && 
+      availItem.sku === item.sku
+    );
+    
     setFormData(prev => ({
       ...prev,
+      item_id: fullItem?._id || "",
       product_name: item.name,
       sku: item.sku,
       imei: item.isAccessory ? "" : (item.imeis.length === 1 ? item.imeis[0] : ""),
+      sale_price: fullItem?.price_sell || fullItem?.price_import || "",
+      warranty: fullItem?.warranty || "",
     }));
     
     // Set trạng thái phụ kiện
@@ -279,6 +314,21 @@ function XuatHang() {
       // Giữ nguyên giá trị đã format để hiển thị, nhưng lưu số nguyên vào state
       const cleanNumber = parseNumber(value);
       setFormData((prev) => ({ ...prev, [name]: cleanNumber }));
+    } else if (name === "item_id" && value) {
+      // Auto-fill product info when item is selected from dropdown
+      const selectedItem = availableItems.find(item => item._id === value);
+      if (selectedItem) {
+        setFormData((prev) => ({ 
+          ...prev, 
+          item_id: value,
+          imei: selectedItem.imei || "",
+          product_name: selectedItem.product_name || selectedItem.tenSanPham || "",
+          sku: selectedItem.sku || "",
+          sale_price: prev.sale_price || selectedItem.price_sell || selectedItem.price_import || "",
+          warranty: selectedItem.warranty || ""
+        }));
+        setIsAccessory(selectedItem.is_accessory || false);
+      }
     } else if (name === "imei" && value.trim()) {
       // Auto-fill product info when IMEI is entered
       try {
@@ -376,6 +426,34 @@ function XuatHang() {
       if (res.ok) {
         console.log('✅ API Response success:', data);
         setMessage(`✅ ${data.message}`);
+        
+        // Tạo hóa đơn inline
+        const invoiceData = {
+          invoiceNumber: `HD${Date.now()}`,
+          date: formData.sale_date,
+          branch: formData.branch,
+          customerName: formData.buyer_name,
+          customerPhone: formData.buyer_phone,
+          items: [{
+            product_name: formData.product_name,
+            sku: formData.sku,
+            imei: formData.imei,
+            quantity: parseInt(formData.quantity) || 1,
+            price_sell: parseFloat(parseNumber(formData.sale_price)) || 0
+          }],
+          payments: [{
+            source: formData.source,
+            amount: parseFloat(parseNumber(formData.da_thanh_toan)) || 0
+          }],
+          salesperson: formData.salesperson || '',
+          salesChannel: formData.salesChannel || ''
+        };
+        
+        // Hiển thị hóa đơn inline
+        setCurrentInvoice(invoiceData);
+        setShowInvoice(true);
+        setMessage(`✅ ${data.message}!`);
+        
         resetForm();
         
         // ✅ Force refresh data để đảm bảo UI cập nhật
@@ -540,6 +618,17 @@ function XuatHang() {
     setBatchItems(prev => [...prev, { ...batchRow, quantity: String(q), price_sell: String(p) }]);
     setBatchRow({ imei: '', sku: '', product_name: '', quantity: '1', price_sell: '' });
   };
+
+  // Xử lý khi chọn sản phẩm từ dropdown
+  const handleProductSelect = (product) => {
+    setBatchRow({
+      imei: product.imei || '',
+      sku: product.sku || '',
+      product_name: product.product_name || product.tenSanPham || '',
+      quantity: '1',
+      price_sell: product.price_import ? String(product.price_import) : ''
+    });
+  };
   const removeBatchItem = (idx) => setBatchItems(prev => prev.filter((_, i) => i !== idx));
   const addPaymentRow = () => setBatchPayments(prev => [...prev, { source: 'tien_mat', amount: '' }]);
   const removePaymentRow = (idx) => setBatchPayments(prev => prev.filter((_, i) => i !== idx));
@@ -589,7 +678,25 @@ function XuatHang() {
       const data = await res.json();
       if (res.ok) {
         setLastBatchResponse(data);
-        setMessage('✅ Tạo đơn batch thành công');
+        
+        // Tạo hóa đơn inline cho batch
+        const invoiceData = {
+          invoiceNumber: data.batch_id || `HD${Date.now()}`,
+          date: new Date().toLocaleDateString('vi-VN'),
+          branch: formData.branch || '',
+          customerName: formData.buyer_name || '',
+          customerPhone: formData.buyer_phone || '',
+          items: items,
+          payments: payments,
+          salesperson: salesperson,
+          salesChannel: salesChannel
+        };
+        
+        // Hiển thị hóa đơn inline
+        setCurrentInvoice(invoiceData);
+        setShowInvoice(true);
+        setMessage('✅ Tạo đơn batch thành công!');
+        
         // reset
         setBatchItems([]);
         setBatchPayments([{ source: 'tien_mat', amount: '' }]);
@@ -784,7 +891,7 @@ function XuatHang() {
             sold_date: importData.sale_date
           };
 
-          const res = await fetch(`${import.meta.env.VITE_API_URL}/api/xuat-hang`, {
+              const res = await fetch(`${process.env.VITE_API_URL || 'http://localhost:4000'}/api/xuat-hang`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(submitData)
@@ -1339,6 +1446,33 @@ function XuatHang() {
       >
         {batchMode && (
           <div className="space-y-4">
+            {/* Dropdown chọn sản phẩm */}
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-gray-700 mb-2">Chọn sản phẩm từ danh sách:</label>
+              <select 
+                className="form-input w-full" 
+                onChange={(e) => {
+                  const productId = e.target.value;
+                  if (productId) {
+                    const product = inventoryItems.find(p => p._id === productId);
+                    if (product) handleProductSelect(product);
+                  }
+                }}
+                value=""
+              >
+                <option value="">-- Chọn sản phẩm --</option>
+                {inventoryItems.map((product) => (
+                  <option key={product._id} value={product._id}>
+                    {product.product_name || product.tenSanPham} 
+                    {product.sku && ` (SKU: ${product.sku})`}
+                    {product.imei && ` (IMEI: ${product.imei})`}
+                    {product.price_import && ` - ${formatCurrency(product.price_import)}`}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Form nhập thủ công */}
             <div className="grid grid-cols-1 md:grid-cols-6 gap-3">
               <input className="form-input" placeholder="IMEI" value={batchRow.imei} onChange={e=>setBatchRow({...batchRow, imei:e.target.value})} />
               <input className="form-input" placeholder="SKU" value={batchRow.sku} onChange={e=>setBatchRow({...batchRow, sku:e.target.value})} />
@@ -1600,6 +1734,13 @@ function XuatHang() {
           </div>
         </div>
       )}
+
+      {/* Hóa đơn inline */}
+      <InvoiceDisplay 
+        invoiceData={currentInvoice}
+        isVisible={showInvoice}
+        onClose={() => setShowInvoice(false)}
+      />
     </Layout>
   );
 }

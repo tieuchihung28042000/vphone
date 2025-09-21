@@ -138,7 +138,7 @@ function NhapHang() {
   // API functions
   const fetchItems = async () => {
     try {
-      const apiUrl = import.meta.env.VITE_API_URL || window.location.origin;
+        const apiUrl = process.env.VITE_API_URL || window.location.origin;
       const res = await fetch(`${apiUrl}/api/nhap-hang`);
       
       if (!res.ok) throw new Error(`API Error: ${res.status}`);
@@ -162,7 +162,7 @@ function NhapHang() {
 
   const fetchBranches = async () => {
     try {
-      const apiUrl = import.meta.env.VITE_API_URL || window.location.origin;
+        const apiUrl = process.env.VITE_API_URL || window.location.origin;
       const res = await fetch(`${apiUrl}/api/branches`);
       const data = await res.json();
       setBranches(data);
@@ -173,7 +173,7 @@ function NhapHang() {
 
   const fetchCategories = async () => {
     try {
-      const apiUrl = import.meta.env.VITE_API_URL || window.location.origin;
+        const apiUrl = process.env.VITE_API_URL || window.location.origin;
       const res = await fetch(`${apiUrl}/api/categories`);
       const data = await res.json();
       setCategories(data);
@@ -197,7 +197,7 @@ function NhapHang() {
     }
     
     try {
-      const res = await fetch(`${import.meta.env.VITE_API_URL}/api/ton-kho`);
+        const res = await fetch(`${process.env.VITE_API_URL || 'http://localhost:4000'}/api/ton-kho`);
       const data = await res.json();
       const lowerQuery = query.trim().toLowerCase();
       
@@ -289,8 +289,8 @@ function NhapHang() {
     try {
       const method = editingItemId ? "PUT" : "POST";
       const url = editingItemId
-        ? `${import.meta.env.VITE_API_URL}/api/nhap-hang/${editingItemId}`
-        : `${import.meta.env.VITE_API_URL}/api/nhap-hang`;
+        ? `${process.env.VITE_API_URL || 'http://localhost:4000'}/api/nhap-hang/${editingItemId}`
+        : `${process.env.VITE_API_URL || 'http://localhost:4000'}/api/nhap-hang`;
 
       const res = await fetch(url, {
         method,
@@ -391,7 +391,7 @@ function NhapHang() {
     
     try {
       const token = localStorage.getItem("token") || sessionStorage.getItem("token");
-      const res = await fetch(`${import.meta.env.VITE_API_URL}/api/return-import`, {
+      const res = await fetch(`${process.env.VITE_API_URL || 'http://localhost:4000'}/api/return-import`, {
         method: "POST",
         headers: { 
           "Content-Type": "application/json",
@@ -555,7 +555,7 @@ function NhapHang() {
         }
 
         try {
-          const res = await fetch(`${import.meta.env.VITE_API_URL}/api/nhap-hang`, {
+          const res = await fetch(`${process.env.VITE_API_URL || 'http://localhost:4000'}/api/nhap-hang`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ ...importData, tenSanPham: importData.product_name })
@@ -631,8 +631,8 @@ function NhapHang() {
 
     try {
       const url = branchModal.type === 'edit' 
-        ? `${import.meta.env.VITE_API_URL}/api/branches/${branchModal.data._id}`
-        : `${import.meta.env.VITE_API_URL}/api/branches`;
+        ? `${process.env.VITE_API_URL || 'http://localhost:4000'}/api/branches/${branchModal.data._id}`
+        : `${process.env.VITE_API_URL || 'http://localhost:4000'}/api/branches`;
       
       const method = branchModal.type === 'edit' ? 'PUT' : 'POST';
 
@@ -662,7 +662,7 @@ function NhapHang() {
     if (!window.confirm('Bạn có chắc chắn muốn xóa chi nhánh này?')) return;
 
     try {
-      const res = await fetch(`${import.meta.env.VITE_API_URL}/api/branches/${branchId}`, {
+      const res = await fetch(`${process.env.VITE_API_URL || 'http://localhost:4000'}/api/branches/${branchId}`, {
         method: 'DELETE'
       });
 
@@ -710,8 +710,8 @@ function NhapHang() {
     try {
       const method = categoryModal.type === 'edit' ? 'PUT' : 'POST';
       const url = categoryModal.type === 'edit' 
-        ? `${import.meta.env.VITE_API_URL}/api/categories/${categoryModal.data._id}`
-        : `${import.meta.env.VITE_API_URL}/api/categories`;
+        ? `${process.env.VITE_API_URL || 'http://localhost:4000'}/api/categories/${categoryModal.data._id}`
+        : `${process.env.VITE_API_URL || 'http://localhost:4000'}/api/categories`;
       
       const res = await fetch(url, {
         method,
@@ -739,7 +739,7 @@ function NhapHang() {
     if (!window.confirm('Bạn có chắc chắn muốn xóa danh mục này?')) return;
     
     try {
-      const res = await fetch(`${import.meta.env.VITE_API_URL}/api/categories/${categoryId}`, {
+      const res = await fetch(`${process.env.VITE_API_URL || 'http://localhost:4000'}/api/categories/${categoryId}`, {
         method: 'DELETE',
       });
       

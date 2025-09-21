@@ -1,9 +1,9 @@
-const express = require('express');
+import express from 'express';
 const router = express.Router();
-const Inventory = require('../models/Inventory');
-const ExportHistory = require('../models/ExportHistory');
-const Cashbook = require('../models/Cashbook');
-const { authenticateToken, requireRole } = require('../middleware/auth');
+import Inventory from '../models/Inventory.js';
+import ExportHistory from '../models/ExportHistory.js';
+import Cashbook from '../models/Cashbook.js';
+import { authenticateToken, requireRole } from '../middleware/auth.js';
 
 // POST /api/report/xuat-hang-batch
 router.post('/report/xuat-hang-batch', authenticateToken, requireRole(['admin','quan_ly','thu_ngan','nhan_vien_ban_hang']), async (req, res) => {
@@ -98,6 +98,6 @@ router.post('/report/xuat-hang-batch', authenticateToken, requireRole(['admin','
   }
 });
 
-module.exports = router;
+export default router;
 
 

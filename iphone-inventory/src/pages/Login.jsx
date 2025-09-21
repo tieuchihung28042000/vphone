@@ -11,6 +11,8 @@ function Login() {
     e.preventDefault();
 
     try {
+      console.log("🔗 Using proxy API URL");
+      
       const res = await fetch(`/api/auth/login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -18,37 +20,47 @@ function Login() {
       });
 
       const data = await res.json();
+      console.log("📝 Login response:", data);
 
       if (res.ok) {
         alert("✅ Đăng nhập thành công");
 
         if (remember) {
           localStorage.setItem("token", data.token);
+          console.log("💾 Token saved to localStorage");
         } else {
           sessionStorage.setItem("token", data.token);
+          console.log("💾 Token saved to sessionStorage");
         }
 
         // Redirect theo role
         try {
           const decoded = JSON.parse(atob(data.token.split('.')[1]));
           const role = decoded.role;
+          console.log("👤 User role:", role);
           
-          if (role === 'nhan_vien_ban_hang') {
-            navigate("/xuat-hang"); // Nhân viên bán hàng vào xuất hàng
-          } else if (role === 'quan_ly' || role === 'admin') {
-            navigate("/bao-cao"); // Quản lý/Admin vào báo cáo
-          } else {
-            navigate("/nhap-hang"); // Thu ngân và các role khác vào nhập hàng
-          }
+          // Thêm delay nhỏ để đảm bảo token được lưu
+          setTimeout(() => {
+            if (role === 'nhan_vien_ban_hang') {
+              navigate("/xuat-hang"); // Nhân viên bán hàng vào xuất hàng
+            } else if (role === 'quan_ly' || role === 'admin') {
+              navigate("/bao-cao"); // Quản lý/Admin vào báo cáo
+            } else {
+              navigate("/nhap-hang"); // Thu ngân và các role khác vào nhập hàng
+            }
+          }, 100);
         } catch (err) {
+          console.error("❌ Token decode error:", err);
           // Fallback nếu không decode được token
-          navigate("/xuat-hang");
+          setTimeout(() => {
+            navigate("/xuat-hang");
+          }, 100);
         }
       } else {
         alert(`❌ ${data.message}`);
       }
     } catch (err) {
-      console.error("Lỗi kết nối:", err);
+      console.error("❌ Lỗi kết nối:", err);
       alert("❌ Không thể kết nối tới server");
     }
   };

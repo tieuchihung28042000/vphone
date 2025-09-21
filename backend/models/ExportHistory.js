@@ -1,4 +1,4 @@
-const mongoose = require('mongoose');
+import mongoose from 'mongoose';
 const ExportHistorySchema = new mongoose.Schema({
   imei: String,                // nếu có
   sku: String,
@@ -19,4 +19,4 @@ const ExportHistorySchema = new mongoose.Schema({
   sales_channel: { type: String },
   salesperson: { type: String },
 });
-module.exports = mongoose.model('ExportHistory', ExportHistorySchema);
+export default mongoose.model('ExportHistory', ExportHistorySchema);

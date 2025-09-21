@@ -1,10 +1,10 @@
-const express = require('express');
-const ReturnExport = require('../models/ReturnExport');
-const ExportHistory = require('../models/ExportHistory');
-const Inventory = require('../models/Inventory');
-const Cashbook = require('../models/Cashbook');
-const { authenticateToken, requireRole, filterByBranch } = require('../middleware/auth');
-const ActivityLog = require('../models/ActivityLog');
+import express from 'express';
+import ReturnExport from '../models/ReturnExport.js';
+import ExportHistory from '../models/ExportHistory.js';
+import Inventory from '../models/Inventory.js';
+import Cashbook from '../models/Cashbook.js';
+import { authenticateToken, requireRole, filterByBranch } from '../middleware/auth.js';
+import ActivityLog from '../models/ActivityLog.js';
 
 const router = express.Router();
 
@@ -260,4 +260,4 @@ router.delete('/:id', authenticateToken, requireRole(['admin']), async (req, res
   }
 });
 
-module.exports = router; 
+export default router; 

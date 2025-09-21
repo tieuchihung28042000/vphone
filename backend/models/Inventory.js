@@ -1,4 +1,4 @@
-const mongoose = require("mongoose");
+import mongoose from 'mongoose';
 
 const InventorySchema = new mongoose.Schema({
 imei: { type: String, default: null },
@@ -40,4 +40,4 @@ imei: { type: String, default: null },
   timestamps: true
 });
 
-module.exports = mongoose.model("Inventory", InventorySchema);
+export default mongoose.model("Inventory", InventorySchema);

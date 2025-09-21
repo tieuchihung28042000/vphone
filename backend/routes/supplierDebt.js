@@ -1,6 +1,6 @@
-const express = require('express');
+import express from 'express';
 const router = express.Router();
-const SupplierDebt = require('../models/SupplierDebt');
+import SupplierDebt from '../models/SupplierDebt.js';
 
 // 1. Lấy danh sách công nợ nhà cung cấp
 router.get('/list', async (req, res) => {
@@ -135,7 +135,7 @@ router.post('/pay-debt', async (req, res) => {
     
     // Tự động ghi sổ quỹ (chi tiền)
     if (source) {
-      const Cashbook = require('../models/Cashbook');
+      import Cashbook from '../models/Cashbook.js';
       await Cashbook.create({
         type: 'chi',
         amount: payAmount,
@@ -215,4 +215,4 @@ router.put('/update/:id', async (req, res) => {
   }
 });
 
-module.exports = router; 
+export default router; 

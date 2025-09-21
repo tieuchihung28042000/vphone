@@ -1,11 +1,12 @@
-const express = require('express');
+import express from 'express';
+import mongoose from 'mongoose';
 const router = express.Router();
-const Inventory = require('../models/Inventory');
-const ExportHistory = require('../models/ExportHistory'); // Thêm dòng này
-const { sendResetPasswordEmail } = require('../utils/mail');
-const { authenticateToken, requireReportAccess } = require('../middleware/auth');
-const ReturnExport = require('../models/ReturnExport');
-const Cashbook = require('../models/Cashbook');
+import Inventory from '../models/Inventory.js';
+import ExportHistory from '../models/ExportHistory.js'; // Thêm dòng này
+import { sendResetPasswordEmail } from '../utils/mail.js';
+import { authenticateToken, requireReportAccess } from '../middleware/auth.js';
+import ReturnExport from '../models/ReturnExport.js';
+import Cashbook from '../models/Cashbook.js';
 
 // ==================== API: Báo cáo lợi nhuận có lọc ====================
 // Bảo vệ toàn bộ router báo cáo bằng auth + chặn thu_ngan
@@ -420,7 +421,6 @@ router.put('/xuat-hang/:id', async (req, res) => {
     console.log('🔍 DEBUG da_thanh_toan value:', da_thanh_toan); // Debug specific field
 
     // ✅ Validate ObjectId format
-    const mongoose = require('mongoose');
     if (!mongoose.isValidObjectId(req.params.id)) {
       console.log('❌ Invalid ObjectId format:', req.params.id);
       return res.status(400).json({ message: '❌ ID không hợp lệ.' });
@@ -606,4 +606,4 @@ router.post('/migrate-export-history', async (req, res) => {
   }
 });
 
-module.exports = router;
+export default router;

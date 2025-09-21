@@ -1,4 +1,4 @@
-const mongoose = require('mongoose');
+import mongoose from 'mongoose';
 
 const ReturnImportSchema = new mongoose.Schema({
   // Thông tin liên kết với phiếu nhập gốc
@@ -56,4 +56,4 @@ ReturnImportSchema.index({ return_date: -1 });
 ReturnImportSchema.index({ branch: 1 });
 ReturnImportSchema.index({ supplier: 1 });
 
-module.exports = mongoose.model('ReturnImport', ReturnImportSchema); 
+export default mongoose.model('ReturnImport', ReturnImportSchema); 

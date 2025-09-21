@@ -7,7 +7,7 @@ function ChiTietDonHang({ from, to, branch }) {
     const fetchOrders = async () => {
       try {
         // Lấy URL động theo biến môi trường (không hardcode localhost)
-        const url = new URL(`${import.meta.env.VITE_API_URL}/api/bao-cao-don-hang-chi-tiet`);
+        const url = new URL(`${process.env.VITE_API_URL || 'http://localhost:4000'}/api/bao-cao-don-hang-chi-tiet`);
         if (from && to) {
           url.searchParams.append("from", from);
           url.searchParams.append("to", to);

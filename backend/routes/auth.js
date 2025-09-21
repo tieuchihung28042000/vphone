@@ -1,14 +1,15 @@
-const express = require('express');
-const bcrypt = require('bcrypt');
-const jwt = require('jsonwebtoken');
-const mongoose = require('mongoose');
-const User = require('../models/User');
-const nodemailer = require('nodemailer');
+import express from 'express';
+import bcrypt from 'bcryptjs';
+import jwt from 'jsonwebtoken';
+import mongoose from 'mongoose';
+import User from '../models/User.js';
+import nodemailer from 'nodemailer';
+import { authenticateToken, requireRole } from '../middleware/auth.js';
 
 const router = express.Router();
 
 // ===== Đăng ký tài khoản user =====
-router.post('/register', async (req, res) => {
+router.post('/register', authenticateToken, requireRole(['admin', 'quan_ly']), async (req, res) => {
   try {
     console.log('🔧 [REGISTER] Received registration request:', req.body);
     const { email, password, username, role, branch_id, branch_name, full_name, phone } = req.body;
@@ -94,12 +95,16 @@ router.post('/login', async (req, res) => {
     });
     
     if (!user) {
-      return res.status(400).json({ message: '❌ Email/Username không tồn tại' });
+      return res.status(401).json({ message: '❌ Email/Username không tồn tại' });
+    }
+
+    if (!user.approved) {
+      return res.status(401).json({ message: '❌ Tài khoản chưa được phê duyệt' });
     }
 
     const match = await bcrypt.compare(password, user.password);
     if (!match) {
-      return res.status(400).json({ message: '❌ Mật khẩu sai' });
+      return res.status(401).json({ message: '❌ Mật khẩu sai' });
     }
 
     const token = jwt.sign(
@@ -115,7 +120,19 @@ router.post('/login', async (req, res) => {
       { expiresIn: '7d' }
     );
 
-    res.status(200).json({ message: '✅ Đăng nhập thành công', token });
+    res.status(200).json({ 
+      message: '✅ Đăng nhập thành công', 
+      token,
+      user: {
+        id: user._id,
+        email: user.email,
+        role: user.role,
+        branch_id: user.branch_id,
+        branch_name: user.branch_name,
+        full_name: user.full_name,
+        phone: user.phone
+      }
+    });
   } catch (err) {
     console.error('❌ [LOGIN] Error:', err && err.stack ? err.stack : err);
     res.status(500).json({ message: '❌ Lỗi server', error: err && err.message ? err.message : String(err) });
@@ -198,4 +215,4 @@ router.post('/verify-reset-otp', async (req, res) => {
   }
 });
 
-module.exports = router;
+export default router;

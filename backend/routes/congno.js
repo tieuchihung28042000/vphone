@@ -1,8 +1,8 @@
-const express = require('express');
+import express from 'express';
 const router = express.Router();
-const Inventory = require('../models/Inventory');
-const ExportHistory = require('../models/ExportHistory');
-const Cashbook = require('../models/Cashbook');
+import Inventory from '../models/Inventory.js';
+import ExportHistory from '../models/ExportHistory.js';
+import Cashbook from '../models/Cashbook.js';
 
 // ✅ API lấy danh sách khách hàng còn công nợ (tính từ ExportHistory)
 router.get('/cong-no-list', async (req, res) => {
@@ -75,7 +75,7 @@ router.get('/cong-no-list', async (req, res) => {
       result = result.filter(customer => customer.total_debt > 0);
     }
 
-    res.json({ items: result });
+    res.json(result);
   } catch (err) {
     console.error('❌ Error in cong-no-list:', err);
     res.status(500).json({ message: '❌ Lỗi server khi lấy công nợ', error: err.message });
@@ -353,10 +353,7 @@ router.get('/supplier-debt-list', async (req, res) => {
       result = result.filter(supplier => supplier.total_debt > 0);
     }
 
-    res.json({ 
-      suppliers: result,
-      items: result // Để tương thích với frontend
-    });
+    res.json(result);
   } catch (err) {
     console.error('❌ Error in supplier-debt-list:', err);
     res.status(500).json({ message: '❌ Lỗi server khi lấy nợ NCC', error: err.message });
@@ -600,4 +597,4 @@ router.put('/update-supplier', async (req, res) => {
   }
 });
 
-module.exports = router;
+export default router;

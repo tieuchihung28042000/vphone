@@ -1,7 +1,7 @@
 // routes/category.js
-const express = require('express');
+import express from 'express';
 const router = express.Router();
-const Category = require('../models/Category');
+import Category from '../models/Category.js';
 
 // Lấy tất cả category
 router.get('/', async (req, res) => {
@@ -32,4 +32,4 @@ router.delete('/:id', async (req, res) => {
   res.json({ message: 'Đã xoá thư mục' });
 });
 
-module.exports = router;
+export default router;

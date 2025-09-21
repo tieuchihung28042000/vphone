@@ -29,7 +29,7 @@ function QuanLyUser() {
   const fetchBranches = async () => {
     try {
       const token = localStorage.getItem("token") || sessionStorage.getItem("token");
-      const res = await fetch(`${import.meta.env.VITE_API_URL}/api/branches`, {
+      const res = await fetch(`${process.env.VITE_API_URL || 'http://localhost:4000'}/api/branches`, {
         headers: {
           Authorization: `Bearer ${token}`,
         },
@@ -48,7 +48,7 @@ function QuanLyUser() {
     setError("");
     try {
       const token = localStorage.getItem("token") || sessionStorage.getItem("token");
-      const res = await fetch(`${import.meta.env.VITE_API_URL}/api/user/pending-users`, {
+      const res = await fetch(`${process.env.VITE_API_URL || 'http://localhost:4000'}/api/user/pending-users`, {
         headers: {
           Authorization: `Bearer ${token}`,
         },
@@ -69,7 +69,7 @@ function QuanLyUser() {
     setError("");
     try {
       const token = localStorage.getItem("token") || sessionStorage.getItem("token");
-      const res = await fetch(`${import.meta.env.VITE_API_URL}/api/user/all-users`, {
+      const res = await fetch(`${process.env.VITE_API_URL || 'http://localhost:4000'}/api/user/all-users`, {
         headers: {
           Authorization: `Bearer ${token}`,
         },
@@ -99,7 +99,7 @@ function QuanLyUser() {
     setApprovingId(userId);
     try {
       const token = localStorage.getItem("token") || sessionStorage.getItem("token");
-      const res = await fetch(`${import.meta.env.VITE_API_URL}/api/user/approve-user/${userId}`, {
+      const res = await fetch(`${process.env.VITE_API_URL || 'http://localhost:4000'}/api/user/approve-user/${userId}`, {
         method: "POST",
         headers: {
           Authorization: `Bearer ${token}`,
@@ -130,9 +130,9 @@ function QuanLyUser() {
       };
 
       console.log("🔧 Creating user with data:", userData);
-      console.log("🔧 API URL:", `${import.meta.env.VITE_API_URL}/api/auth/register`);
+      console.log("🔧 API URL:", `${process.env.VITE_API_URL || 'http://localhost:4000'}/api/auth/register`);
 
-      const res = await fetch(`${import.meta.env.VITE_API_URL}/api/auth/register`, {
+      const res = await fetch(`${process.env.VITE_API_URL || 'http://localhost:4000'}/api/auth/register`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -172,7 +172,7 @@ function QuanLyUser() {
   const handleUpdateUserRole = async (userId, newRole) => {
     try {
       const token = localStorage.getItem("token") || sessionStorage.getItem("token");
-      const res = await fetch(`${import.meta.env.VITE_API_URL}/api/user/update-role/${userId}`, {
+      const res = await fetch(`${process.env.VITE_API_URL || 'http://localhost:4000'}/api/user/update-role/${userId}`, {
         method: "PUT",
         headers: {
           "Content-Type": "application/json",
@@ -298,7 +298,6 @@ function QuanLyUser() {
             className="text-sm bg-white border border-gray-300 rounded px-2 py-1"
           >
             <option value="nhan_vien_ban_hang">🛒 Nhân viên bán hàng</option>
-            <option value="thu_ngan">💰 Thu ngân</option>
             <option value="quan_ly">👨‍💼 Quản lý</option>
             <option value="admin">👑 Admin</option>
           </select>
@@ -522,7 +521,6 @@ function QuanLyUser() {
                   required
                 >
                   <option value="nhan_vien_ban_hang">🛒 Nhân viên bán hàng</option>
-                  <option value="thu_ngan">💰 Thu ngân</option>
                   <option value="quan_ly">👨‍💼 Quản lý</option>
                   <option value="admin">👑 Admin</option>
                 </select>

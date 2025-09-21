@@ -12,6 +12,7 @@ import CongNo from "./pages/CongNo";
 import QuanLyUser from "./pages/QuanLyUser";
 import NotAuthorized from "./pages/NotAuthorized";
 import DanhSachCanhBao from "./pages/DanhSachCanhBao";
+import LichSuHoatDong from "./pages/LichSuHoatDong";
 
 // === THÊM DÒNG NÀY ===
 import Cashbook from "./pages/Cashbook"; // <--- Sổ quỹ
@@ -81,8 +82,18 @@ function App() {
       <Route
         path="/so-quy"
         element={
-          <PrivateRoute requiredRole={["admin", "quan_ly"]}>
+          <PrivateRoute requiredRole={["admin", "quan_ly", "thu_ngan", "nhan_vien_ban_hang"]}>
             <Cashbook />
+          </PrivateRoute>
+        }
+      />
+
+      {/* Lịch sử hoạt động */}
+      <Route
+        path="/lich-su-hoat-dong"
+        element={
+          <PrivateRoute requiredRole={["admin", "quan_ly"]}>
+            <LichSuHoatDong />
           </PrivateRoute>
         }
       />

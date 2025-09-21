@@ -1,9 +1,9 @@
-const express = require('express');
+import express from 'express';
 const router = express.Router();
-const Cashbook = require('../models/Cashbook');
-const XLSX = require('xlsx');
-const ActivityLog = require('../models/ActivityLog');
-const { authenticateToken } = require('../middleware/auth');
+import Cashbook from '../models/Cashbook.js';
+import XLSX from 'xlsx';
+import ActivityLog from '../models/ActivityLog.js';
+import { authenticateToken } from '../middleware/auth.js';
 
 // Helper function: Tạo mã phiếu thu/chi
 function generateReceiptCode(type, date = new Date()) {
@@ -743,4 +743,4 @@ router.get('/contents', authenticateToken, async (req, res) => {
   }
 });
 
-module.exports = router;
+export default router;

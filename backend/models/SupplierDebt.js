@@ -1,4 +1,4 @@
-const mongoose = require('mongoose');
+import mongoose from 'mongoose';
 
 const SupplierDebtSchema = new mongoose.Schema({
   supplier_name: { type: String, required: true },
@@ -32,4 +32,4 @@ SupplierDebtSchema.pre('save', function(next) {
   next();
 });
 
-module.exports = mongoose.model('SupplierDebt', SupplierDebtSchema); 
+export default mongoose.model('SupplierDebt', SupplierDebtSchema); 

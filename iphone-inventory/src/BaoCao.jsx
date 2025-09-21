@@ -55,7 +55,7 @@ function BaoCao() {
   const loadBranches = async () => {
     try {
       console.log('📊 Loading branches for report...'); // Debug
-      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/branches`);
+      const response = await fetch(`${process.env.VITE_API_URL || 'http://localhost:4000'}/api/branches`);
       const data = await response.json();
       
       if (response.ok && data.length > 0) {
@@ -88,13 +88,22 @@ function BaoCao() {
     console.log('📊 Fetching report data:', { fromDate, toDate, branch: branchParam }); // Debug
     setLoading(true);
     try {
-      let api = `${import.meta.env.VITE_API_URL}/api/bao-cao-loi-nhuan`;
+      let api = `${process.env.VITE_API_URL || 'http://localhost:4000'}/api/report/bao-cao-loi-nhuan`;
       if (fromDate && toDate) {
         api += `?from=${fromDate}&to=${toDate}&branch=${branchParam}`;
       }
       
       console.log('📊 API URL:', api); // Debug
-      const res = await fetch(api);
+      
+      // Lấy token từ localStorage hoặc sessionStorage
+      const token = localStorage.getItem('token') || sessionStorage.getItem('token');
+      
+      const res = await fetch(api, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
       const json = await res.json();
       console.log("📊 Dữ liệu báo cáo trả về:", json);
       setData(json);

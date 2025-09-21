@@ -1,5 +1,5 @@
 // backend/models/Debt.js
-const mongoose = require('mongoose');
+import mongoose from 'mongoose';
 
 const debtSchema = new mongoose.Schema({
   customer_name: { type: String, required: true, unique: true },
@@ -14,4 +14,4 @@ const debtSchema = new mongoose.Schema({
   ]
 });
 
-module.exports = mongoose.model('Debt', debtSchema);
+export default mongoose.model('Debt', debtSchema);

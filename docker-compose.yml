@@ -11,7 +11,7 @@ services:
       MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD}
       MONGO_INITDB_DATABASE: ${MONGO_DB_NAME}
     ports:
-      - "${MONGODB_PORT:-27018}:27017"
+      - "${MONGODB_PORT}:27017"
     volumes:
       - ./data/mongodb:/data/db
       - ./data/mongodb_config:/data/configdb
@@ -32,7 +32,7 @@ services:
       - ./.env
     environment:
       NODE_ENV: production
-      PORT: ${BACKEND_PORT:-4000}
+      PORT: ${BACKEND_PORT}
       # Compose-internal Mongo URI using service hostname "mongodb"
       # NOTE: Nếu mật khẩu có ký tự đặc biệt (ví dụ @), dùng bản URL-encoded
       # Ưu tiên biến MONGO_ROOT_PASSWORD_URLENCODED nếu có, fallback về MONGO_ROOT_PASSWORD
@@ -41,7 +41,7 @@ services:
       EMAIL_USER: ${EMAIL_USER}
       EMAIL_PASS: ${EMAIL_PASS}
     ports:
-      - "${BACKEND_PORT:-4000}:4000"
+      - "${BACKEND_PORT}:4000"
     depends_on:
       mongodb:
         condition: service_healthy
@@ -67,7 +67,7 @@ services:
       context: ./iphone-inventory
       dockerfile: Dockerfile
       args:
-        VITE_API_URL: http://localhost:${BACKEND_PORT:-4000}
+        VITE_API_URL: http://localhost:${BACKEND_PORT}
     container_name: vphone-frontend
     restart: unless-stopped
     env_file:
@@ -75,7 +75,7 @@ services:
     environment:
       NODE_ENV: production
     ports:
-      - "${FRONTEND_PORT:-3000}:3000"
+      - "${FRONTEND_PORT}:3000"
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:3000/health"]
       interval: 30s

@@ -1,27 +1,42 @@
-const express = require('express');
-const mongoose = require('mongoose');
-const cors = require('cors');
-require('dotenv').config();
+import express from 'express';
+import mongoose from 'mongoose';
+import cors from 'cors';
+import dotenv from 'dotenv';
+import path from 'path';
+import { fileURLToPath } from 'url';
 
-const Inventory = require('./models/Inventory');
-const Cashbook = require('./models/Cashbook'); // THÊM DÒNG NÀY
-const ExportHistory = require('./models/ExportHistory'); // THÊM MODEL EXPORT HISTORY
-const ReturnImport = require('./models/ReturnImport'); // THÊM MODEL RETURN IMPORT
-const ReturnExport = require('./models/ReturnExport'); // THÊM MODEL RETURN EXPORT
-const User = require('./models/User'); // THÊM MODEL USER
-const Branch = require('./models/Branch'); // THÊM MODEL BRANCH
-const authRoutes = require('./routes/auth');
-const userRoutes = require('./routes/user');
-const reportRoutes = require('./routes/report');
-const reportBatchRoutes = require('./routes/reportBatch');
-const branchRoutes = require('./routes/branch');
-const categoryRoutes = require('./routes/category');
-const congNoRoutes = require('./routes/congno');
-const adminRoutes = require('./routes/admin');
-const cashbookRoutes = require('./routes/cashbook'); // THÊM DÒNG NÀY
-const returnImportRoutes = require('./routes/returnImport');
-const returnExportRoutes = require('./routes/returnExport');
-const activityLogRoutes = require('./routes/activityLogs');
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+// Load environment variables from root .env
+dotenv.config({ path: path.join(__dirname, '..', '.env') });
+
+// Set MONGODB_URI if not already set
+if (!process.env.MONGODB_URI) {
+  const mongoPort = process.env.MONGODB_PORT || '27017';
+  process.env.MONGODB_URI = `mongodb://${process.env.MONGO_ROOT_USERNAME}:${process.env.MONGO_ROOT_PASSWORD}@localhost:${mongoPort}/${process.env.MONGO_DB_NAME}?authSource=admin`;
+}
+
+import Inventory from './models/Inventory.js';
+import Cashbook from './models/Cashbook.js'; // THÊM DÒNG NÀY
+import ExportHistory from './models/ExportHistory.js'; // THÊM MODEL EXPORT HISTORY
+import ReturnImport from './models/ReturnImport.js'; // THÊM MODEL RETURN IMPORT
+import ReturnExport from './models/ReturnExport.js'; // THÊM MODEL RETURN EXPORT
+import User from './models/User.js'; // THÊM MODEL USER
+import Branch from './models/Branch.js'; // THÊM MODEL BRANCH
+import authRoutes from './routes/auth.js';
+import userRoutes from './routes/user.js';
+import reportRoutes from './routes/report.js';
+import reportBatchRoutes from './routes/reportBatch.js';
+import branchRoutes from './routes/branch.js';
+import categoryRoutes from './routes/category.js';
+import congNoRoutes from './routes/congNo.js';
+import adminRoutes from './routes/admin.js';
+import cashbookRoutes from './routes/cashbook.js'; // THÊM DÒNG NÀY
+import returnImportRoutes from './routes/returnImport.js';
+import returnExportRoutes from './routes/returnExport.js';
+import activityLogRoutes from './routes/activityLog.js';
+import inventoryRoutes from './routes/inventory.js';
 
 const app = express();
 
@@ -50,6 +65,7 @@ app.use('/api/branches', branchRoutes);
 app.use('/api/categories', categoryRoutes);
 app.use('/api/cong-no', congNoRoutes);
 app.use('/api/cashbook', cashbookRoutes); // ROUTE SỔ QUỸ
+app.use('/api/inventory', inventoryRoutes); // ROUTE INVENTORY
 app.use('/api/activity-logs', activityLogRoutes);
 console.log('🔧 [SERVER] Đang đăng ký return routes...');
 app.use('/api/return-import', returnImportRoutes);
@@ -616,7 +632,7 @@ app.post('/api/xuat-hang', async (req, res) => {
         note: `Công nợ khách: ${customer_name}`,
         date: sold_date || new Date(),
         branch: branch || '',
-        source: 'Công nợ',
+        source: 'cong_no',
         customer: customer_name || '',
         related_id: item._id
       });
@@ -1038,7 +1054,7 @@ app.post('/api/thu-no-khach', async (req, res) => {
 
 
 
-mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/vphone')
+mongoose.connect(process.env.MONGODB_URI)
 .then(async () => {
   console.log('✅ Kết nối MongoDB thành công');
   console.log('🔧 [MONGODB] Checking models...');
@@ -1073,7 +1089,8 @@ mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/vphone')
   }
   
   // Tự động tạo admin user nếu chưa có
-  const { createDefaultAdmin } = require('./scripts/init-admin');
+  const initAdminModule = await import('./scripts/init-admin.js');
+  const { createDefaultAdmin } = initAdminModule;
   await createDefaultAdmin();
 })
 .catch(err => console.error('❌ Kết nối MongoDB lỗi:', err));
@@ -1155,7 +1172,10 @@ app.get('/api/test-return-models', async (req, res) => {
   }
 });
 
-const PORT = process.env.PORT || 4000;
-app.listen(PORT, () => {
-  console.log(`🚀 Server đang chạy tại http://localhost:${PORT}`);
-});
+// Only start server if not in test mode
+if (process.env.NODE_ENV !== 'test') {
+  const PORT = process.env.PORT || 4000;
+  app.listen(PORT, () => {
+    console.log(`🚀 Server đang chạy tại http://localhost:${PORT}`);
+  });
+}

@@ -1,4 +1,4 @@
-const mongoose = require("mongoose");
+import mongoose from 'mongoose';
 
 const CashbookSchema = new mongoose.Schema({
   type: { type: String, enum: ['thu', 'chi'], required: true },   // thu hoặc chi
@@ -22,4 +22,4 @@ const CashbookSchema = new mongoose.Schema({
   balance_after: { type: Number, default: 0 },                   // Số dư sau giao dịch
 });
 
-module.exports = mongoose.model("Cashbook", CashbookSchema);
+export default mongoose.model("Cashbook", CashbookSchema);

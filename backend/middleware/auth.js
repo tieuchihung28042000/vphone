@@ -1,5 +1,5 @@
-const jwt = require('jsonwebtoken');
-const User = require('../models/User');
+import jwt from 'jsonwebtoken';
+import User from '../models/User.js';
 
 // Middleware xác thực JWT
 const authenticateToken = async (req, res, next) => {
@@ -27,7 +27,7 @@ const authenticateToken = async (req, res, next) => {
     req.user = user;
     next();
   } catch (error) {
-    return res.status(403).json({ message: 'Invalid token' });
+    return res.status(401).json({ message: 'Invalid token' });
   }
 };
 
@@ -104,7 +104,7 @@ const requireReportAccess = (req, res, next) => {
   next();
 };
 
-module.exports = {
+export {
   authenticateToken,
   requireRole,
   requireBranch,

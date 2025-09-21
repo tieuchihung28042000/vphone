@@ -1,7 +1,7 @@
-const express = require('express');
+import express from 'express';
 const router = express.Router();
-const ActivityLog = require('../models/ActivityLog');
-const { authenticateToken, requireRole } = require('../middleware/auth');
+import ActivityLog from '../models/ActivityLog.js';
+import { authenticateToken, requireRole } from '../middleware/auth.js';
 
 // Chỉ admin và quản lý được xem log
 router.get('/', authenticateToken, requireRole(['admin','quan_ly']), async (req, res) => {
@@ -36,6 +36,6 @@ router.get('/', authenticateToken, requireRole(['admin','quan_ly']), async (req,
   }
 });
 
-module.exports = router;
+export default router;
 
 

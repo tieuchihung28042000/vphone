@@ -1,15 +1,18 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import LogoutButton from "./LogoutButton";
-import * as jwt_decode from "jwt-decode";
+import { jwtDecode } from "jwt-decode";
 
 // Sidebar Component - Layout chung
 const Sidebar = ({ activeTab }) => {
+  const [userInfo, setUserInfo] = useState(null);
+  const [userRole, setUserRole] = useState(null);
+
   // Lấy thông tin user từ token
   const getUserInfo = () => {
     const token = localStorage.getItem("token") || sessionStorage.getItem("token");
     if (!token) return null;
     try {
-      const decoded = jwt_decode.default(token);
+      const decoded = jwtDecode(token);
       return {
         role: decoded.role,
         full_name: decoded.full_name,
@@ -21,17 +24,35 @@ const Sidebar = ({ activeTab }) => {
     }
   };
 
-  const userInfo = getUserInfo();
-  const userRole = userInfo?.role;
+  // Sử dụng useEffect để đọc token khi component mount và khi token thay đổi
+  useEffect(() => {
+    const checkToken = () => {
+      const info = getUserInfo();
+      setUserInfo(info);
+      setUserRole(info?.role);
+      
+      // Debug log để kiểm tra role
+      console.log('🔍 Layout - User role:', info?.role);
+      console.log('🔍 Layout - User info:', info);
+    };
+    
+    checkToken();
+    
+    // Kiểm tra lại mỗi giây để đảm bảo token được đọc
+    const interval = setInterval(checkToken, 1000);
+    
+    return () => clearInterval(interval);
+  }, []);
 
-  // Định nghĩa tất cả menu items
+  // Định nghĩa tất cả menu items theo yêu cầu phân quyền
   const allMenuItems = [
     { id: 'nhap-hang', label: 'Nhập hàng', icon: '📥', path: '/nhap-hang', roles: ['admin', 'quan_ly'] },
     { id: 'xuat-hang', label: 'Xuất hàng', icon: '📤', path: '/xuat-hang', roles: ['admin', 'quan_ly', 'thu_ngan', 'nhan_vien_ban_hang'] },
     { id: 'ton-kho', label: 'Tồn kho', icon: '📦', path: '/ton-kho-so-luong', roles: ['admin', 'quan_ly'] },
-    { id: 'so-quy', label: 'Sổ quỹ', icon: '💰', path: '/so-quy', roles: ['admin', 'quan_ly'] },
+    { id: 'so-quy', label: 'Sổ quỹ', icon: '💰', path: '/so-quy', roles: ['admin', 'quan_ly', 'thu_ngan', 'nhan_vien_ban_hang'] }, // Thu ngân và nhân viên có thể xem sổ quỹ
     { id: 'cong-no', label: 'Công nợ', icon: '💳', path: '/cong-no', roles: ['admin', 'quan_ly', 'thu_ngan'] },
-    { id: 'bao-cao', label: 'Báo cáo', icon: '📊', path: '/bao-cao', roles: ['admin', 'quan_ly'] },
+    { id: 'bao-cao', label: 'Báo cáo', icon: '📊', path: '/bao-cao', roles: ['admin', 'quan_ly'] }, // Thu ngân KHÔNG được xem báo cáo
+    { id: 'lich-su-hoat-dong', label: 'Lịch sử hoạt động', icon: '📋', path: '/lich-su-hoat-dong', roles: ['admin', 'quan_ly'] },
     { id: 'quan-ly-user', label: 'Quản lý User', icon: '👥', path: '/quan-ly-user', roles: ['admin', 'quan_ly'] },
   ];
 

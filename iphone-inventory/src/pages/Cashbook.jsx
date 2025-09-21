@@ -46,6 +46,15 @@ export default function Cashbook() {
   const [loading, setLoading] = useState(false);
   const [summary, setSummary] = useState({ totalThu: 0, totalChi: 0, balance: 0 });
   const [modal, setModal] = useState({ open: false, type: 'add', data: null });
+
+  // Helper function để lấy headers với token
+  const getAuthHeaders = () => {
+    const token = localStorage.getItem("token") || sessionStorage.getItem("token");
+    return {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${token}`
+    };
+  };
   
   // State cho hiển thị số dư theo nguồn tiền và chỉnh sửa tổng quỹ
   const [balanceBySource, setBalanceBySource] = useState({
@@ -120,8 +129,10 @@ export default function Cashbook() {
         return;
       }
       setSuggestLoading(true);
-      const url = `${import.meta.env.VITE_API_URL}/api/cashbook/contents?limit=50`;
-      const res = await fetch(url);
+        const url = `${process.env.VITE_API_URL || 'http://localhost:4000'}/api/cashbook/contents?limit=50`;
+      const res = await fetch(url, {
+        headers: getAuthHeaders()
+      });
       const json = await res.json();
       if (Array.isArray(json)) {
         // Ưu tiên những content khớp với query
@@ -156,7 +167,7 @@ export default function Cashbook() {
       setLoadingBranches(true);
       console.log('🏢 Loading branches...'); // Debug
       
-      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/branches`);
+        const response = await fetch(`${process.env.VITE_API_URL || 'http://localhost:4000'}/api/branches`);
       const data = await response.json();
       
       console.log('🏢 Branches API response:', data); // Debug
@@ -227,7 +238,9 @@ export default function Cashbook() {
         }
       });
 
-      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/cashbook?${params}`);
+          const response = await fetch(`${process.env.VITE_API_URL || 'http://localhost:4000'}/api/cashbook?${params}`, {
+        headers: getAuthHeaders()
+      });
       const data = await response.json();
       
       if (response.ok) {
@@ -259,7 +272,9 @@ export default function Cashbook() {
         }
       });
 
-      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/cashbook/total-summary?${params}`);
+      const response = await fetch(`${process.env.VITE_API_URL || 'http://localhost:4000'}/api/cashbook/total-summary?${params}`, {
+        headers: getAuthHeaders()
+      });
       const data = await response.json();
       
       if (response.ok) {
@@ -275,7 +290,9 @@ export default function Cashbook() {
     if (!selectedBranch) return;
     
     try {
-      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/cashbook/balance?branch=${selectedBranch}`);
+      const response = await fetch(`${process.env.VITE_API_URL || 'http://localhost:4000'}/api/cashbook/balance?branch=${selectedBranch}`, {
+        headers: getAuthHeaders()
+      });
       const data = await response.json();
       
       if (response.ok) {
@@ -308,9 +325,9 @@ export default function Cashbook() {
     }
     
     try {
-      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/cashbook/adjust-balance`, {
+      const response = await fetch(`${process.env.VITE_API_URL || 'http://localhost:4000'}/api/cashbook/adjust-balance`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAuthHeaders(),
         body: JSON.stringify({
           branch: balanceForm.branch, // Sử dụng chi nhánh từ form
           tien_mat: balanceForm.tien_mat ? Number(unformatNumberInput(balanceForm.tien_mat)) : undefined,
@@ -425,14 +442,14 @@ export default function Cashbook() {
       }
 
       const url = modal.type === 'edit' 
-        ? `${import.meta.env.VITE_API_URL}/api/cashbook/${modal.data._id}`
-        : `${import.meta.env.VITE_API_URL}/api/cashbook`;
+        ? `${process.env.VITE_API_URL || 'http://localhost:4000'}/api/cashbook/${modal.data._id}`
+        : `${process.env.VITE_API_URL || 'http://localhost:4000'}/api/cashbook`;
       
       const method = modal.type === 'edit' ? 'PUT' : 'POST';
       
       const response = await fetch(url, {
         method,
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAuthHeaders(),
         body: JSON.stringify({
           ...formData,
           amount: Number(unformatNumberInput(formData.amount))
@@ -458,8 +475,9 @@ export default function Cashbook() {
     if (!window.confirm('Bạn có chắc muốn xóa giao dịch này?')) return;
     
     try {
-      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/cashbook/${id}`, {
-        method: 'DELETE'
+      const response = await fetch(`${process.env.VITE_API_URL || 'http://localhost:4000'}/api/cashbook/${id}`, {
+        method: 'DELETE',
+        headers: getAuthHeaders()
       });
       
       const result = await response.json();
@@ -494,7 +512,9 @@ export default function Cashbook() {
         }
       });
 
-      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/cashbook/export-excel?${params}`);
+      const response = await fetch(`${process.env.VITE_API_URL || 'http://localhost:4000'}/api/cashbook/export-excel?${params}`, {
+        headers: getAuthHeaders()
+      });
       
       if (response.ok) {
         const blob = await response.blob();

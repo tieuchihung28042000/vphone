@@ -1,4 +1,4 @@
-const mongoose = require('mongoose');
+import mongoose from 'mongoose';
 
 const ReturnExportSchema = new mongoose.Schema({
   // Thông tin liên kết với phiếu xuất gốc
@@ -63,4 +63,4 @@ ReturnExportSchema.index({ return_date: -1 });
 ReturnExportSchema.index({ branch: 1 });
 ReturnExportSchema.index({ customer_name: 1 });
 
-module.exports = mongoose.model('ReturnExport', ReturnExportSchema); 
+export default mongoose.model('ReturnExport', ReturnExportSchema); 

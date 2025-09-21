@@ -1,7 +1,7 @@
 // routes/branch.js
-const express = require('express');
+import express from 'express';
 const router = express.Router();
-const Branch = require('../models/Branch');
+import Branch from '../models/Branch.js';
 
 // Lấy tất cả branch
 router.get('/', async (req, res) => {
@@ -32,4 +32,4 @@ router.delete('/:id', async (req, res) => {
   res.json({ message: 'Đã xoá chi nhánh' });
 });
 
-module.exports = router;
+export default router;

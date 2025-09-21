@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Fix Token</title>
+</head>
+<body>
+    <h1>Fix Token Issue</h1>
+    <button onclick="clearTokens()">Clear Tokens & Reload</button>
+    
+    <script>
+        function clearTokens() {
+            localStorage.clear();
+            sessionStorage.clear();
+            alert('Tokens cleared! Redirecting to login...');
+            window.location.href = 'http://localhost:5174/login';
+        }
+    </script>
+</body>
+</html>

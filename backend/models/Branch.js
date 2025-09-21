@@ -1,5 +1,5 @@
-const mongoose = require('mongoose');
+import mongoose from 'mongoose';
 const BranchSchema = new mongoose.Schema({
   name: { type: String, required: true, unique: true }
 });
-module.exports = mongoose.model('Branch', BranchSchema);
+export default mongoose.model('Branch', BranchSchema);

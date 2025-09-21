@@ -1,6 +1,6 @@
-const express = require('express');
-const bcrypt = require('bcrypt');
-const Admin = require('../models/Admin');
+import express from 'express';
+import bcrypt from 'bcryptjs';
+import Admin from '../models/Admin.js';
 
 const router = express.Router();
 
@@ -36,4 +36,4 @@ router.post('/admin-register', async (req, res) => {
   }
 });
 
-module.exports = router;
+export default router;
