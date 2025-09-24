@@ -18,7 +18,7 @@ function DangKy() {
     }
 
     try {
-      const API = import.meta.env.VITE_API_URL || 'http://localhost:4000'?.replace(/\/+$/, ""); // Xoá dấu / nếu có
+      const API = (import.meta.env.VITE_API_URL || '').replace(/\/+$/, ""); // Xoá dấu / nếu có
       console.log("🔗 API:", `${API}/api/admin-register`);
 
       const res = await fetch(`${API}/api/auth/register`, {

@@ -129,7 +129,7 @@ export default function Cashbook() {
         return;
       }
       setSuggestLoading(true);
-        const url = `${import.meta.env.VITE_API_URL || 'http://localhost:4000'}/api/cashbook/contents?limit=50`;
+        const url = `${import.meta.env.VITE_API_URL || ''}/api/cashbook/contents?limit=50`;
       const res = await fetch(url, {
         headers: getAuthHeaders()
       });
@@ -167,7 +167,7 @@ export default function Cashbook() {
       setLoadingBranches(true);
       console.log('🏢 Loading branches...'); // Debug
       
-        const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:4000'}/api/branches`);
+        const response = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/branches`);
       const data = await response.json();
       
       console.log('🏢 Branches API response:', data); // Debug
@@ -238,7 +238,7 @@ export default function Cashbook() {
         }
       });
 
-          const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:4000'}/api/cashbook?${params}`, {
+          const response = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/cashbook?${params}`, {
         headers: getAuthHeaders()
       });
       const data = await response.json();
@@ -272,7 +272,7 @@ export default function Cashbook() {
         }
       });
 
-      const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:4000'}/api/cashbook/total-summary?${params}`, {
+      const response = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/cashbook/total-summary?${params}`, {
         headers: getAuthHeaders()
       });
       const data = await response.json();
@@ -290,7 +290,7 @@ export default function Cashbook() {
     if (!selectedBranch) return;
     
     try {
-      const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:4000'}/api/cashbook/balance?branch=${selectedBranch}`, {
+      const response = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/cashbook/balance?branch=${selectedBranch}`, {
         headers: getAuthHeaders()
       });
       const data = await response.json();
@@ -325,7 +325,7 @@ export default function Cashbook() {
     }
     
     try {
-      const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:4000'}/api/cashbook/adjust-balance`, {
+      const response = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/cashbook/adjust-balance`, {
         method: 'POST',
         headers: getAuthHeaders(),
         body: JSON.stringify({
@@ -442,8 +442,8 @@ export default function Cashbook() {
       }
 
       const url = modal.type === 'edit' 
-        ? `${import.meta.env.VITE_API_URL || 'http://localhost:4000'}/api/cashbook/${modal.data._id}`
-        : `${import.meta.env.VITE_API_URL || 'http://localhost:4000'}/api/cashbook`;
+        ? `${import.meta.env.VITE_API_URL || ''}/api/cashbook/${modal.data._id}`
+        : `${import.meta.env.VITE_API_URL || ''}/api/cashbook`;
       
       const method = modal.type === 'edit' ? 'PUT' : 'POST';
       
@@ -475,7 +475,7 @@ export default function Cashbook() {
     if (!window.confirm('Bạn có chắc muốn xóa giao dịch này?')) return;
     
     try {
-      const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:4000'}/api/cashbook/${id}`, {
+      const response = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/cashbook/${id}`, {
         method: 'DELETE',
         headers: getAuthHeaders()
       });
@@ -512,7 +512,7 @@ export default function Cashbook() {
         }
       });
 
-      const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:4000'}/api/cashbook/export-excel?${params}`, {
+      const response = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/cashbook/export-excel?${params}`, {
         headers: getAuthHeaders()
       });
       

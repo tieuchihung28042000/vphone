@@ -113,7 +113,7 @@ function XuatHang() {
   const fetchAvailableItems = async () => {
     try {
       // ✅ Sửa: Gọi API tồn kho (sử dụng VITE_API_URL)
-      const res = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:4000'}/api/ton-kho`);
+      const res = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/ton-kho`);
       
       if (!res.ok) throw new Error(`API Error: ${res.status}`);
       
@@ -143,7 +143,7 @@ function XuatHang() {
     try {
       const token = localStorage.getItem('token') || sessionStorage.getItem('token');
       const branchParam = formData.branch ? `&branch=${formData.branch}` : '';
-      const res = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:4000'}/api/inventory?limit=1000${branchParam}`, {
+      const res = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/inventory?limit=1000${branchParam}`, {
         headers: token ? { 'Authorization': `Bearer ${token}` } : {}
       });
       const data = await res.json();
@@ -160,7 +160,7 @@ function XuatHang() {
 
   const fetchSoldItems = async () => {
     try {
-      const res = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:4000'}/api/xuat-hang-list`);
+      const res = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/xuat-hang-list`);
       
       if (!res.ok) throw new Error(`API Error: ${res.status}`);
       
@@ -183,7 +183,7 @@ function XuatHang() {
 
   const fetchBranches = async () => {
     try {
-      const res = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:4000'}/api/branches`);
+      const res = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/branches`);
       const data = await res.json();
       setBranches(data);
     } catch (err) {
@@ -193,7 +193,7 @@ function XuatHang() {
 
   const fetchCategories = async () => {
     try {
-      const res = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:4000'}/api/categories`);
+      const res = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/categories`);
       const data = await res.json();
       setCategories(data);
     } catch (err) {
@@ -220,7 +220,7 @@ function XuatHang() {
     try {
       // ✅ Thêm timestamp để tránh cache
       const timestamp = Date.now();
-        const res = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:4000'}/api/ton-kho?t=${timestamp}`);
+        const res = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/ton-kho?t=${timestamp}`);
       const data = await res.json();
       const lowerQuery = query.trim().toLowerCase();
       
@@ -332,7 +332,7 @@ function XuatHang() {
     } else if (name === "imei" && value.trim()) {
       // Auto-fill product info when IMEI is entered
       try {
-        const res = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:4000'}/api/find-by-imei?imei=${value.trim()}`);
+        const res = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/find-by-imei?imei=${value.trim()}`);
         if (res.ok) {
           const data = await res.json();
           setFormData((prev) => ({ 
@@ -572,7 +572,7 @@ function XuatHang() {
 
     try {
       const token = localStorage.getItem("token") || sessionStorage.getItem("token");
-      const res = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:4000'}/api/return-export`, {
+      const res = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/return-export`, {
         method: "POST",
         headers: { 
           "Content-Type": "application/json",
@@ -656,7 +656,7 @@ function XuatHang() {
 
     try {
       const token = localStorage.getItem('token') || sessionStorage.getItem('token');
-      const res = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:4000'}/api/report/xuat-hang-batch`, {
+      const res = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/report/xuat-hang-batch`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -891,7 +891,7 @@ function XuatHang() {
             sold_date: importData.sale_date
           };
 
-              const res = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:4000'}/api/xuat-hang`, {
+              const res = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/xuat-hang`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(submitData)

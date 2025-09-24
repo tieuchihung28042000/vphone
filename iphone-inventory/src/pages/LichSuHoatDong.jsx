@@ -38,7 +38,7 @@ function LichSuHoatDong() {
       params.append('page', String(p));
       params.append('limit', String(limit));
 
-        const url = `${import.meta.env.VITE_API_URL || 'http://localhost:4000'}/api/activity-logs?${params.toString()}`;
+        const url = `${import.meta.env.VITE_API_URL || ''}/api/activity-logs?${params.toString()}`;
       const res = await fetch(url, {
         headers: getAuthHeaders()
       });

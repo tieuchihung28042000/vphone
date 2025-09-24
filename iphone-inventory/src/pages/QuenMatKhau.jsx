@@ -17,7 +17,7 @@ export default function QuenMatKhau() {
     if (password.length < 6) return setMessage("❌ Mật khẩu phải từ 6 ký tự");
     setLoading(true);
     try {
-      const res = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:4000'}/api/auth/send-reset-otp`, {
+      const res = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/auth/send-reset-otp`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, password }),
@@ -42,7 +42,7 @@ export default function QuenMatKhau() {
     if (!otp) return setMessage("❌ Vui lòng nhập mã OTP trong email");
     setLoading(true);
     try {
-      const res = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:4000'}/api/auth/verify-reset-otp`, {
+      const res = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/auth/verify-reset-otp`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, otp }),

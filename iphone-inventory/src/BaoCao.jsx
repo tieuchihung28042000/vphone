@@ -55,7 +55,7 @@ function BaoCao() {
   const loadBranches = async () => {
     try {
       console.log('📊 Loading branches for report...'); // Debug
-      const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:4000'}/api/branches`);
+      const response = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/branches`);
       const data = await response.json();
       
       if (response.ok && data.length > 0) {
@@ -88,7 +88,7 @@ function BaoCao() {
     console.log('📊 Fetching report data:', { fromDate, toDate, branch: branchParam }); // Debug
     setLoading(true);
     try {
-      let api = `${import.meta.env.VITE_API_URL || 'http://localhost:4000'}/api/report/bao-cao-loi-nhuan`;
+      let api = `${import.meta.env.VITE_API_URL || ''}/api/report/bao-cao-loi-nhuan`;
       if (fromDate && toDate) {
         api += `?from=${fromDate}&to=${toDate}&branch=${branchParam}`;
       }

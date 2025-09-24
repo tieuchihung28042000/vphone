@@ -22,7 +22,7 @@ export default defineConfig(({ mode }) => {
     },
     define: {
       'process.env.NODE_ENV': JSON.stringify(env.NODE_ENV || 'development'),
-      'process.env.VITE_API_URL': JSON.stringify(env.VITE_API_URL || 'http://localhost:4000')
+      'process.env.VITE_API_URL': JSON.stringify(env.VITE_API_URL || '')
     }
   };
 });

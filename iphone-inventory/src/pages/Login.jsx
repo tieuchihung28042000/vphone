@@ -13,7 +13,7 @@ function Login() {
     try {
       console.log("🔗 Using internal API URL");
       
-      const res = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:4000'}/api/auth/login`, {
+      const res = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/auth/login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, password }),
