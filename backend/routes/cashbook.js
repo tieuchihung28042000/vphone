@@ -32,6 +32,24 @@ async function calculateBalance(source, branch, amount, type) {
   }
 }
 
+// Helper: Reindex balances for a given source+branch in chronological order
+async function reindexBalances(source, branch) {
+  const filter = { source };
+  if (branch) filter.branch = branch;
+  const items = await Cashbook.find(filter).sort({ date: 1, createdAt: 1 });
+  let running = 0;
+  for (const item of items) {
+    const before = running;
+    running = item.type === 'thu' ? (running + Number(item.amount)) : (running - Number(item.amount));
+    if (item.balance_before !== before || item.balance_after !== running) {
+      item.balance_before = before;
+      item.balance_after = running;
+      await item.save();
+    }
+  }
+  return running;
+}
+
 // 1. Thêm mới giao dịch (POST)
 router.post('/', authenticateToken, async (req, res) => {
   try {
@@ -57,6 +75,10 @@ router.post('/', authenticateToken, async (req, res) => {
 
     // Tính số dư
     const balanceInfo = await calculateBalance(source, branch, Number(amount), type);
+    // Chặn âm số dư khi chi
+    if (type === 'chi' && balanceInfo.balance_after < 0) {
+      return res.status(400).json({ message: '❌ Số dư không đủ để chi. Vui lòng điều chỉnh số dư hoặc chọn nguồn khác.' });
+    }
 
     const cashbook = new Cashbook({
       ...req.body,
@@ -95,9 +117,13 @@ router.put('/:id', authenticateToken, async (req, res) => {
       return res.status(404).json({ message: 'Không tìm thấy giao dịch' });
     }
 
-    // Kiểm tra quyền chỉnh sửa
-    if (!transaction.editable) {
-      return res.status(403).json({ message: 'Giao dịch này không thể chỉnh sửa' });
+    // Kiểm tra quyền chỉnh sửa: cho phép nếu chưa bị khóa (editable !== false),
+    // hoặc nếu user có vai trò admin/quan_ly
+    const role = req.user?.role;
+    const isLocked = transaction.editable === false;
+    const canOverride = role === 'admin' || role === 'quan_ly';
+    if (isLocked && !canOverride) {
+      return res.status(403).json({ message: 'Giao dịch đã bị khóa, chỉ Admin/Quản lý được chỉnh sửa' });
     }
 
     // Cập nhật số dư nếu thay đổi số tiền
@@ -112,7 +138,16 @@ router.put('/:id', authenticateToken, async (req, res) => {
       updateData = { ...updateData, ...balanceInfo };
     }
 
+    const oldSource = transaction.source;
+    const oldBranch = transaction.branch;
+
     const updated = await Cashbook.findByIdAndUpdate(req.params.id, updateData, { new: true });
+
+    // Reindex balances cho cả nguồn/chi nhánh cũ và mới để đảm bảo số dư chính xác
+    try {
+      await reindexBalances(oldSource, oldBranch);
+      await reindexBalances(updated.source, updated.branch);
+    } catch (e) { /* ignore reindex error */ }
     try {
       await ActivityLog.create({
         user_id: req.user?._id,
@@ -139,11 +174,17 @@ router.delete('/:id', authenticateToken, async (req, res) => {
       return res.status(404).json({ message: 'Không tìm thấy giao dịch' });
     }
 
-    // Kiểm tra quyền xóa
-    if (!transaction.editable) {
-      return res.status(403).json({ message: 'Giao dịch này không thể xóa' });
+    // Kiểm tra quyền xóa: cho phép nếu chưa bị khóa (editable !== false),
+    // hoặc nếu user có vai trò admin/quan_ly
+    const role = req.user?.role;
+    const isLocked = transaction.editable === false;
+    const canOverride = role === 'admin' || role === 'quan_ly';
+    if (isLocked && !canOverride) {
+      return res.status(403).json({ message: 'Giao dịch đã bị khóa, chỉ Admin/Quản lý được xoá' });
     }
 
+    const src = transaction.source;
+    const br = transaction.branch;
     await Cashbook.findByIdAndDelete(req.params.id);
     try {
       await ActivityLog.create({
@@ -157,7 +198,11 @@ router.delete('/:id', authenticateToken, async (req, res) => {
         branch: transaction.branch
       });
     } catch (e) { /* ignore log error */ }
-    res.json({ message: '✅ Đã xoá giao dịch' });
+    // Reindex balances cho cùng nguồn và chi nhánh để số dư chính xác
+    try {
+      await reindexBalances(src, br);
+    } catch (e) { /* ignore reindex error */ }
+    res.json({ message: '✅ Đã xoá giao dịch và cập nhật số dư' });
   } catch (err) {
     res.status(400).json({ message: '❌ Lỗi xoá giao dịch', error: err.message });
   }
@@ -285,6 +330,9 @@ router.post('/auto-purchase', async (req, res) => {
     
     const receipt_code = generateReceiptCode('chi');
     const balanceInfo = await calculateBalance(source, branch, Number(amount), 'chi');
+    if (balanceInfo.balance_after < 0) {
+      return res.status(400).json({ message: '❌ Số dư nguồn tiền không đủ để chi (nhập hàng).' });
+    }
 
     const cashbook = new Cashbook({
       type: 'chi',
@@ -320,6 +368,9 @@ router.post('/auto-debt', async (req, res) => {
     
     const receipt_code = generateReceiptCode(type);
     const balanceInfo = await calculateBalance(source, branch, Number(amount), type);
+    if (type === 'chi' && balanceInfo.balance_after < 0) {
+      return res.status(400).json({ message: '❌ Số dư nguồn tiền không đủ để chi công nợ.' });
+    }
 
     const cashbook = new Cashbook({
       type,

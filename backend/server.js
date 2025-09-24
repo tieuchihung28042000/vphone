@@ -11,10 +11,25 @@ const __dirname = path.dirname(__filename);
 // Load environment variables from root .env
 dotenv.config({ path: path.join(__dirname, '..', '.env') });
 
-// Set MONGODB_URI if not already set
+// Set MONGODB_URI if not already set, constructing from granular ENV variables
 if (!process.env.MONGODB_URI) {
+  const isProd = (process.env.NODE_ENV === 'production');
+  const mongoHost = process.env.MONGODB_HOST || (isProd ? 'vphone-mongodb' : 'localhost');
   const mongoPort = process.env.MONGODB_PORT || '27017';
-  process.env.MONGODB_URI = `mongodb://${process.env.MONGO_ROOT_USERNAME}:${process.env.MONGO_ROOT_PASSWORD}@localhost:${mongoPort}/${process.env.MONGO_DB_NAME}?authSource=admin`;
+  const mongoDbName = process.env.MONGODB_DB_NAME || process.env.MONGO_DB_NAME || (isProd ? 'vphone_production' : 'vphone_dev');
+
+  const mongoUser = process.env.MONGODB_USER || process.env.MONGO_ROOT_USERNAME;
+  const mongoPass = process.env.MONGODB_PASS || process.env.MONGO_ROOT_PASSWORD;
+  const authSource = process.env.MONGODB_AUTH_SOURCE || (mongoUser ? (process.env.MONGODB_AUTH_DB || 'admin') : undefined);
+
+  const withCreds = mongoUser ? `${encodeURIComponent(mongoUser)}:${encodeURIComponent(mongoPass || '')}@` : '';
+  const authQuery = authSource ? `?authSource=${encodeURIComponent(authSource)}` : '';
+  process.env.MONGODB_URI = `mongodb://${withCreds}${mongoHost}:${mongoPort}/${mongoDbName}${authQuery}`;
+
+  // Masked log for visibility during setup
+  const maskedUser = mongoUser ? encodeURIComponent(mongoUser) : '';
+  const maskedCreds = mongoUser ? `${maskedUser}:****@` : '';
+  console.log(`ℹ️ Resolved MONGODB_URI: mongodb://${maskedCreds}${mongoHost}:${mongoPort}/${mongoDbName}${authQuery}`);
 }
 
 import Inventory from './models/Inventory.js';
@@ -24,6 +39,8 @@ import ReturnImport from './models/ReturnImport.js'; // THÊM MODEL RETURN IMPOR
 import ReturnExport from './models/ReturnExport.js'; // THÊM MODEL RETURN EXPORT
 import User from './models/User.js'; // THÊM MODEL USER
 import Branch from './models/Branch.js'; // THÊM MODEL BRANCH
+import SupplierDebt from './models/SupplierDebt.js';
+import ActivityLog from './models/ActivityLog.js';
 import authRoutes from './routes/auth.js';
 import userRoutes from './routes/user.js';
 import reportRoutes from './routes/report.js';
@@ -39,6 +56,25 @@ import activityLogRoutes from './routes/activityLog.js';
 import inventoryRoutes from './routes/inventory.js';
 
 const app = express();
+
+// Helper: chuẩn hóa source cho Cashbook
+function normalizeCashSource(input) {
+  const map = {
+    'Tiền mặt': 'tien_mat',
+    '💵 Tiền mặt': 'tien_mat',
+    'tien_mat': 'tien_mat',
+    'Thẻ': 'the',
+    '💳 Thẻ': 'the',
+    'the': 'the',
+    'Ví điện tử': 'vi_dien_tu',
+    '📱 Ví điện tử': 'vi_dien_tu',
+    'vi_dien_tu': 'vi_dien_tu',
+    'Công nợ': 'cong_no',
+    '📝 Công nợ': 'cong_no',
+    'cong_no': 'cong_no',
+  };
+  return map[input] || 'tien_mat';
+}
 
 // CORS configuration - cho phép tất cả origins để dễ triển khai
 app.use(cors({
@@ -217,8 +253,42 @@ app.post('/api/nhap-hang', async (req, res) => {
         quantity: 1,
         category,
         da_thanh_toan_nhap: daTTNhapNum, // Đã thanh toán cho nhà cung cấp
+        status: 'in_stock',
       });
       await newItem.save();
+      // Lịch sử hoạt động: Nhập hàng IMEI
+      try {
+        await ActivityLog.create({
+          module: 'nhap_hang',
+          action: 'create',
+          branch: branch || '',
+          ref_id: newItem._id?.toString() || '',
+          user_id: req.user?._id,
+          username: (req.user && (req.user.full_name || req.user.email || req.user.id)) || 'system',
+          role: (req.user && req.user.role) || 'system',
+          payload_snapshot: newItem.toObject(),
+        });
+      } catch (e) { /* ignore */ }
+
+      // --- Cập nhật CÔNG NỢ NHÀ CUNG CẤP ---
+      const totalImportCost = priceImportNum; // IMEI luôn số lượng 1
+      const totalPaidToSupplier = daTTNhapNum;
+      const supplierDebtIncrease = Math.max(totalImportCost - totalPaidToSupplier, 0);
+      if (supplierDebtIncrease > 0 && supplier) {
+        await SupplierDebt.findOneAndUpdate(
+          { supplier_name: supplier, branch: branch || '' },
+          {
+            $inc: { total_debt: supplierDebtIncrease },
+            $push: {
+              debt_history: {
+                type: 'add', amount: supplierDebtIncrease, date: new Date(),
+                note: `Cộng nợ từ nhập hàng: ${product_name} (IMEI: ${imei})`, related_id: newItem._id?.toString() || ''
+              }
+            }
+          },
+          { upsert: true, new: true }
+        );
+      }
 
       // --- Ghi SỔ QUỸ: hỗ trợ đa nguồn ---
       const payList = Array.isArray(payments) && payments.length > 0
@@ -236,6 +306,8 @@ app.post('/api/nhap-hang', async (req, res) => {
           source: p.source || 'tien_mat',
           supplier: supplier || '',
           related_id: newItem._id,
+          related_type: 'nhap_hang',
+          is_auto: true,
         });
       }
 
@@ -271,6 +343,40 @@ app.post('/api/nhap-hang', async (req, res) => {
       existItem.note = note || existItem.note;
       existItem.da_thanh_toan_nhap = (existItem.da_thanh_toan_nhap || 0) + daTTNhapNum;
       await existItem.save();
+
+      // Lịch sử hoạt động: Nhập phụ kiện (cộng dồn)
+      try {
+        await ActivityLog.create({
+          module: 'nhap_hang',
+          action: 'update',
+          branch: branch || '',
+          ref_id: existItem._id?.toString() || '',
+          user_id: req.user?._id,
+          username: (req.user && (req.user.full_name || req.user.email || req.user.id)) || 'system',
+          role: (req.user && req.user.role) || 'system',
+          payload_snapshot: { ...existItem.toObject(), added_quantity: quantityNum, added_paid: daTTNhapNum },
+        });
+      } catch (e) { /* ignore */ }
+
+      // --- Cập nhật CÔNG NỢ NHÀ CUNG CẤP ---
+      const totalImportCost2 = priceImportNum * quantityNum;
+      const totalPaidToSupplier2 = daTTNhapNum;
+      const supplierDebtIncrease2 = Math.max(totalImportCost2 - totalPaidToSupplier2, 0);
+      if (supplierDebtIncrease2 > 0 && supplier) {
+        await SupplierDebt.findOneAndUpdate(
+          { supplier_name: supplier, branch: branch || '' },
+          {
+            $inc: { total_debt: supplierDebtIncrease2 },
+            $push: {
+              debt_history: {
+                type: 'add', amount: supplierDebtIncrease2, date: new Date(),
+                note: `Cộng nợ từ nhập phụ kiện: ${product_name} (SKU: ${sku})`, related_id: existItem._id?.toString() || ''
+              }
+            }
+          },
+          { upsert: true, new: true }
+        );
+      }
       return res.status(200).json({
         message: '✅ Đã cộng dồn số lượng phụ kiện!',
         item: existItem,
@@ -293,8 +399,43 @@ app.post('/api/nhap-hang', async (req, res) => {
         quantity: quantityNum,
         category,
         da_thanh_toan_nhap: daTTNhapNum, // Đã thanh toán cho nhà cung cấp
+        status: 'in_stock',
       });
       await newItem.save();
+
+      // Lịch sử hoạt động: Nhập phụ kiện (tạo mới)
+      try {
+        await ActivityLog.create({
+          module: 'nhap_hang',
+          action: 'create',
+          branch: branch || '',
+          ref_id: newItem._id?.toString() || '',
+          user_id: req.user?._id,
+          username: (req.user && (req.user.full_name || req.user.email || req.user.id)) || 'system',
+          role: (req.user && req.user.role) || 'system',
+          payload_snapshot: newItem.toObject(),
+        });
+      } catch (e) { /* ignore */ }
+
+      // --- Cập nhật CÔNG NỢ NHÀ CUNG CẤP ---
+      const totalImportCost3 = priceImportNum * quantityNum;
+      const totalPaidToSupplier3 = daTTNhapNum;
+      const supplierDebtIncrease3 = Math.max(totalImportCost3 - totalPaidToSupplier3, 0);
+      if (supplierDebtIncrease3 > 0 && supplier) {
+        await SupplierDebt.findOneAndUpdate(
+          { supplier_name: supplier, branch: branch || '' },
+          {
+            $inc: { total_debt: supplierDebtIncrease3 },
+            $push: {
+              debt_history: {
+                type: 'add', amount: supplierDebtIncrease3, date: new Date(),
+                note: `Cộng nợ từ nhập phụ kiện mới: ${product_name} (SKU: ${sku})`, related_id: newItem._id?.toString() || ''
+              }
+            }
+          },
+          { upsert: true, new: true }
+        );
+      }
 
       // --- Ghi SỔ QUỸ: hỗ trợ đa nguồn ---
       const payList2 = Array.isArray(payments) && payments.length > 0
@@ -418,20 +559,30 @@ app.post('/api/xuat-hang', async (req, res) => {
     
     // ✅ Xử lý phụ kiện và sản phẩm có IMEI khác nhau
     if (is_accessory || !imei) {
-      // Phụ kiện: tìm theo SKU và product_name, status in_stock
+      // Phụ kiện: ưu tiên tìm theo SKU + chi nhánh, kèm theo tên; chỉ lấy hàng còn tồn
+      const orConds = [];
+      if (sku) orConds.push({ sku });
+      if (product_name) {
+        orConds.push({ product_name });
+        orConds.push({ tenSanPham: product_name });
+      }
       const query = {
         status: 'in_stock',
-        $or: [
-          { sku: sku },
-          { product_name: product_name },
-          { tenSanPham: product_name }
-        ]
+        ...(branch ? { branch } : {}),
+        ...(orConds.length > 0 ? { $or: orConds } : {})
       };
-      
       const availableItems = await Inventory.find(query);
       
       if (availableItems.length === 0) {
-        return res.status(404).json({ message: '❌ Không tìm thấy phụ kiện trong kho.' });
+        // Thử tìm mềm hơn theo SKU + chi nhánh, bất kể status (để biết vì sao không thấy)
+        const soft = await Inventory.findOne({ sku, ...(branch ? { branch } : {}), status: { $in: ['in_stock','sold'] } });
+        if (!soft) {
+          return res.status(404).json({ message: '❌ Không tìm thấy phụ kiện trong kho.' });
+        }
+        if ((soft.quantity || 0) <= 0 || soft.status === 'sold') {
+          return res.status(400).json({ message: `❌ Phụ kiện đã hết hàng (SL còn ${soft.quantity || 0}).` });
+        }
+        availableItems.push(soft);
       }
       
       // Lấy item đầu tiên có số lượng > 0
@@ -506,7 +657,10 @@ app.post('/api/xuat-hang', async (req, res) => {
         note: note || '',
         branch: branch || item.branch,
         quantity: sellQuantity, // ✅ Field này có trong schema
-        export_type: 'accessory' // ✅ Đánh dấu là phụ kiện
+        export_type: 'accessory', // ✅ Đánh dấu là phụ kiện
+        created_by: req.user?._id,
+        created_by_email: req.user?.email || '',
+        created_by_name: req.user?.full_name || ''
       });
       
       console.log('✅ ExportHistory record to be saved:', {
@@ -518,6 +672,19 @@ app.post('/api/xuat-hang', async (req, res) => {
       }); // ✅ Debug log
       
       await soldAccessory.save();
+      // Lịch sử hoạt động: Xuất hàng phụ kiện
+      try {
+        await ActivityLog.create({
+          module: 'xuat_hang',
+          action: 'create',
+          branch: (branch || item.branch || ''),
+          ref_id: soldAccessory._id?.toString() || '',
+          user_id: req.user?._id,
+          username: (req.user && (req.user.full_name || req.user.email || req.user.id)) || 'system',
+          role: (req.user && req.user.role) || 'system',
+          payload_snapshot: soldAccessory.toObject(),
+        });
+      } catch (e) { /* ignore */ }
       // ✅ Save item vì đã thay đổi quantity
       await item.save();
       
@@ -569,7 +736,10 @@ app.post('/api/xuat-hang', async (req, res) => {
         note: note || '',
         branch: branch || item.branch,
         export_type: 'normal', // ✅ Field này có trong schema
-        quantity: 1 // ✅ Sản phẩm IMEI luôn là 1
+        quantity: 1, // ✅ Sản phẩm IMEI luôn là 1
+        created_by: req.user?._id,
+        created_by_email: req.user?.email || '',
+        created_by_name: req.user?.full_name || ''
       });
       
       console.log('✅ ExportHistory IMEI record to be saved:', {
@@ -582,6 +752,19 @@ app.post('/api/xuat-hang', async (req, res) => {
       }); // ✅ Debug log
       
       await soldItem.save();
+      // Lịch sử hoạt động: Xuất hàng IMEI
+      try {
+        await ActivityLog.create({
+          module: 'xuat_hang',
+          action: 'create',
+          branch: (branch || item.branch || ''),
+          ref_id: soldItem._id?.toString() || '',
+          user_id: req.user?._id,
+          username: (req.user && (req.user.full_name || req.user.email || req.user.id)) || 'system',
+          role: (req.user && req.user.role) || 'system',
+          payload_snapshot: soldItem.toObject(),
+        });
+      } catch (e) { /* ignore */ }
       
       // ✅ DEBUG: Kiểm tra record sau khi lưu
       const savedIMEIRecord = await ExportHistory.findById(soldItem._id);
@@ -614,9 +797,11 @@ app.post('/api/xuat-hang', async (req, res) => {
         note: note || '',
         date: sold_date || new Date(),
         branch: branch || '',
-        source: source || 'Tiền mặt',
+        source: normalizeCashSource(source || 'tien_mat'),
         customer: customer_name || '',
-        related_id: item._id
+        related_id: item._id,
+        related_type: 'ban_hang',
+        is_auto: true,
       });
     }
 
@@ -634,7 +819,9 @@ app.post('/api/xuat-hang', async (req, res) => {
         branch: branch || '',
         source: 'cong_no',
         customer: customer_name || '',
-        related_id: item._id
+        related_id: item._id,
+        related_type: 'ban_hang',
+        is_auto: true,
       });
     }
 
@@ -868,6 +1055,16 @@ app.get('/api/xuat-hang-list', async (req, res) => {
       });
     }
     
+    // ✅ Đồng bộ trạng thái hoàn trả từ bảng ReturnExport (phòng khi thiếu cờ is_returned)
+    let returnedSet = new Set();
+    try {
+      const ids = rawItems.map(i => i._id).filter(Boolean);
+      if (ids.length > 0) {
+        const returns = await ReturnExport.find({ original_export_id: { $in: ids } });
+        returnedSet = new Set(returns.map(r => String(r.original_export_id)));
+      }
+    } catch (e) { /* ignore */ }
+
     // ✅ FIX: Flexible field mapping để support nhiều field name khác nhau  
     const items = rawItems.map(item => ({
       _id: item._id,
@@ -892,6 +1089,9 @@ app.get('/api/xuat-hang-list', async (req, res) => {
       product_name: item.product_name || item.tenSanPham || '',
       customer_name: item.customer_name || '',
       customer_phone: item.customer_phone || '',
+      // Flag hoàn trả để UI disable nút trả hàng (kể cả khi thiếu cờ ở ExportHistory)
+      is_returned: !!(item.is_returned) || returnedSet.has(String(item._id)),
+      return_id: item.return_id || null,
       item: {
         _id: item._id,
         product_name: item.product_name || item.tenSanPham,

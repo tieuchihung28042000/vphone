@@ -17,6 +17,12 @@ const ExportHistorySchema = new mongoose.Schema({
   export_type: { type: String, default: 'normal' }, // phân biệt phụ kiện / iPhone
   batch_id: { type: String },
   sales_channel: { type: String },
-  salesperson: { type: String },
+  // Ghi nhận người tạo phiếu (nhân viên đang đăng nhập)
+  created_by: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+  created_by_email: { type: String },
+  created_by_name: { type: String },
+  // Trạng thái hoàn trả
+  is_returned: { type: Boolean, default: false },
+  return_id: { type: mongoose.Schema.Types.ObjectId, ref: 'ReturnExport' },
 });
 export default mongoose.model('ExportHistory', ExportHistorySchema);

@@ -97,7 +97,13 @@ router.post('/', authenticateToken, requireRole(['admin', 'quan_ly', 'thu_ngan']
     // Kiểm tra tổng tiền trả
     const hasPayments = Array.isArray(payments) && payments.length > 0;
     if (!hasPayments) {
-      if ((Number(return_cash) + Number(return_transfer)) !== Number(return_amount)) {
+      const rc = Number(return_cash) || 0;
+      const rt = Number(return_transfer) || 0;
+      const ra = Number(return_amount) || 0;
+      // Nếu UI chỉ gửi return_amount mà không tách nguồn, mặc định trả bằng tiền mặt
+      if (rc + rt === 0 && ra > 0) {
+        req.body.return_cash = ra;
+      } else if ((rc + rt) !== ra) {
         return res.status(400).json({ message: 'Tổng tiền trả không khớp' });
       }
     } else {
@@ -115,9 +121,9 @@ router.post('/', authenticateToken, requireRole(['admin', 'quan_ly', 'thu_ngan']
       product_name: originalItem.product_name,
       quantity: originalItem.quantity,
       price_import: originalItem.price_import,
-      return_amount,
-      return_cash,
-      return_transfer,
+      return_amount: req.body.return_amount,
+      return_cash: req.body.return_cash || 0,
+      return_transfer: req.body.return_transfer || 0,
       return_reason,
       supplier: originalItem.supplier,
       branch: originalItem.branch,

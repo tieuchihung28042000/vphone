@@ -26,8 +26,8 @@ const ReturnImportSchema = new mongoose.Schema({
   return_date: { type: Date, default: Date.now },
   return_reason: { type: String, required: true }, // Lý do trả hàng
   
-  // Thông tin nhà cung cấp
-  supplier: { type: String, required: true },
+  // Thông tin nhà cung cấp (có thể trống ở record cũ)
+  supplier: { type: String, default: '' },
   
   // Thông tin chi nhánh và người thực hiện
   branch: { type: String, required: true },

@@ -95,9 +95,11 @@ function XuatHang() {
   const [batchMode, setBatchMode] = useState(false);
   const [batchItems, setBatchItems] = useState([]); // {imei, sku, product_name, quantity, price_sell}
   const [batchRow, setBatchRow] = useState({ imei: '', sku: '', product_name: '', quantity: '1', price_sell: '' });
+  // Gợi ý cho batch
+  const [batchSuggest, setBatchSuggest] = useState([]);
+  const [showBatchSuggest, setShowBatchSuggest] = useState(false);
   const [batchPayments, setBatchPayments] = useState([{ source: 'tien_mat', amount: '' }]);
   const [salesChannel, setSalesChannel] = useState('');
-  const [salesperson, setSalesperson] = useState('');
   const [autoCashbook, setAutoCashbook] = useState(true);
   const [lastBatchResponse, setLastBatchResponse] = useState(null);
 
@@ -332,17 +334,24 @@ function XuatHang() {
     } else if (name === "imei" && value.trim()) {
       // Auto-fill product info when IMEI is entered
       try {
-        const res = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/find-by-imei?imei=${value.trim()}`);
+        const base = import.meta.env.VITE_API_URL || '';
+        const res = await fetch(`${base}/api/imei-detail/${encodeURIComponent(value.trim())}`);
         if (res.ok) {
           const data = await res.json();
-          setFormData((prev) => ({ 
-            ...prev, 
-            imei: value,
-            item_id: data._id,
-            product_name: data.product_name || data.tenSanPham || "",
-            sku: data.sku || "",
-            sale_price: prev.sale_price || data.price_sell || ""
-          }));
+          const it = data?.item;
+          if (it) {
+            setFormData((prev) => ({ 
+              ...prev, 
+              imei: value,
+              item_id: it._id || prev.item_id,
+              product_name: it.product_name || it.tenSanPham || prev.product_name || "",
+              sku: it.sku || prev.sku || "",
+              sale_price: prev.sale_price || it.price_sell || it.price_import || "",
+              warranty: it.warranty || prev.warranty || ""
+            }));
+          } else {
+            setFormData((prev) => ({ ...prev, [name]: value }));
+          }
         } else {
           setFormData((prev) => ({ ...prev, [name]: value }));
         }
@@ -629,6 +638,42 @@ function XuatHang() {
       price_sell: product.price_import ? String(product.price_import) : ''
     });
   };
+  // Autocomplete cho batch theo tên sản phẩm
+  const fetchBatchSuggest = async (query) => {
+    if (!query || query.length < 2) {
+      setBatchSuggest([]); setShowBatchSuggest(false); return;
+    }
+    try {
+      const res = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/ton-kho?t=${Date.now()}`);
+      const data = await res.json();
+      const lower = query.toLowerCase();
+      const filtered = (data.items || []).filter(it =>
+        (it.product_name || it.tenSanPham || '').toLowerCase().includes(lower) ||
+        (it.sku || '').toLowerCase().includes(lower)
+      );
+      const group = {};
+      filtered.forEach(it => {
+        const key = (it.product_name || it.tenSanPham || '') + '_' + (it.sku || '');
+        if (!group[key]) {
+          group[key] = {
+            name: it.product_name || it.tenSanPham || '',
+            sku: it.sku || '',
+            imei: it.imei || '',
+            isAccessory: !it.imei,
+            soLuong: 0,
+            price_import: it.price_import || 0
+          };
+        }
+        if (!it.imei) {
+          group[key].soLuong += Number(it.quantity || 0);
+        }
+      });
+      setBatchSuggest(Object.values(group));
+      setShowBatchSuggest(true);
+    } catch (e) {
+      setBatchSuggest([]); setShowBatchSuggest(false);
+    }
+  };
   const removeBatchItem = (idx) => setBatchItems(prev => prev.filter((_, i) => i !== idx));
   const addPaymentRow = () => setBatchPayments(prev => [...prev, { source: 'tien_mat', amount: '' }]);
   const removePaymentRow = (idx) => setBatchPayments(prev => prev.filter((_, i) => i !== idx));
@@ -671,7 +716,6 @@ function XuatHang() {
           note: formData.note,
           payments,
           sales_channel: salesChannel,
-          salesperson,
           auto_cashbook: autoCashbook
         })
       });
@@ -688,7 +732,6 @@ function XuatHang() {
           customerPhone: formData.buyer_phone || '',
           items: items,
           payments: payments,
-          salesperson: salesperson,
           salesChannel: salesChannel
         };
         
@@ -1103,8 +1146,9 @@ function XuatHang() {
           </button>
           <button 
             onClick={() => handleOpenReturnModal(item)} 
-            className="btn-action-return text-xs px-2 py-1 bg-orange-500 hover:bg-orange-600 text-white rounded transition-colors"
-            title="Phiếu trả hàng"
+            className={`btn-action-return text-xs px-2 py-1 ${item.is_returned ? 'bg-gray-400 cursor-not-allowed' : 'bg-orange-500 hover:bg-orange-600'} text-white rounded transition-colors`}
+            title={item.is_returned ? 'Đã hoàn trả' : 'Phiếu trả hàng'}
+            disabled={!!item.is_returned}
           >
             🔄 Trả hàng
           </button>
@@ -1445,54 +1489,75 @@ function XuatHang() {
         message={lastBatchResponse ? `✅ Đã tạo: ${lastBatchResponse.batch_id}` : ''}
       >
         {batchMode && (
-          <div className="space-y-4">
-            {/* Dropdown chọn sản phẩm */}
-            <div className="mb-4">
-              <label className="block text-sm font-medium text-gray-700 mb-2">Chọn sản phẩm từ danh sách:</label>
-              <select 
-                className="form-input w-full" 
-                onChange={(e) => {
-                  const productId = e.target.value;
-                  if (productId) {
-                    const product = inventoryItems.find(p => p._id === productId);
-                    if (product) handleProductSelect(product);
-                  }
-                }}
-                value=""
-              >
-                <option value="">-- Chọn sản phẩm --</option>
-                {inventoryItems.map((product) => (
-                  <option key={product._id} value={product._id}>
-                    {product.product_name || product.tenSanPham} 
-                    {product.sku && ` (SKU: ${product.sku})`}
-                    {product.imei && ` (IMEI: ${product.imei})`}
-                    {product.price_import && ` - ${formatCurrency(product.price_import)}`}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            {/* Form nhập thủ công */}
-            <div className="grid grid-cols-1 md:grid-cols-6 gap-3">
-              <input className="form-input" placeholder="IMEI" value={batchRow.imei} onChange={e=>setBatchRow({...batchRow, imei:e.target.value})} />
-              <input className="form-input" placeholder="SKU" value={batchRow.sku} onChange={e=>setBatchRow({...batchRow, sku:e.target.value})} />
-              <input className="form-input" placeholder="Tên sản phẩm" value={batchRow.product_name} onChange={e=>setBatchRow({...batchRow, product_name:e.target.value})} />
-              <input className="form-input" placeholder="SL" type="number" value={batchRow.quantity} onChange={e=>setBatchRow({...batchRow, quantity:e.target.value})} />
-              <input className="form-input" placeholder="Giá bán" value={batchRow.price_sell} onChange={e=>setBatchRow({...batchRow, price_sell:e.target.value})} />
-              <button type="button" onClick={addBatchItem} className="bg-blue-600 text-white rounded-lg px-3">+ Thêm dòng</button>
+          <div className="space-y-5">
+            {/* Khu vực chọn nhanh + nhập thủ công */}
+            <div className="grid grid-cols-1 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-start">
+                <div className="md:col-span-4">
+                  <label className="block text-xs font-semibold text-gray-600 mb-2">Tên sản phẩm</label>
+                  <div className="relative">
+                    <input 
+                      className="form-input"
+                      placeholder="Nhập 2-4 ký tự để gợi ý..."
+                      value={batchRow.product_name}
+                      onChange={e=>{ setBatchRow({...batchRow, product_name:e.target.value}); fetchBatchSuggest(e.target.value); }}
+                      onFocus={()=> batchRow.product_name && fetchBatchSuggest(batchRow.product_name)}
+                      autoComplete="off"
+                    />
+                    {showBatchSuggest && batchSuggest.length>0 && (
+                      <div className="absolute z-50 left-0 right-0 bg-white border border-gray-200 rounded-xl shadow-lg max-h-64 overflow-y-auto mt-1">
+                        {batchSuggest.map((it, idx)=> (
+                          <div key={it.sku+idx} className="px-4 py-3 hover:bg-blue-50 cursor-pointer border-b border-gray-100 last:border-b-0"
+                            onClick={()=>{ setBatchRow(prev=>({ ...prev, product_name: it.name, sku: it.sku, imei: it.isAccessory? '' : prev.imei, price_sell: String(it.price_import||'') })); setShowBatchSuggest(false); }}>
+                            <div className="font-medium text-blue-700 text-sm">{it.name}</div>
+                            <div className="text-xs text-gray-500 mt-1">SKU: {it.sku} {it.isAccessory? `• SL còn: ${it.soLuong}` : ''} {it.price_import>0 && ` • Giá nhập: ${formatCurrency(it.price_import)}`}</div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+                <div className="md:col-span-2">
+                  <label className="block text-xs font-semibold text-gray-600 mb-2">SKU</label>
+                  <input className="form-input" placeholder="SKU" value={batchRow.sku} onChange={e=>setBatchRow({...batchRow, sku:e.target.value})} />
+                </div>
+                <div className="md:col-span-2">
+                  <label className="block text-xs font-semibold text-gray-600 mb-2">IMEI</label>
+                  <input className="form-input" placeholder="IMEI (nếu có)" value={batchRow.imei} onChange={e=>setBatchRow({...batchRow, imei:e.target.value})} />
+                </div>
+                <div className="md:col-span-1">
+                  <label className="block text-xs font-semibold text-gray-600 mb-2">SL</label>
+                  <input className="form-input text-center" placeholder="1" type="number" value={batchRow.quantity} onChange={e=>setBatchRow({...batchRow, quantity:e.target.value})} />
+                </div>
+                <div className="md:col-span-2">
+                  <label className="block text-xs font-semibold text-gray-600 mb-2">Giá bán</label>
+                  <input className="form-input" placeholder="Giá bán" value={batchRow.price_sell} onChange={e=>setBatchRow({...batchRow, price_sell:e.target.value})} />
+                </div>
+                <div className="md:col-span-1 flex items-end">
+                  <button type="button" onClick={addBatchItem} className="w-full bg-blue-600 hover:bg-blue-700 text-white rounded-lg px-3 py-2 font-medium">+ Thêm dòng</button>
+                </div>
+              </div>
             </div>
             {batchItems.length>0 && (
               <div className="overflow-x-auto">
                 <table className="min-w-full text-sm">
-                  <thead><tr><th className="p-2 border">Tên</th><th className="p-2 border">SKU/IMEI</th><th className="p-2 border">SL</th><th className="p-2 border">Giá</th><th className="p-2 border"></th></tr></thead>
+                  <thead>
+                    <tr className="bg-gray-50 text-gray-700">
+                      <th className="p-2 border">Tên sản phẩm</th>
+                      <th className="p-2 border">SKU/IMEI</th>
+                      <th className="p-2 border text-center">SL</th>
+                      <th className="p-2 border text-right">Giá</th>
+                      <th className="p-2 border w-24"></th>
+                    </tr>
+                  </thead>
                   <tbody>
                     {batchItems.map((it, idx)=> (
-                      <tr key={idx}>
+                      <tr key={idx} className="hover:bg-gray-50">
                         <td className="p-2 border">{it.product_name}</td>
                         <td className="p-2 border">{it.sku||it.imei}</td>
-                        <td className="p-2 border">{it.quantity}</td>
-                        <td className="p-2 border">{formatCurrency(parseFloat(parseNumber(it.price_sell))||0)}</td>
-                        <td className="p-2 border text-right"><button className="text-red-600" onClick={()=>removeBatchItem(idx)}>Xóa</button></td>
+                        <td className="p-2 border text-center">{it.quantity}</td>
+                        <td className="p-2 border text-right">{formatCurrency(parseFloat(parseNumber(it.price_sell))||0)}</td>
+                        <td className="p-2 border text-right"><button className="text-red-600 hover:underline" onClick={()=>removeBatchItem(idx)}>Xóa</button></td>
                       </tr>
                     ))}
                   </tbody>
@@ -1501,7 +1566,6 @@ function XuatHang() {
             )}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <input className="form-input" placeholder="Kênh bán (Facebook/Zalo/Shop...)" value={salesChannel} onChange={e=>setSalesChannel(e.target.value)} />
-              <input className="form-input" placeholder="Nhân viên bán" value={salesperson} onChange={e=>setSalesperson(e.target.value)} />
             </div>
             <div className="space-y-2">
               <div className="font-semibold">Thanh toán đa nguồn</div>

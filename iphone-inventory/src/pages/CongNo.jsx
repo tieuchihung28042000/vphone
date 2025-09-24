@@ -85,10 +85,14 @@ function CongNo() {
       const params = new URLSearchParams();
       if (searchText.trim()) params.append('search', searchText.trim());
       if (showAll) params.append('show_all', 'true');
-      
-        const res = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/cong-no/cong-no-list?${params}`);
+      const res = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/cong-no/cong-no-list?${params}`, {
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token') || sessionStorage.getItem('token') || ''}`
+        }
+      });
       const data = await res.json();
-      setDebts(data.items || []);
+      // Backend trả về trực tiếp mảng
+      setDebts(Array.isArray(data) ? data : (data.items || []));
     } catch (err) {
       console.error('❌ Error fetching customer debts:', err);
       setDebts([]);
@@ -104,14 +108,18 @@ function CongNo() {
     
     try {
       setSupplierLoading(true);
-        const res = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/cong-no/supplier-debt-list?${params}`);
+      const res = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/cong-no/supplier-debt-list?${params}`, {
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token') || sessionStorage.getItem('token') || ''}`
+        }
+      });
       
       if (!res.ok) {
         throw new Error(`HTTP ${res.status}: ${res.statusText}`);
       }
       
       const data = await res.json();
-      setSupplierDebts(data.suppliers || data.items || []);
+      setSupplierDebts(Array.isArray(data) ? data : (data.suppliers || data.items || []));
     } catch (err) {
       console.error('❌ Error fetching supplier debts:', err);
       setSupplierDebts([]);

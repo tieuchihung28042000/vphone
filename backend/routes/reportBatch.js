@@ -8,7 +8,7 @@ import { authenticateToken, requireRole } from '../middleware/auth.js';
 // POST /api/report/xuat-hang-batch
 router.post('/report/xuat-hang-batch', authenticateToken, requireRole(['admin','quan_ly','thu_ngan','nhan_vien_ban_hang']), async (req, res) => {
   try {
-    const { items = [], customer_name, customer_phone, branch, sold_date, note, payments = [], sales_channel, salesperson, auto_cashbook = true } = req.body;
+    const { items = [], customer_name, customer_phone, branch, sold_date, note, payments = [], sales_channel, auto_cashbook = true } = req.body;
     if (!Array.isArray(items) || items.length === 0) {
       return res.status(400).json({ message: 'Thiếu danh sách sản phẩm' });
     }
@@ -43,7 +43,10 @@ router.post('/report/xuat-hang-batch', authenticateToken, requireRole(['admin','
           note, branch: branch || item.branch,
           category: item.category || '',
           export_type: 'iphone',
-          batch_id, sales_channel: sales_channel || '', salesperson: salesperson || ''
+          batch_id, sales_channel: sales_channel || '',
+          created_by: req.user?._id,
+          created_by_email: req.user?.email || '',
+          created_by_name: req.user?.full_name || ''
         });
         created.push(rec);
       } else {
@@ -71,7 +74,10 @@ router.post('/report/xuat-hang-batch', authenticateToken, requireRole(['admin','
           note, branch: branch || inv.branch,
           category: inv.category || '',
           export_type: 'accessory',
-          batch_id, sales_channel: sales_channel || '', salesperson: salesperson || ''
+          batch_id, sales_channel: sales_channel || '',
+          created_by: req.user?._id,
+          created_by_email: req.user?.email || '',
+          created_by_name: req.user?.full_name || ''
         });
         created.push(rec);
       }

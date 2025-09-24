@@ -21,7 +21,11 @@ router.get('/cong-no-list', async (req, res) => {
       ];
     }
 
-    const exportItems = await ExportHistory.find(query);
+    // Loại trừ các đơn đã hoàn trả
+    const exportItems = await ExportHistory.find({
+      ...query,
+      $or: [ { is_returned: { $exists: false } }, { is_returned: false } ]
+    });
     console.log(`🔍 Found ${exportItems.length} export items for customer debt calculation`);
 
     // Gom nhóm theo customer_name + customer_phone
@@ -90,6 +94,7 @@ router.get('/cong-no-orders', async (req, res) => {
   try {
     const query = {
       customer_name,
+      $or: [ { is_returned: { $exists: false } }, { is_returned: false } ]
     };
     if (customer_phone) query.customer_phone = customer_phone;
     

@@ -45,9 +45,12 @@ function LichSuHoatDong() {
       const json = await res.json();
       
       if (res.ok) {
-        setItems(json.items || []);
-        setTotal(json.total || 0);
-        setPage(json.page || 1);
+        // Backend trả về: { success, data, pagination }
+        const data = Array.isArray(json.data) ? json.data : (json.items || []);
+        const pagination = json.pagination || {};
+        setItems(data);
+        setTotal(pagination.total || json.total || data.length || 0);
+        setPage(pagination.page || json.page || 1);
       } else {
         console.error('Load activity logs failed:', json);
         setItems([]);

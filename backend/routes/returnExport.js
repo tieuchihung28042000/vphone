@@ -132,13 +132,20 @@ router.post('/', authenticateToken, requireRole(['admin', 'quan_ly', 'thu_ngan',
       });
     } catch (e) { }
 
-    // Tạo lại sản phẩm trong tồn kho (nếu cần)
-    if (returnExport.return_to_inventory) {
+    // Đánh dấu đơn xuất đã được hoàn trả để disable nút hoàn trả lần nữa
+    try {
+      await ExportHistory.findByIdAndUpdate(original_export_id, {
+        $set: { is_returned: true, return_id: returnExport._id }
+      });
+    } catch (e) { /* ignore */ }
+
+    // Tạo lại sản phẩm trong tồn kho (bật mặc định)
+    if (true) {
       const newInventoryItem = new Inventory({
         imei: originalExport.imei,
         sku: originalExport.sku,
         product_name: originalExport.product_name,
-        price_import: 0, // Không có giá nhập cho hàng trả
+        price_import: originalExport.price_import || 0,
         price_sell: originalExport.price_sell,
         import_date: new Date(),
         quantity: originalExport.quantity,
@@ -151,6 +158,18 @@ router.post('/', authenticateToken, requireRole(['admin', 'quan_ly', 'thu_ngan',
 
       await newInventoryItem.save();
     }
+
+    // ✅ Điều chỉnh công nợ khách: giảm đã thanh toán tương ứng với số tiền hoàn
+    try {
+      const after = Math.max((originalExport.da_thanh_toan || 0) - Number(return_amount || 0), 0);
+      const update = { da_thanh_toan: after };
+      // Nếu đã hoàn đủ số khách đã thanh toán, đánh dấu đơn đã hoàn tất trả
+      if (after <= 0) {
+        update.is_returned = true;
+        update.return_id = returnExport._id;
+      }
+      await ExportHistory.findByIdAndUpdate(original_export_id, { $set: update });
+    } catch (e) { /* ignore */ }
 
     // ✅ Tích hợp với sổ quỹ - tạo phiếu chi khi trả hàng bán
     const sourceMapping = {

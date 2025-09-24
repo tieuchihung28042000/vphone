@@ -14,7 +14,7 @@ router.use(authenticateToken, requireReportAccess);
 
 router.get('/bao-cao-loi-nhuan', async (req, res) => {
   try {
-    const { from, to, branch } = req.query;
+    const { from, to, branch, include_returns } = req.query;
 
     const fromDate = new Date(from);
     const toDate = new Date(to);
@@ -25,8 +25,12 @@ router.get('/bao-cao-loi-nhuan', async (req, res) => {
     };
     if (branch && branch !== 'all') query.branch = branch;
 
-    // ✅ LẤY TỪ ExportHistory để có đầy đủ 153 records
-    const soldItems = await ExportHistory.find(query);
+    // ✅ LẤY TỪ ExportHistory; mặc định loại trừ đơn đã hoàn trả
+    const finalQuery = {
+      ...query,
+      ...(include_returns === 'true' ? {} : { $or: [{ is_returned: { $exists: false } }, { is_returned: false }] })
+    };
+    const soldItems = await ExportHistory.find(finalQuery);
 
     const totalDevicesSold = soldItems.length;
     const totalRevenue = soldItems.reduce(

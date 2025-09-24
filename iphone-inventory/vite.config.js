@@ -11,6 +11,13 @@ export default defineConfig(({ mode }) => {
     server: {
       port: 5174,
       open: true,
+      proxy: {
+        '/api': {
+          target: process.env.VITE_PROXY_API_TARGET || 'http://localhost:4000',
+          changeOrigin: true,
+          secure: false,
+        },
+      },
     },
     build: {
       outDir: 'dist',
