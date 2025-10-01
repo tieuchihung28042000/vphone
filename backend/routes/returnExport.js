@@ -17,6 +17,64 @@ const handleError = (res, error, message = 'Internal server error') => {
   });
 };
 
+// API lấy danh sách khách hàng cho autocomplete
+router.get('/customers', authenticateToken, filterByBranch, async (req, res) => {
+  try {
+    const { search = '', limit = 20 } = req.query;
+    
+    let filter = {};
+    
+    // Lọc theo chi nhánh (nếu không phải admin)
+    if (req.branchFilter) {
+      filter.branch = req.user.branch_name;
+    }
+    
+    // Tìm kiếm theo tên hoặc số điện thoại
+    if (search && search.length >= 2) {
+      filter.$or = [
+        { customer_name: { $regex: search, $options: 'i' } },
+        { customer_phone: { $regex: search, $options: 'i' } }
+      ];
+    }
+    
+    // Lấy danh sách khách hàng từ ExportHistory
+    const customers = await ExportHistory.aggregate([
+      { $match: filter },
+      {
+        $group: {
+          _id: {
+            customer_name: '$customer_name',
+            customer_phone: '$customer_phone'
+          },
+          last_purchase: { $max: '$export_date' },
+          total_purchases: { $sum: 1 },
+          total_amount: { $sum: { $multiply: ['$price_sell', '$quantity'] } }
+        }
+      },
+      {
+        $match: {
+          '_id.customer_name': { $exists: true, $ne: null, $ne: '' }
+        }
+      },
+      {
+        $project: {
+          customer_name: '$_id.customer_name',
+          customer_phone: '$_id.customer_phone',
+          last_purchase: 1,
+          total_purchases: 1,
+          total_amount: 1
+        }
+      },
+      { $sort: { last_purchase: -1 } },
+      { $limit: parseInt(limit) }
+    ]);
+    
+    res.json(customers);
+  } catch (error) {
+    res.status(500).json({ message: 'Lỗi server khi lấy danh sách khách hàng', error: error.message });
+  }
+});
+
 // Lấy danh sách trả hàng bán
 router.get('/', authenticateToken, filterByBranch, async (req, res) => {
   try {

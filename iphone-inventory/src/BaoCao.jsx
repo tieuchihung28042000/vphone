@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import Layout from "./components/Layout";
 import StatsCard from "./components/StatsCard";
@@ -26,6 +26,7 @@ function formatCurrency(amount) {
 
 function BaoCao() {
   const [data, setData] = useState(null);
+  const [financial, setFinancial] = useState(null);
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
   const [filter, setFilter] = useState("Hôm nay"); // ✅ Mặc định hôm nay
@@ -107,9 +108,22 @@ function BaoCao() {
       const json = await res.json();
       console.log("📊 Dữ liệu báo cáo trả về:", json);
       setData(json);
+
+      // ✅ Gọi thêm API tóm tắt tài chính cho 6 metrics
+      if (fromDate && toDate) {
+        const urlFinancial = `${import.meta.env.VITE_API_URL || ''}/api/report/financial-report/summary?from=${fromDate}&to=${toDate}&branch=${branchParam}`;
+        const resFinancial = await fetch(urlFinancial, { headers: { 'Authorization': `Bearer ${token}` } });
+        if (resFinancial.ok) {
+          const fin = await resFinancial.json();
+          setFinancial(fin);
+        } else {
+          setFinancial(null);
+        }
+      }
     } catch (err) {
       console.error("❌ Lỗi khi fetch báo cáo:", err);
       setData(null);
+      setFinancial(null);
     } finally {
       setLoading(false);
     }
@@ -154,6 +168,18 @@ function BaoCao() {
     totalProfit: data.totalProfit || 0,
     profitMargin: data.totalRevenue > 0 ? ((data.totalProfit / data.totalRevenue) * 100).toFixed(1) : 0
   } : {};
+
+  const metrics = useMemo(() => {
+    const fin = financial || {};
+    return [
+      { key: 'totalRevenue', title: 'Tổng doanh thu bán hàng', value: fin.totalRevenue || 0, icon: '💰', color: 'green', subtitle: 'Chưa trừ trả hàng' },
+      { key: 'totalReturnRevenue', title: 'Tổng doanh thu trả hàng', value: fin.totalReturnRevenue || 0, icon: '↩️', color: 'red', subtitle: 'Phiếu trả hàng' },
+      { key: 'netRevenue', title: 'Doanh thu thuần', value: fin.netRevenue || 0, icon: '🧮', color: 'blue', subtitle: 'Doanh thu sau trả hàng' },
+      { key: 'totalExpense', title: 'Chi phí', value: fin.totalExpense || 0, icon: '💸', color: 'orange', subtitle: 'Tổng chi phí sổ quỹ' },
+      { key: 'otherIncome', title: 'Thu nhập khác', value: fin.otherIncome || 0, icon: '🎯', color: 'indigo', subtitle: 'Tổng phiếu thu khác' },
+      { key: 'netProfit', title: 'Lợi nhuận thuần', value: fin.netProfit || 0, icon: '📈', color: 'purple', subtitle: '= Doanh thu thuần - Chi phí + Thu khác' }
+    ];
+  }, [financial]);
 
   // Get order details
   const orders = data?.orders || data?.items || [];
@@ -329,37 +355,22 @@ function BaoCao() {
       subtitle="Phân tích doanh thu và lợi nhuận"
     >
       {/* Stats Dashboard */}
-      {data && (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-          <StatsCard
-            title="Tổng đơn hàng"
-            value={stats.totalOrders.toString()}
-            icon="🛒"
-            color="blue"
-            subtitle="Đơn đã bán"
-          />
-          <StatsCard
-            title="Doanh thu"
-            value={formatCurrency(stats.totalRevenue)}
-            icon="💰"
-            color="green"
-            subtitle="Tổng thu được"
-          />
-          <StatsCard
-            title="Chi phí"
-            value={formatCurrency(stats.totalCost)}
-            icon="💸"
-            color="orange"
-            subtitle="Tổng chi phí"
-          />
-          <StatsCard
-            title="Lợi nhuận"
-            value={formatCurrency(stats.totalProfit)}
-            icon="📈"
-            color="purple"
-            subtitle={`Margin: ${stats.profitMargin}%`}
-          />
-        </div>
+      {(financial || data) && (
+        <>
+          {/* Hàng 6 metrics: 2 hàng x 3 */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            {metrics.slice(0,3).map(m => (
+              <StatsCard key={m.key} title={m.title} value={formatCurrency(m.value)} icon={m.icon} color={m.color} subtitle={m.subtitle} />
+            ))}
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-6">
+            {metrics.slice(3).map(m => (
+              <StatsCard key={m.key} title={m.title} value={formatCurrency(m.value)} icon={m.icon} color={m.color} subtitle={m.subtitle} />
+            ))}
+          </div>
+
+          {/* Removed old stats block as requested */}
+        </>
       )}
 
       {/* Filters */}

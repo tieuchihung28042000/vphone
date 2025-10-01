@@ -172,39 +172,36 @@ export default function Cashbook() {
       
       console.log('🏢 Branches API response:', data); // Debug
       
-      if (response.ok && data.length > 0) {
-        // Lấy tên chi nhánh từ API
-        const branchNames = data.map(branch => branch.name);
+      if (response.ok) {
+        const branchNames = Array.isArray(data) ? data.map(branch => branch.name) : [];
         setBranches(branchNames);
-        
-        // ✅ Cải thiện logic chọn chi nhánh mặc định
-        const defaultBranch = selectedBranch || localStorage.getItem('selectedBranch') || branchNames[0];
-        setSelectedBranch(defaultBranch);
-        localStorage.setItem('selectedBranch', defaultBranch);
-        
-        console.log('🏢 Set default branch:', defaultBranch); // Debug
+
+        if (branchNames.length > 0) {
+          const saved = localStorage.getItem('selectedBranch');
+          const defaultBranch = selectedBranch || saved || branchNames[0];
+          setSelectedBranch(defaultBranch);
+          localStorage.setItem('selectedBranch', defaultBranch);
+          console.log('🏢 Set default branch:', defaultBranch); // Debug
+        } else {
+          // Không có chi nhánh -> để trống
+          setSelectedBranch('');
+          localStorage.removeItem('selectedBranch');
+          console.log('🏢 No branches available, leaving selection empty');
+        }
       } else {
-        // Fallback nếu không load được - sử dụng chi nhánh thực tế
-        const fallbackBranches = ['Dĩ An', 'Quận 9'];
-        setBranches(fallbackBranches);
-        
-        const defaultBranch = selectedBranch || localStorage.getItem('selectedBranch') || fallbackBranches[0];
-        setSelectedBranch(defaultBranch);
-        localStorage.setItem('selectedBranch', defaultBranch);
-        
-        console.log('🏢 Set fallback branch:', defaultBranch); // Debug
+        // Lỗi từ API -> không đặt fallback, để trống
+        setBranches([]);
+        setSelectedBranch('');
+        localStorage.removeItem('selectedBranch');
+        console.log('🏢 Branch API error, leaving selection empty');
       }
     } catch (error) {
       console.error('❌ Error loading branches:', error);
-      // Fallback nếu có lỗi - sử dụng chi nhánh thực tế
-      const fallbackBranches = ['Dĩ An', 'Quận 9'];
-      setBranches(fallbackBranches);
-      
-      const defaultBranch = selectedBranch || localStorage.getItem('selectedBranch') || fallbackBranches[0];
-      setSelectedBranch(defaultBranch);
-      localStorage.setItem('selectedBranch', defaultBranch);
-      
-      console.log('🏢 Set error fallback branch:', defaultBranch); // Debug
+      // Lỗi kết nối -> để trống danh sách và bỏ chọn chi nhánh
+      setBranches([]);
+      setSelectedBranch('');
+      localStorage.removeItem('selectedBranch');
+      console.log('🏢 Error loading branches, leaving selection empty');
     } finally {
       setLoadingBranches(false);
     }

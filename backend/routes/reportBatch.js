@@ -50,31 +50,48 @@ router.post('/report/xuat-hang-batch', authenticateToken, requireRole(['admin','
         });
         created.push(rec);
       } else {
-        // Xuất phụ kiện: trừ quantity
-        const inv = await Inventory.findOne({ sku, product_name, status: { $in: ['in_stock','sold'] } });
-        if (!inv) {
-          return res.status(400).json({ message: `Không tìm thấy phụ kiện ${product_name || sku} trong kho` });
-        }
+        // Xuất phụ kiện: nới điều kiện tìm theo SKU + chi nhánh, bỏ ràng buộc tên; trừ tồn trên nhiều bản ghi nếu cần
         const q = parseInt(quantity) || 1;
-        if ((inv.quantity || 0) < q) {
-          return res.status(400).json({ message: `Không đủ số lượng cho ${product_name || sku} (còn ${inv.quantity || 0})` });
+        const findCond = { sku, status: 'in_stock', ...(branch ? { branch } : {}) };
+        const candidates = await Inventory.find(findCond).sort({ import_date: 1, _id: 1 });
+        const totalAvail = candidates.reduce((s, i) => s + (Number(i.quantity) || 0), 0);
+        if (totalAvail <= 0) {
+          return res.status(400).json({ message: `Không đủ số lượng cho ${product_name || sku} (còn 0)` });
         }
-        inv.quantity = (inv.quantity || 0) - q;
-        if (inv.quantity <= 0) inv.status = 'sold';
-        await inv.save();
+        if (totalAvail < q) {
+          return res.status(400).json({ message: `Không đủ số lượng cho ${product_name || sku} (còn ${totalAvail})` });
+        }
 
+        let remaining = q;
+        for (const doc of candidates) {
+          if (remaining <= 0) break;
+          const canTake = Math.min(Number(doc.quantity) || 0, remaining);
+          doc.quantity = (Number(doc.quantity) || 0) - canTake;
+          if ((Number(doc.quantity) || 0) <= 0) {
+            doc.quantity = 0;
+            doc.status = 'sold';
+          }
+          await doc.save();
+          remaining -= canTake;
+        }
+
+        const refInv = candidates[0];
         const rec = await ExportHistory.create({
-          imei: '', sku: inv.sku,
-          product_name: inv.product_name || inv.tenSanPham,
+          imei: '',
+          sku: refInv?.sku || sku,
+          product_name: refInv?.product_name || refInv?.tenSanPham || (product_name || ''),
           quantity: q,
-          price_import: inv.price_import || 0,
+          price_import: refInv?.price_import || 0,
           price_sell: Number(price_sell) || 0,
           sold_date: soldDate,
-          customer_name, customer_phone,
-          note, branch: branch || inv.branch,
-          category: inv.category || '',
+          customer_name,
+          customer_phone,
+          note,
+          branch: branch || refInv?.branch || '',
+          category: refInv?.category || '',
           export_type: 'accessory',
-          batch_id, sales_channel: sales_channel || '',
+          batch_id,
+          sales_channel: sales_channel || '',
           created_by: req.user?._id,
           created_by_email: req.user?.email || '',
           created_by_name: req.user?.full_name || ''
@@ -82,6 +99,27 @@ router.post('/report/xuat-hang-batch', authenticateToken, requireRole(['admin','
         created.push(rec);
       }
     }
+
+    // ✅ Phân bổ đã thanh toán theo tỉ lệ trên từng dòng (nếu có payments)
+    try {
+      const totalPaid = Array.isArray(payments) ? payments.reduce((s,p)=> s + (Number(p?.amount)||0), 0) : 0;
+      const totalSale = created.reduce((s, r) => s + ((Number(r.price_sell)||0) * (Number(r.quantity)||1)), 0);
+      if (totalPaid > 0 && totalSale > 0) {
+        let allocated = 0;
+        for (let i = 0; i < created.length; i++) {
+          const r = created[i];
+          const lineTotal = (Number(r.price_sell)||0) * (Number(r.quantity)||1);
+          let share = Math.floor((totalPaid * lineTotal) / totalSale);
+          if (i === created.length - 1) {
+            // dồn phần dư cho dòng cuối
+            share = totalPaid - allocated;
+          }
+          allocated += share;
+          r.da_thanh_toan = share;
+          await r.save();
+        }
+      }
+    } catch (e) { /* ignore proportional allocation errors */ }
 
     // Auto ghi sổ quỹ theo payments nếu bật
     if (auto_cashbook && Array.isArray(payments) && payments.length > 0) {
@@ -101,6 +139,120 @@ router.post('/report/xuat-hang-batch', authenticateToken, requireRole(['admin','
     res.json({ message: '✅ Tạo đơn xuất batch thành công', batch_id, items: created });
   } catch (err) {
     res.status(500).json({ message: '❌ Lỗi tạo xuất hàng batch', error: err.message });
+  }
+});
+
+// GET /api/report/xuat-hang-batch/:batch_id -> trả về tất cả items thuộc batch
+router.get('/report/xuat-hang-batch/:batch_id', authenticateToken, async (req, res) => {
+  try {
+    const { batch_id } = req.params;
+    if (!batch_id) return res.status(400).json({ message: 'Thiếu batch_id' });
+    const items = await ExportHistory.find({ batch_id }).sort({ sold_date: -1, _id: -1 });
+    return res.json({ batch_id, items });
+  } catch (err) {
+    return res.status(500).json({ message: '❌ Lỗi lấy batch', error: err.message });
+  }
+});
+
+// PUT /api/report/xuat-hang-batch/:batch_id -> cập nhật nhiều items trong batch
+router.put('/report/xuat-hang-batch/:batch_id', authenticateToken, requireRole(['admin','quan_ly','thu_ngan','nhan_vien_ban_hang']), async (req, res) => {
+  try {
+    const { batch_id } = req.params;
+    const { items = [], customer_name, customer_phone, branch, sold_date, note, payments = [], total_paid } = req.body;
+    if (!batch_id) return res.status(400).json({ message: 'Thiếu batch_id' });
+    if (!Array.isArray(items) || items.length === 0) {
+      return res.status(400).json({ message: 'Thiếu danh sách items để cập nhật' });
+    }
+
+    // ✅ Tính sẵn phân bổ theo payload nếu có total_paid
+    let shareMap = {};
+    try {
+      const sumPaidRaw = (Array.isArray(payments) && payments.length > 0)
+        ? payments.reduce((s,p)=> s + (Number(p?.amount)||0), 0)
+        : (total_paid !== undefined ? Number(total_paid) : undefined);
+      if (sumPaidRaw !== undefined) {
+        const sumPaid = Math.max(0, Number.isFinite(sumPaidRaw) ? sumPaidRaw : 0);
+        const totals = (items || []).map(it => ({
+          _id: String(it._id || ''),
+          total: (Number(it.price_sell)||0) * (Number(it.quantity)||1)
+        }));
+        const totalSaleFromPayload = totals.reduce((s,t)=> s + t.total, 0);
+        if (totalSaleFromPayload > 0) {
+          let allocated = 0;
+          for (let i = 0; i < totals.length; i++) {
+            const t = totals[i];
+            let share = sumPaid === 0 ? 0 : Math.floor((sumPaid * t.total) / totalSaleFromPayload);
+            if (i === totals.length - 1) share = sumPaid - allocated;
+            allocated += share;
+            shareMap[t._id] = share;
+          }
+        } else if (sumPaid === 0) {
+          for (const it of (items || [])) {
+            shareMap[String(it._id || '')] = 0;
+          }
+        }
+      }
+    } catch (e) { /* ignore pre-allocation */ }
+
+    const updateResults = [];
+    for (const row of items) {
+      const { _id, quantity, price_sell, da_thanh_toan, warranty } = row || {};
+      if (!_id) continue;
+      const update = {
+        ...(quantity !== undefined ? { quantity: parseInt(quantity) || 1 } : {}),
+        ...(price_sell !== undefined ? { price_sell: Number(price_sell) || 0 } : {}),
+        ...(da_thanh_toan !== undefined ? { da_thanh_toan: Number(da_thanh_toan) || 0 } : {}),
+        ...(shareMap[String(_id)] !== undefined ? { da_thanh_toan: Number(shareMap[String(_id)]) || 0 } : {}),
+        ...(warranty !== undefined ? { warranty: warranty || '' } : {}),
+        ...(sold_date ? { sold_date: new Date(sold_date) } : {}),
+        ...(note !== undefined ? { note: note || '' } : {}),
+        ...(customer_name !== undefined ? { customer_name: customer_name || '' } : {}),
+        ...(customer_phone !== undefined ? { customer_phone: customer_phone || '' } : {}),
+        ...(branch !== undefined ? { branch: branch || '' } : {}),
+      };
+      // Không cập nhật các trường nhận diện như imei, sku, product_name trong flow sửa
+      const updated = await ExportHistory.findOneAndUpdate({ _id, batch_id }, { $set: update }, { new: true });
+      if (updated) updateResults.push(updated);
+    }
+
+    // ✅ Re-allocate paid amount if provided (payments or total_paid), rồi trả về dữ liệu sau cùng
+    try {
+      const sumPaidRaw = (Array.isArray(payments) && payments.length > 0)
+        ? payments.reduce((s,p)=> s + (Number(p?.amount)||0), 0)
+        : (total_paid !== undefined ? Number(total_paid) : undefined);
+      if (sumPaidRaw !== undefined) {
+        const sumPaid = Math.max(0, Number.isFinite(sumPaidRaw) ? sumPaidRaw : 0);
+        // Load again các dòng hiện tại của batch
+        const current = await ExportHistory.find({ batch_id }).sort({ _id: 1 });
+        const totalSale = current.reduce((s, r) => s + ((Number(r.price_sell)||0) * (Number(r.quantity)||1)), 0);
+        if (totalSale > 0 && sumPaid > 0) {
+          let allocated = 0;
+          for (let i = 0; i < current.length; i++) {
+            const r = current[i];
+            const lineTotal = (Number(r.price_sell)||0) * (Number(r.quantity)||1);
+            let share = Math.floor((sumPaid * lineTotal) / totalSale);
+            if (i === current.length - 1) share = sumPaid - allocated;
+            allocated += share;
+            if (r.da_thanh_toan !== share) {
+              r.da_thanh_toan = share;
+              await r.save();
+            }
+          }
+        } else if (sumPaid === 0) {
+          for (const r of current) {
+            if (r.da_thanh_toan !== 0) {
+              r.da_thanh_toan = 0;
+              await r.save();
+            }
+          }
+        }
+      }
+    } catch (e) { /* ignore */ }
+
+    const refreshed = await ExportHistory.find({ batch_id });
+    return res.json({ message: '✅ Cập nhật batch thành công', batch_id, updated_count: updateResults.length, items: refreshed });
+  } catch (err) {
+    return res.status(500).json({ message: '❌ Lỗi cập nhật batch', error: err.message });
   }
 });
 

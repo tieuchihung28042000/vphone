@@ -1084,6 +1084,7 @@ app.get('/api/xuat-hang-list', async (req, res) => {
       // ✅ REMOVED: debt field - tính công nợ bằng price_sell - da_thanh_toan
       da_thanh_toan: item.da_thanh_toan || 0, // ✅ THÊM FIELD ĐÃ THANH TOÁN
       quantity: item.quantity || 1, // ✅ THÊM FIELD SỐ LƯỢNG - QUAN TRỌNG!
+      batch_id: item.batch_id || null,
       imei: item.imei || '',
       sku: item.sku || '',
       product_name: item.product_name || item.tenSanPham || '',

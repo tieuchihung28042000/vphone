@@ -79,6 +79,15 @@ function XuatHang() {
   const [suggestList, setSuggestList] = useState([]);
   const [showSuggest, setShowSuggest] = useState(false);
   
+  // ✅ Thêm states cho IMEI autocomplete
+  const [imeiSuggestList, setImeiSuggestList] = useState([]);
+  const [showImeiSuggest, setShowImeiSuggest] = useState(false);
+
+  // ==== Customer Suggestions ====
+  const [customerSuggestList, setCustomerSuggestList] = useState([]);
+  const [showCustomerSuggest, setShowCustomerSuggest] = useState(false);
+  const [customerSuggestType, setCustomerSuggestType] = useState('name'); // 'name' or 'phone'
+  
   // ✅ Thêm state để track phụ kiện
   const [isAccessory, setIsAccessory] = useState(false);
 
@@ -102,6 +111,63 @@ function XuatHang() {
   const [salesChannel, setSalesChannel] = useState('');
   const [autoCashbook, setAutoCashbook] = useState(true);
   const [lastBatchResponse, setLastBatchResponse] = useState(null);
+  // Lưu thông tin bản ghi gốc khi bấm "Sửa" để so sánh khi cập nhật
+  const [editingOriginalItem, setEditingOriginalItem] = useState(null);
+  // Batch edit states
+  const [editingBatchId, setEditingBatchId] = useState(null);
+
+  // ==== Unified Cart (giỏ hàng) for single sale ====
+  const [cartItems, setCartItems] = useState([]); // {product_name, sku, imei, quantity, price_sell, warranty}
+  const addItemToCart = () => {
+    const quantity = parseInt(formData.quantity) || 1;
+    const priceSell = parseFloat(parseNumber(formData.sale_price)) || 0;
+    if (!formData.product_name && !formData.item_id) { setMessage('❌ Vui lòng chọn sản phẩm'); setTimeout(()=>setMessage(''),3000); return; }
+    if (!isAccessory && formData.imei && String(formData.imei).trim().length < 3) { setMessage('❌ IMEI chưa hợp lệ'); setTimeout(()=>setMessage(''),3000); return; }
+    if (!isAccessory && !formData.imei) { setMessage('❌ Vui lòng nhập IMEI cho sản phẩm có IMEI'); setTimeout(()=>setMessage(''),3000); return; }
+    if (priceSell <= 0) { setMessage('❌ Giá bán phải lớn hơn 0'); setTimeout(()=>setMessage(''),3000); return; }
+
+    const newItem = {
+      product_name: formData.product_name,
+      sku: formData.sku,
+      imei: isAccessory ? '' : (formData.imei || ''),
+      quantity: String(quantity),
+      price_sell: String(priceSell),
+      warranty: formData.warranty || ''
+    };
+
+    setCartItems(prev => {
+      const isDuplicate = (a, b) => {
+        const hasImei = !!(a.imei || b.imei);
+        return hasImei ? (a.sku === b.sku && a.imei === b.imei) : (a.sku === b.sku);
+      };
+      const idx = prev.findIndex(it => isDuplicate(it, newItem));
+      if (idx !== -1) {
+        return prev.map((it, i) => i === idx ? { ...it, quantity: String((parseInt(it.quantity)||1) + quantity) } : it);
+      }
+      return [...prev, newItem];
+    });
+    // Soft reset product fields after adding to cart, keep customer/meta
+    setFormData(prev => ({
+      ...prev,
+      item_id: '',
+      imei: '',
+      product_name: '',
+      sku: '',
+      quantity: '1',
+      warranty: '',
+      sale_price: ''
+    }));
+    setIsAccessory(false);
+  };
+  const updateCartItem = (idx, key, value) => {
+    setCartItems(prev => prev.map((it, i) => i === idx ? {
+      ...it,
+      [key]: key === 'quantity' ? String(Math.max(1, parseInt(value)||1)) : (key === 'price_sell' ? String(parseNumber(value)) : value)
+    } : it));
+  };
+  const removeCartItem = (idx) => setCartItems(prev => prev.filter((_, i) => i !== idx));
+  const cartSubtotal = (it) => (parseFloat(parseNumber(it.price_sell))||0) * (parseInt(it.quantity)||1);
+  const cartTotal = () => cartItems.reduce((s, it) => s + cartSubtotal(it), 0);
 
   // Stats calculation
   const stats = {
@@ -211,6 +277,26 @@ function XuatHang() {
     fetchCategories();
   }, []);
 
+  // ✅ Thêm effect để ẩn suggestions khi click ra ngoài
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (showImeiSuggest && !event.target.closest('.imei-suggestions-container')) {
+        setShowImeiSuggest(false);
+      }
+      if (showSuggest && !event.target.closest('.product-suggestions-container')) {
+        setShowSuggest(false);
+      }
+      if (showCustomerSuggest && !event.target.closest('.customer-suggestions-container')) {
+        setShowCustomerSuggest(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [showImeiSuggest, showSuggest, showCustomerSuggest]);
+
   // ✅ Thêm function để fetch suggestion list cho autocomplete
   const fetchSuggestList = async (query) => {
     if (!query || query.length < 2) {
@@ -277,6 +363,100 @@ function XuatHang() {
     }
   };
 
+  // ✅ Thêm function để fetch IMEI suggestions
+  const fetchImeiSuggestions = async (query) => {
+    if (!query || query.length < 2) {
+      setImeiSuggestList([]);
+      setShowImeiSuggest(false);
+      return;
+    }
+    
+    try {
+      // Sử dụng dữ liệu từ availableItems thay vì gọi API riêng
+      const filteredItems = availableItems.filter(item => 
+        item.imei && item.imei.toLowerCase().includes(query.toLowerCase())
+      );
+      
+      // Chuyển đổi format để phù hợp với UI
+      const suggestions = filteredItems.map(item => ({
+        imei: item.imei,
+        product_name: item.product_name || item.tenSanPham || "Không rõ tên",
+        sku: item.sku || "N/A",
+        price_sell: item.price_sell || item.price_import || 0,
+        price_import: item.price_import || 0,
+        warranty: item.warranty || "",
+        isAccessory: item.isAccessory || false,
+        _id: item._id || ""
+      }));
+      
+      setImeiSuggestList(suggestions);
+      setShowImeiSuggest(suggestions.length > 0);
+    } catch (error) {
+      console.error("Error filtering IMEI suggestions:", error);
+      setImeiSuggestList([]);
+      setShowImeiSuggest(false);
+    }
+  };
+
+  // ==== Fetch Customer Suggestions ====
+  const fetchCustomerSuggestions = async (query, type) => {
+    if (!query || query.length < 2) {
+      setCustomerSuggestList([]);
+      setShowCustomerSuggest(false);
+      return;
+    }
+    
+    try {
+      const base = import.meta.env.VITE_API_URL || '';
+      const token = localStorage.getItem('token') || sessionStorage.getItem('token');
+      const res = await fetch(`${base}/api/return-export/customers?search=${encodeURIComponent(query)}&limit=10`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+      
+      if (res.ok) {
+        const customers = await res.json();
+        setCustomerSuggestList(customers);
+        setShowCustomerSuggest(customers.length > 0);
+        setCustomerSuggestType(type);
+      } else {
+        setCustomerSuggestList([]);
+        setShowCustomerSuggest(false);
+      }
+    } catch (error) {
+      console.error("Error fetching customer suggestions:", error);
+      setCustomerSuggestList([]);
+      setShowCustomerSuggest(false);
+    }
+  };
+
+  // ✅ Thêm function để handle khi chọn IMEI suggestion
+  const handleSelectImeiSuggest = (imeiItem) => {
+    setFormData(prev => ({
+      ...prev,
+      imei: imeiItem.imei,
+      item_id: imeiItem._id || "",
+      product_name: imeiItem.product_name || imeiItem.tenSanPham || "",
+      sku: imeiItem.sku || "",
+      sale_price: imeiItem.price_sell || imeiItem.price_import || "",
+      warranty: imeiItem.warranty || "",
+    }));
+    setIsAccessory(imeiItem.isAccessory);
+    setShowImeiSuggest(false);
+  };
+
+  // ==== Handle Customer Selection ====
+  const handleSelectCustomerSuggest = (customer) => {
+    setFormData(prev => ({
+      ...prev,
+      buyer_name: customer.customer_name || "",
+      buyer_phone: customer.customer_phone || "",
+    }));
+    setShowCustomerSuggest(false);
+  };
+
   // ✅ Thêm function để handle khi nhập tên sản phẩm
   const handleProductNameChange = (e) => {
     const value = e.target.value;
@@ -329,35 +509,60 @@ function XuatHang() {
           sale_price: prev.sale_price || selectedItem.price_sell || selectedItem.price_import || "",
           warranty: selectedItem.warranty || ""
         }));
-        setIsAccessory(selectedItem.is_accessory || false);
+        // ✅ Nhận diện phụ kiện linh hoạt theo nhiều key từ API
+        const accessoryFlag = Boolean(
+          selectedItem.is_accessory ||
+          selectedItem.isAccessory ||
+          (!selectedItem.imei) // không có IMEI coi như phụ kiện
+        );
+        setIsAccessory(accessoryFlag);
       }
-    } else if (name === "imei" && value.trim()) {
-      // Auto-fill product info when IMEI is entered
-      try {
-        const base = import.meta.env.VITE_API_URL || '';
-        const res = await fetch(`${base}/api/imei-detail/${encodeURIComponent(value.trim())}`);
-        if (res.ok) {
-          const data = await res.json();
-          const it = data?.item;
-          if (it) {
-            setFormData((prev) => ({ 
-              ...prev, 
-              imei: value,
-              item_id: it._id || prev.item_id,
-              product_name: it.product_name || it.tenSanPham || prev.product_name || "",
-              sku: it.sku || prev.sku || "",
-              sale_price: prev.sale_price || it.price_sell || it.price_import || "",
-              warranty: it.warranty || prev.warranty || ""
-            }));
-          } else {
-            setFormData((prev) => ({ ...prev, [name]: value }));
+    } else if (name === "imei") {
+      // Update IMEI value
+      setFormData((prev) => ({ ...prev, [name]: value }));
+      
+      // Fetch IMEI suggestions if value is long enough
+      if (value.trim() && value.trim().length >= 2) {
+        fetchImeiSuggestions(value.trim());
+      } else {
+        setImeiSuggestList([]);
+        setShowImeiSuggest(false);
+      }
+      
+      // Auto-fill product info when IMEI is entered and long enough
+      if (value.trim() && value.trim().length >= 8) {
+        try {
+          const base = import.meta.env.VITE_API_URL || '';
+          const res = await fetch(`${base}/api/imei-detail/${encodeURIComponent(value.trim())}`);
+          if (res.ok) {
+            const data = await res.json();
+            const it = data?.item;
+            if (it) {
+              setFormData((prev) => ({ 
+                ...prev, 
+                imei: value,
+                item_id: it._id || prev.item_id,
+                product_name: it.product_name || it.tenSanPham || prev.product_name || "",
+                sku: it.sku || prev.sku || "",
+                sale_price: prev.sale_price || it.price_sell || it.price_import || "",
+                warranty: it.warranty || prev.warranty || ""
+              }));
+            }
           }
-        } else {
-          setFormData((prev) => ({ ...prev, [name]: value }));
+        } catch (err) {
+          console.error("Error fetching IMEI detail:", err);
         }
-      } catch (err) {
-        console.error("Error fetching product by IMEI:", err);
-        setFormData((prev) => ({ ...prev, [name]: value }));
+      }
+    } else if (name === "buyer_name" || name === "buyer_phone") {
+      // Update customer field value
+      setFormData((prev) => ({ ...prev, [name]: value }));
+      
+      // Fetch customer suggestions if value is long enough
+      if (value.trim() && value.trim().length >= 2) {
+        fetchCustomerSuggestions(value.trim(), name);
+      } else {
+        setCustomerSuggestList([]);
+        setShowCustomerSuggest(false);
       }
     } else {
       setFormData((prev) => ({ ...prev, [name]: value }));
@@ -387,11 +592,131 @@ function XuatHang() {
     // ✅ Reset suggestion list khi reset form
     setSuggestList([]);
     setShowSuggest(false);
+    setImeiSuggestList([]);
+    setShowImeiSuggest(false);
+    setCustomerSuggestList([]);
+    setShowCustomerSuggest(false);
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
+      // ✅ Trường hợp đang CHỈNH SỬA một giao dịch: cập nhật đúng bản ghi, không tạo đơn mới
+      if (editingBatchId) {
+        // PUT batch update
+        const token = localStorage.getItem('token') || sessionStorage.getItem('token');
+        const items = (cartItems || []).map(it => ({
+          _id: it._id,
+          quantity: parseInt(it.quantity) || 1,
+          price_sell: parseFloat(parseNumber(it.price_sell)) || 0,
+          da_thanh_toan: undefined,
+          warranty: it.warranty || ''
+        }));
+        const daTT = parseFloat(parseNumber(formData.da_thanh_toan)) || 0;
+        const res = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/report/xuat-hang-batch/${editingBatchId}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json', ...(token ? { 'Authorization': `Bearer ${token}` } : {}) },
+          body: JSON.stringify({
+            items,
+            customer_name: formData.buyer_name,
+            customer_phone: formData.buyer_phone,
+            branch: formData.branch,
+            sold_date: formData.sale_date,
+            note: formData.note,
+            total_paid: daTT
+          })
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data?.message || 'Cập nhật batch thất bại');
+
+        setMessage('✅ Cập nhật batch thành công');
+        setEditingBatchId(null);
+        setEditingItemId(null);
+        setCartItems([]);
+        await Promise.all([fetchSoldItems(), fetchAvailableItems()]);
+        // ✅ Clear toàn bộ form về trạng thái bán hàng mới
+        resetForm();
+        setTimeout(()=>setMessage(''), 3000);
+        return;
+      }
+
+      if (editingItemId) {
+        const token = localStorage.getItem('token') || sessionStorage.getItem('token');
+        // Lấy dữ liệu cập nhật từ dòng đầu tiên của giỏ (ưu tiên table cart)
+        const sourceItem = (cartItems && cartItems.length > 0) ? cartItems[0] : null;
+        const nextQuantity = sourceItem ? (parseInt(sourceItem.quantity) || 1) : (parseInt(formData.quantity) || 1);
+        // Không cập nhật các trường nhận diện (imei, product_name, sku)
+        const submitData = {
+          sale_price: sourceItem ? (parseFloat(parseNumber(sourceItem.price_sell)) || 0) : (parseFloat(parseNumber(formData.sale_price)) || 0),
+          quantity: nextQuantity,
+          warranty: sourceItem ? (sourceItem.warranty || '') : (formData.warranty || ''),
+          // Thông tin KH/khác giữ theo form
+          buyer_name: formData.buyer_name,
+          buyer_phone: formData.buyer_phone,
+          customer_name: formData.buyer_name,
+          customer_phone: formData.buyer_phone,
+          branch: formData.branch,
+          sold_date: formData.sale_date,
+          note: formData.note,
+          da_thanh_toan: parseFloat(parseNumber(formData.da_thanh_toan)) || 0,
+          source: formData.source || 'tien_mat'
+        };
+
+        // Gọi API cập nhật
+        const res = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/report/xuat-hang/${editingItemId}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json', ...(token ? { 'Authorization': `Bearer ${token}` } : {}) },
+          body: JSON.stringify(submitData)
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data?.message || 'Cập nhật giao dịch thất bại');
+
+        setMessage('✅ Cập nhật giao dịch thành công');
+        setEditingItemId(null);
+        setCartItems([]);
+        await Promise.all([fetchSoldItems(), fetchAvailableItems()]);
+        // ✅ Clear form để quay về chế độ bán hàng
+        resetForm();
+        setTimeout(()=>setMessage(''), 3000);
+        return;
+      }
+
+      // ✅ Nếu có giỏ hàng: submit theo batch, không kiểm tra IMEI của form
+      if (cartItems && cartItems.length > 0) {
+        const items = cartItems.map(i => ({
+          imei: i.imei || undefined,
+          sku: i.sku || undefined,
+          product_name: i.product_name || undefined,
+          quantity: parseInt(i.quantity) || 1,
+          price_sell: parseFloat(parseNumber(i.price_sell)) || 0,
+          warranty: i.warranty || ''
+        }));
+        const daTT = parseFloat(parseNumber(formData.da_thanh_toan)) || 0;
+        const payments = daTT > 0 ? [{ source: formData.source || 'tien_mat', amount: daTT }] : [];
+
+        const token = localStorage.getItem('token') || sessionStorage.getItem('token');
+        const res = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/report/xuat-hang-batch`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', ...(token ? { 'Authorization': `Bearer ${token}` } : {}) },
+          body: JSON.stringify({
+            items,
+            customer_name: formData.buyer_name,
+            customer_phone: formData.buyer_phone,
+            branch: formData.branch,
+            sold_date: formData.sale_date,
+            note: formData.note,
+            payments
+          })
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data?.message || 'Tạo đơn batch thất bại');
+        setMessage('✅ Tạo đơn thành công!');
+        setCartItems([]);
+        await Promise.all([fetchSoldItems(), fetchAvailableItems()]);
+        setTimeout(()=>setMessage(''), 3000);
+        return;
+      }
+
       const method = editingItemId ? "PUT" : "POST";
       const url = editingItemId
         ? `/api/xuat-hang/${editingItemId}`
@@ -487,12 +812,13 @@ function XuatHang() {
         setTimeout(() => setMessage(""), 3000);
       }
     } catch (err) {
-      setMessage("❌ Lỗi kết nối tới server");
+      console.error('❌ Submit error:', err);
+      setMessage(`❌ ${err?.message || 'Lỗi kết nối tới server'}`);
       setTimeout(() => setMessage(""), 3000);
     }
   };
 
-  const handleEdit = (item) => {
+  const handleEdit = async (item) => {
     console.log('✏️ EDIT clicked - Item data:', item); // Debug
     
     // Cải thiện cách lấy dữ liệu để edit (thêm price_sell từ ExportHistory)
@@ -517,12 +843,101 @@ function XuatHang() {
     console.log('✏️ Setting form data for edit:', editFormData); // Debug
     console.log('✏️ Original sale_price:', item.sale_price, 'Formatted:', salePrice); // Debug
     
-    setFormData(editFormData);
+    // ✅ Khi vào chế độ Sửa: KHÔNG đổ dữ liệu sản phẩm lên các trường form đầu – chỉ giữ thông tin khách hàng/meta
+    const clearedForm = {
+      item_id: "",
+      imei: "",
+      product_name: "",
+      sku: "",
+      quantity: "1",
+      warranty: "",
+      sale_price: "",
+      da_thanh_toan: (item.da_thanh_toan || "").toString(),
+      sale_date: editFormData.sale_date,
+      buyer_name: editFormData.buyer_name,
+      buyer_phone: editFormData.buyer_phone,
+      branch: editFormData.branch,
+      note: editFormData.note,
+      source: editFormData.source
+    };
+    setFormData(clearedForm);
     setEditingItemId(item._id);
+    setEditingOriginalItem({
+      _id: item._id,
+      quantity: parseInt(item.quantity) || 1
+    });
     
     // Set trạng thái phụ kiện dựa trên IMEI (nếu không có IMEI thì có thể là phụ kiện)
-    setIsAccessory(item.is_accessory || (!item.item?.imei && !item.imei));
+    setIsAccessory(false);
     
+    // ✅ Nếu có batch_id: nạp toàn bộ items thuộc batch vào cart
+    if (item.batch_id) {
+      try {
+        const token = localStorage.getItem('token') || sessionStorage.getItem('token');
+        const res = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/report/xuat-hang-batch/${encodeURIComponent(item.batch_id)}`, {
+          headers: token ? { 'Authorization': `Bearer ${token}` } : {}
+        });
+        const data = await res.json();
+        if (res.ok) {
+          const cart = (data.items || []).map(r => ({
+            _id: r._id,
+            product_name: r.product_name || '',
+            sku: r.sku || '',
+            imei: r.imei || '',
+            quantity: String(r.quantity || '1'),
+            price_sell: String(r.price_sell || ''),
+            warranty: r.warranty || ''
+          }));
+          // ✅ Set mặc định đã thanh toán = tổng đã thanh toán hiện tại của batch
+          const sumPaid = (data.items || []).reduce((s, r) => s + (parseFloat(r.da_thanh_toan) || 0), 0);
+          setFormData(prev => ({
+            ...prev,
+            da_thanh_toan: String(sumPaid || '')
+          }));
+          setCartItems(cart);
+          setEditingBatchId(item.batch_id);
+        } else {
+          // fallback: vẫn nạp 1 dòng hiện tại
+          const itemForCart = {
+            _id: item._id,
+            product_name: editFormData.product_name,
+            sku: editFormData.sku,
+            imei: editFormData.imei || '',
+            quantity: String(editFormData.quantity || '1'),
+            price_sell: String(parseNumber(editFormData.sale_price) || ''),
+            warranty: editFormData.warranty || ''
+          };
+          setCartItems([itemForCart]);
+          setEditingBatchId(null);
+        }
+      } catch (e) {
+        const itemForCart = {
+          _id: item._id,
+          product_name: editFormData.product_name,
+          sku: editFormData.sku,
+          imei: editFormData.imei || '',
+          quantity: String(editFormData.quantity || '1'),
+          price_sell: String(parseNumber(editFormData.sale_price) || ''),
+          warranty: editFormData.warranty || ''
+        };
+        setCartItems([itemForCart]);
+        setEditingBatchId(null);
+      }
+    } else {
+      // ✅ Đồng bộ vào giỏ (đơn lẻ)
+      const itemForCart = {
+        _id: item._id,
+        product_name: editFormData.product_name,
+        sku: editFormData.sku,
+        imei: editFormData.imei || '',
+        quantity: String(editFormData.quantity || '1'),
+        price_sell: String(parseNumber(editFormData.sale_price) || ''),
+        warranty: editFormData.warranty || ''
+      };
+      setCartItems([itemForCart]);
+      setEditingBatchId(null);
+    }
+
     setMessage(""); // Clear any previous messages
     
     // Scroll to form
@@ -975,8 +1390,33 @@ function XuatHang() {
     }
   };
 
-  // Filter and pagination
-  const filteredItems = soldItems.filter((item) => {
+  // Group by batch_id (nếu có) để hiển thị tổng tiền/SL theo đơn nhiều sản phẩm
+  const groupedSoldItems = (() => {
+    if (!Array.isArray(soldItems) || soldItems.length === 0) return [];
+    const map = new Map();
+    for (const it of soldItems) {
+      const key = it.batch_id || it._id; // đơn lẻ: group theo _id
+      if (!map.has(key)) {
+        map.set(key, {
+          ...it,
+          total_amount: ((parseFloat(it.price_sell || it.sale_price || 0) || 0) * (parseInt(it.quantity) || 1)),
+          total_paid: parseFloat(it.da_thanh_toan) || 0,
+          quantity_sum: parseInt(it.quantity) || 1,
+        });
+      } else {
+        const g = map.get(key);
+        g.total_amount += ((parseFloat(it.price_sell || it.sale_price || 0) || 0) * (parseInt(it.quantity) || 1));
+        g.total_paid += (parseFloat(it.da_thanh_toan) || 0);
+        g.quantity_sum += (parseInt(it.quantity) || 1);
+        // Giữ item đầu làm đại diện hiển thị
+        map.set(key, g);
+      }
+    }
+    return Array.from(map.values());
+  })();
+
+  // Filter and pagination trên dữ liệu đã group
+  const filteredItems = groupedSoldItems.filter((item) => {
     const matchSearch =
       item.item?.imei?.toLowerCase().includes(search.toLowerCase()) ||
       item.item?.product_name?.toLowerCase().includes(search.toLowerCase()) ||
@@ -1022,8 +1462,10 @@ function XuatHang() {
       header: "Giá bán",
       key: "sale_price",
       render: (item) => {
-        // ✅ Cải thiện logic parse giá bán (thêm price_sell từ ExportHistory)
-        const rawPrice = item.sale_price || item.selling_price || item.price_sell || 0;
+        // ✅ Nếu có total_amount (batch) thì hiển thị tổng tiền; ngược lại hiển thị giá bán của dòng
+        const rawPrice = (item.total_amount !== undefined)
+          ? item.total_amount
+          : (item.sale_price || item.selling_price || item.price_sell || 0);
         const salePrice = parseFloat(rawPrice) || 0;
         return (
           <div className="text-sm font-bold text-green-600">
@@ -1039,7 +1481,9 @@ function XuatHang() {
       header: "Đã thanh toán",
       key: "da_thanh_toan",
       render: (item) => {
-        const daTT = parseFloat(item.da_thanh_toan) || 0;
+        const daTT = (item.total_paid !== undefined)
+          ? (parseFloat(item.total_paid) || 0)
+          : (parseFloat(item.da_thanh_toan) || 0);
         return (
           <div className="text-sm font-bold text-blue-600">
             {daTT > 0 ? formatCurrency(daTT) : (
@@ -1053,10 +1497,13 @@ function XuatHang() {
       header: "Công nợ",
       key: "calculated_debt", // ✅ CHANGED: Không dùng field debt nữa, tính trực tiếp
       render: (item) => {
-        const daTT = parseFloat(item.da_thanh_toan) || 0;
-        const giaBan = parseFloat(item.sale_price) || 0;
-        const soLuong = parseInt(item.quantity) || 1;
-        const congNo = Math.max((giaBan * soLuong) - daTT, 0); // ✅ Tính công nợ = (giá bán × số lượng) - đã thanh toán
+        const daTT = (item.total_paid !== undefined)
+          ? (parseFloat(item.total_paid) || 0)
+          : (parseFloat(item.da_thanh_toan) || 0);
+        const giaBan = (item.total_amount !== undefined)
+          ? parseFloat(item.total_amount) || 0
+          : (parseFloat(item.sale_price) || 0) * (parseInt(item.quantity) || 1);
+        const congNo = Math.max(giaBan - daTT, 0);
         return (
           <div className={`text-sm font-bold ${congNo > 0 ? 'text-red-600' : 'text-gray-400'}`}>
             {congNo > 0 ? formatCurrency(congNo) : (
@@ -1080,7 +1527,7 @@ function XuatHang() {
       key: "quantity",
       render: (item) => (
         <div className="text-sm font-bold text-center">
-          {item.quantity || 1}
+          {item.quantity_sum !== undefined ? item.quantity_sum : (item.quantity || 1)}
         </div>
       )
     },
@@ -1204,7 +1651,7 @@ function XuatHang() {
         resetLabel="Hủy chỉnh sửa"
         message={message}
       >
-        <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        <form onSubmit={handleSubmit} noValidate className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {/* Checkbox phụ kiện */}
           <div className="lg:col-span-3">
             <label className="flex items-center space-x-3 p-4 bg-blue-50 rounded-xl border border-blue-200">
@@ -1231,27 +1678,59 @@ function XuatHang() {
               IMEI {!isAccessory && "*"}
               {isAccessory && <span className="text-blue-500 text-xs">(Không bắt buộc cho phụ kiện)</span>}
             </label>
-            <input
-              name="imei"
-              placeholder={isAccessory ? "Phụ kiện không cần IMEI" : "Nhập IMEI để tự động điền thông tin"}
-              value={formData.imei}
-              onChange={handleChange}
-              className={`form-input ${isAccessory ? 'bg-gray-100 text-gray-500' : ''}`}
-              required={!isAccessory}
-              disabled={isAccessory}
-            />
+            <div className="relative imei-suggestions-container">
+              <input
+                name="imei"
+                placeholder={isAccessory ? "Phụ kiện không cần IMEI" : "Nhập IMEI để tự động điền thông tin"}
+                value={formData.imei}
+                onChange={handleChange}
+                className={`form-input ${isAccessory ? 'bg-gray-100 text-gray-500' : ''}`}
+                required={!isAccessory && cartItems.length === 0}
+                disabled={isAccessory}
+              />
+              
+              {/* ✅ IMEI Suggestions Dropdown */}
+              {showImeiSuggest && imeiSuggestList.length > 0 && !isAccessory && (
+                <div className="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg max-h-60 overflow-y-auto">
+                  {imeiSuggestList.map((item, idx) => (
+                    <div
+                      key={idx}
+                      className="px-4 py-3 hover:bg-blue-50 cursor-pointer border-b border-gray-100 last:border-b-0"
+                      onClick={() => handleSelectImeiSuggest(item)}
+                    >
+                      <div className="flex justify-between items-start">
+                        <div className="flex-1">
+                          <div className="font-medium text-gray-900">
+                            {item.imei}
+                          </div>
+                          <div className="text-sm text-gray-600">
+                            {item.product_name || item.tenSanPham || "Không rõ tên"}
+                          </div>
+                          <div className="text-xs text-gray-500">
+                            SKU: {item.sku || "N/A"} • Giá: {formatCurrency(item.price_sell || item.price_import || 0)}
+                          </div>
+                        </div>
+                        <div className="text-xs text-blue-600 font-medium">
+                          {item.isAccessory ? "Phụ kiện" : "IMEI"}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
 
           <div>
             <label className="block text-sm font-semibold text-gray-700 mb-3">Tên sản phẩm *</label>
-            <div className="relative">
+            <div className="relative product-suggestions-container">
               <input
                 name="product_name"
                 placeholder="Nhập 2-4 chữ để tìm sản phẩm..."
                 value={formData.product_name}
                 onChange={handleProductNameChange}
                 className="form-input"
-                required
+                required={cartItems.length === 0}
                 autoComplete="off"
               />
               
@@ -1321,26 +1800,7 @@ function XuatHang() {
               className="form-input"
             />
           </div>
-
-          <div className="lg:col-span-2">
-            <label className="block text-sm font-semibold text-gray-700 mb-3">Chọn sản phẩm từ danh sách (tuỳ chọn)</label>
-            <select
-              name="item_id"
-              value={formData.item_id}
-              onChange={handleChange}
-              className="form-input"
-            >
-              <option value="">-- Hoặc chọn từ danh sách --</option>
-              {availableItems.map((item) => (
-                <option key={item._id} value={item._id}>
-                  {item.product_name || item.tenSanPham} - 
-                  {item.imei ? ` IMEI: ${item.imei}` : ` SL: ${item.quantity || 0}`} - 
-                  {formatNumber(item.price_import)}đ
-                </option>
-              ))}
-            </select>
-          </div>
-
+          {/* Giá bán được đưa lên cùng hàng với Bảo hành (bên phải) */}
           <div>
             <label className="block text-sm font-semibold text-gray-700 mb-3">Giá bán *</label>
             <input
@@ -1350,9 +1810,84 @@ function XuatHang() {
               value={formatNumber(formData.sale_price)}
               onChange={handleChange}
               className="form-input"
-              required
+              required={cartItems.length === 0}
             />
           </div>
+
+          <div className="lg:col-span-3 grid grid-cols-1 md:grid-cols-3 gap-3 items-end">
+            <div className="md:col-span-2">
+              <label className="block text-sm font-semibold text-gray-700 mb-3">Chọn sản phẩm từ danh sách (tuỳ chọn)</label>
+              <select
+                name="item_id"
+                value={formData.item_id}
+                onChange={handleChange}
+                className="form-input"
+              >
+                <option value="">-- Hoặc chọn từ danh sách --</option>
+                {availableItems.map((item) => (
+                  <option key={item._id} value={item._id}>
+                    {item.product_name || item.tenSanPham} - 
+                    {item.imei ? ` IMEI: ${item.imei}` : ` SL: ${item.quantity || 0}`} - 
+                    {formatNumber(item.price_import)}đ
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <button type="button" onClick={addItemToCart} className="w-full bg-blue-600 hover:bg-blue-700 text-white py-3 px-4 rounded-xl font-semibold">➕ Thêm vào giỏ</button>
+            </div>
+          </div>
+
+          {/* Bảng giỏ hàng di chuyển lên dưới phần chọn sản phẩm và trước Đã thanh toán */}
+          {cartItems.length > 0 && (
+            <div className="lg:col-span-3">
+              <div className="overflow-x-auto">
+                <table className="min-w-full text-sm">
+                  <thead>
+                    <tr className="bg-gray-50 text-gray-700">
+                      <th className="p-2 border">Tên sản phẩm</th>
+                      <th className="p-2 border">SKU</th>
+                      <th className="p-2 border">IMEI</th>
+                      <th className="p-2 border text-center">SL</th>
+                      <th className="p-2 border text-right">Đơn giá</th>
+                      <th className="p-2 border text-right">Thành tiền</th>
+                      <th className="p-2 border w-24"></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {cartItems.map((it, idx) => (
+                      <tr key={idx} className="hover:bg-gray-50">
+                        <td className="p-2 border">
+                          <input className="form-input" value={it.product_name} onChange={e=>updateCartItem(idx,'product_name',e.target.value)} />
+                        </td>
+                        <td className="p-2 border">
+                          <input className="form-input" value={it.sku} onChange={e=>updateCartItem(idx,'sku',e.target.value)} />
+                        </td>
+                        <td className="p-2 border">
+                          <input className="form-input" value={it.imei} onChange={e=>updateCartItem(idx,'imei',e.target.value)} />
+                        </td>
+                        <td className="p-2 border text-center">
+                          <input className="form-input text-center" type="number" value={it.quantity} onChange={e=>updateCartItem(idx,'quantity',e.target.value)} />
+                        </td>
+                        <td className="p-2 border text-right">
+                          <input className="form-input text-right" value={formatNumber(it.price_sell)} onChange={e=>updateCartItem(idx,'price_sell',e.target.value)} />
+                        </td>
+                        <td className="p-2 border text-right">{formatCurrency(cartSubtotal(it))}</td>
+                        <td className="p-2 border text-right"><button type="button" className="text-red-600 hover:underline" onClick={()=>removeCartItem(idx)}>Xóa</button></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot>
+                    <tr className="bg-gray-50">
+                      <td className="p-2 border text-right font-semibold" colSpan={5}>Tổng cộng</td>
+                      <td className="p-2 border text-right font-bold text-green-700">{formatCurrency(cartTotal())}</td>
+                      <td className="p-2 border"></td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            </div>
+          )}
 
           <div>
             <label className="block text-sm font-semibold text-gray-700 mb-3">Đã thanh toán</label>
@@ -1366,21 +1901,26 @@ function XuatHang() {
             />
             <div className="text-xs text-gray-500 mt-1">
               {(() => {
-                const salePrice = parseNumber(formData.sale_price) || 0;
-                const quantity = parseInt(formData.quantity) || 1;
+                const formSalePrice = parseNumber(formData.sale_price) || 0;
+                const formQuantity = parseInt(formData.quantity) || 1;
                 const daTT = parseNumber(formData.da_thanh_toan) || 0;
-                const autoAmount = salePrice * quantity;
-                const finalDaTT = daTT; // ✅ Không tự động tính nữa
-                const congNo = Math.max(autoAmount - finalDaTT, 0);
-                
+                // ✅ Tổng tiền lấy theo tổng giỏ nếu có giỏ, nếu chưa có thì lấy theo form hiện tại
+                const totalFromCart = (cartItems && cartItems.length > 0)
+                  ? cartItems.reduce((sum, it) => {
+                      const q = parseInt(it.quantity) || 1;
+                      const p = parseNumber(it.price_sell) || 0;
+                      return sum + q * p;
+                    }, 0)
+                  : (formSalePrice * formQuantity);
+                const congNo = Math.max(totalFromCart - daTT, 0);
                 return (
                   <div className="p-2 bg-green-50 rounded border border-green-200">
                     <div className="font-medium text-green-900">💡 Tính toán:</div>
                     <div className="text-green-700">
-                      <strong>Tổng tiền bán:</strong> {formatCurrency(salePrice)} × {quantity} = <strong>{formatCurrency(autoAmount)}</strong>
+                      <strong>Tổng tiền bán:</strong> <strong>{formatCurrency(totalFromCart)}</strong>
                     </div>
                     <div className="text-green-700">
-                      <strong>Khách thanh toán:</strong> {formatCurrency(finalDaTT)}
+                      <strong>Khách thanh toán:</strong> {formatCurrency(daTT)}
                     </div>
                     <div className={`font-semibold ${congNo > 0 ? 'text-red-600' : 'text-green-600'}`}>
                       <strong>Công nợ khách:</strong> {formatCurrency(congNo)} {congNo === 0 && '✅ Đã thanh toán đủ'}
@@ -1405,24 +1945,88 @@ function XuatHang() {
 
           <div>
             <label className="block text-sm font-semibold text-gray-700 mb-3">Tên khách hàng</label>
-            <input
-              name="buyer_name"
-              placeholder="Họ tên khách hàng"
-              value={formData.buyer_name}
-              onChange={handleChange}
-              className="form-input"
-            />
+            <div className="relative customer-suggestions-container">
+              <input
+                name="buyer_name"
+                placeholder="Họ tên khách hàng"
+                value={formData.buyer_name}
+                onChange={handleChange}
+                className="form-input"
+              />
+              
+              {/* Customer Name Suggestions Dropdown */}
+              {showCustomerSuggest && customerSuggestList.length > 0 && customerSuggestType === 'buyer_name' && (
+                <div className="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg max-h-60 overflow-y-auto">
+                  {customerSuggestList.map((customer, idx) => (
+                    <div
+                      key={idx}
+                      className="px-4 py-3 hover:bg-blue-50 cursor-pointer border-b border-gray-100 last:border-b-0"
+                      onClick={() => handleSelectCustomerSuggest(customer)}
+                    >
+                      <div className="flex justify-between items-start">
+                        <div className="flex-1">
+                          <div className="font-medium text-gray-900">
+                            {customer.customer_name}
+                          </div>
+                          <div className="text-sm text-gray-600">
+                            {customer.customer_phone || "Không có SĐT"}
+                          </div>
+                          <div className="text-xs text-gray-500">
+                            Mua {customer.total_purchases} lần • Tổng: {formatCurrency(customer.total_amount || 0)}
+                          </div>
+                        </div>
+                        <div className="text-xs text-blue-600 font-medium">
+                          Khách hàng
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
 
           <div>
             <label className="block text-sm font-semibold text-gray-700 mb-3">Số điện thoại</label>
-            <input
-              name="buyer_phone"
-              placeholder="Số điện thoại"
-              value={formData.buyer_phone}
-              onChange={handleChange}
-              className="form-input"
-            />
+            <div className="relative customer-suggestions-container">
+              <input
+                name="buyer_phone"
+                placeholder="Số điện thoại"
+                value={formData.buyer_phone}
+                onChange={handleChange}
+                className="form-input"
+              />
+              
+              {/* Customer Phone Suggestions Dropdown */}
+              {showCustomerSuggest && customerSuggestList.length > 0 && customerSuggestType === 'buyer_phone' && (
+                <div className="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg max-h-60 overflow-y-auto">
+                  {customerSuggestList.map((customer, idx) => (
+                    <div
+                      key={idx}
+                      className="px-4 py-3 hover:bg-blue-50 cursor-pointer border-b border-gray-100 last:border-b-0"
+                      onClick={() => handleSelectCustomerSuggest(customer)}
+                    >
+                      <div className="flex justify-between items-start">
+                        <div className="flex-1">
+                          <div className="font-medium text-gray-900">
+                            {customer.customer_phone}
+                          </div>
+                          <div className="text-sm text-gray-600">
+                            {customer.customer_name || "Không có tên"}
+                          </div>
+                          <div className="text-xs text-gray-500">
+                            Mua {customer.total_purchases} lần • Tổng: {formatCurrency(customer.total_amount || 0)}
+                          </div>
+                        </div>
+                        <div className="text-xs text-blue-600 font-medium">
+                          Khách hàng
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
 
           <div>
@@ -1457,7 +2061,7 @@ function XuatHang() {
             </select>
           </div>
 
-          <div className="lg:col-span-2">
+          <div className="lg:col-span-3">
             <label className="block text-sm font-semibold text-gray-700 mb-3">Ghi chú</label>
             <input
               name="note"
@@ -1479,121 +2083,7 @@ function XuatHang() {
         </form>
       </FormCard>
 
-      {/* STORY 05: Batch export */}
-      <FormCard
-        title={batchMode ? '📦 Xuất hàng batch (nhiều dòng)' : '📦 Xuất hàng batch (bấm để bật)'}
-        subtitle="Thêm nhiều dòng sản phẩm, thanh toán đa nguồn, kênh/nhân viên"
-        onReset={() => { setBatchMode(!batchMode); }}
-        showReset
-        resetLabel={batchMode ? 'Tắt batch' : 'Bật batch'}
-        message={lastBatchResponse ? `✅ Đã tạo: ${lastBatchResponse.batch_id}` : ''}
-      >
-        {batchMode && (
-          <div className="space-y-5">
-            {/* Khu vực chọn nhanh + nhập thủ công */}
-            <div className="grid grid-cols-1 gap-4">
-              <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-start">
-                <div className="md:col-span-4">
-                  <label className="block text-xs font-semibold text-gray-600 mb-2">Tên sản phẩm</label>
-                  <div className="relative">
-                    <input 
-                      className="form-input"
-                      placeholder="Nhập 2-4 ký tự để gợi ý..."
-                      value={batchRow.product_name}
-                      onChange={e=>{ setBatchRow({...batchRow, product_name:e.target.value}); fetchBatchSuggest(e.target.value); }}
-                      onFocus={()=> batchRow.product_name && fetchBatchSuggest(batchRow.product_name)}
-                      autoComplete="off"
-                    />
-                    {showBatchSuggest && batchSuggest.length>0 && (
-                      <div className="absolute z-50 left-0 right-0 bg-white border border-gray-200 rounded-xl shadow-lg max-h-64 overflow-y-auto mt-1">
-                        {batchSuggest.map((it, idx)=> (
-                          <div key={it.sku+idx} className="px-4 py-3 hover:bg-blue-50 cursor-pointer border-b border-gray-100 last:border-b-0"
-                            onClick={()=>{ setBatchRow(prev=>({ ...prev, product_name: it.name, sku: it.sku, imei: it.isAccessory? '' : prev.imei, price_sell: String(it.price_import||'') })); setShowBatchSuggest(false); }}>
-                            <div className="font-medium text-blue-700 text-sm">{it.name}</div>
-                            <div className="text-xs text-gray-500 mt-1">SKU: {it.sku} {it.isAccessory? `• SL còn: ${it.soLuong}` : ''} {it.price_import>0 && ` • Giá nhập: ${formatCurrency(it.price_import)}`}</div>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                </div>
-                <div className="md:col-span-2">
-                  <label className="block text-xs font-semibold text-gray-600 mb-2">SKU</label>
-                  <input className="form-input" placeholder="SKU" value={batchRow.sku} onChange={e=>setBatchRow({...batchRow, sku:e.target.value})} />
-                </div>
-                <div className="md:col-span-2">
-                  <label className="block text-xs font-semibold text-gray-600 mb-2">IMEI</label>
-                  <input className="form-input" placeholder="IMEI (nếu có)" value={batchRow.imei} onChange={e=>setBatchRow({...batchRow, imei:e.target.value})} />
-                </div>
-                <div className="md:col-span-1">
-                  <label className="block text-xs font-semibold text-gray-600 mb-2">SL</label>
-                  <input className="form-input text-center" placeholder="1" type="number" value={batchRow.quantity} onChange={e=>setBatchRow({...batchRow, quantity:e.target.value})} />
-                </div>
-                <div className="md:col-span-2">
-                  <label className="block text-xs font-semibold text-gray-600 mb-2">Giá bán</label>
-                  <input className="form-input" placeholder="Giá bán" value={batchRow.price_sell} onChange={e=>setBatchRow({...batchRow, price_sell:e.target.value})} />
-                </div>
-                <div className="md:col-span-1 flex items-end">
-                  <button type="button" onClick={addBatchItem} className="w-full bg-blue-600 hover:bg-blue-700 text-white rounded-lg px-3 py-2 font-medium">+ Thêm dòng</button>
-                </div>
-              </div>
-            </div>
-            {batchItems.length>0 && (
-              <div className="overflow-x-auto">
-                <table className="min-w-full text-sm">
-                  <thead>
-                    <tr className="bg-gray-50 text-gray-700">
-                      <th className="p-2 border">Tên sản phẩm</th>
-                      <th className="p-2 border">SKU/IMEI</th>
-                      <th className="p-2 border text-center">SL</th>
-                      <th className="p-2 border text-right">Giá</th>
-                      <th className="p-2 border w-24"></th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {batchItems.map((it, idx)=> (
-                      <tr key={idx} className="hover:bg-gray-50">
-                        <td className="p-2 border">{it.product_name}</td>
-                        <td className="p-2 border">{it.sku||it.imei}</td>
-                        <td className="p-2 border text-center">{it.quantity}</td>
-                        <td className="p-2 border text-right">{formatCurrency(parseFloat(parseNumber(it.price_sell))||0)}</td>
-                        <td className="p-2 border text-right"><button className="text-red-600 hover:underline" onClick={()=>removeBatchItem(idx)}>Xóa</button></td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <input className="form-input" placeholder="Kênh bán (Facebook/Zalo/Shop...)" value={salesChannel} onChange={e=>setSalesChannel(e.target.value)} />
-            </div>
-            <div className="space-y-2">
-              <div className="font-semibold">Thanh toán đa nguồn</div>
-              {batchPayments.map((p, idx)=> (
-                <div key={idx} className="grid grid-cols-1 md:grid-cols-4 gap-2 items-center">
-                  <select className="form-input" value={p.source} onChange={e=>updatePaymentRow(idx,'source',e.target.value)}>
-                    <option value="tien_mat">💵 Tiền mặt</option>
-                    <option value="the">💳 Thẻ</option>
-                    <option value="vi_dien_tu">📱 Ví điện tử</option>
-                  </select>
-                  <input className="form-input" placeholder="Số tiền" value={formatNumber(p.amount)} onChange={e=>updatePaymentRow(idx,'amount',e.target.value)} />
-                  <div className="text-sm text-gray-600">Tổng hiện tại: {formatCurrency(totalBatchPayment())}</div>
-                  <button type="button" className="text-red-600" onClick={()=>removePaymentRow(idx)}>Xóa</button>
-                </div>
-              ))}
-              <button type="button" onClick={addPaymentRow} className="bg-gray-100 px-3 py-2 rounded">+ Thêm nguồn</button>
-            </div>
-            <label className="inline-flex items-center gap-2">
-              <input type="checkbox" checked={autoCashbook} onChange={e=>setAutoCashbook(e.target.checked)} />
-              <span>Tự động ghi sổ quỹ</span>
-            </label>
-            <div className="flex gap-3">
-              <button type="button" onClick={handleSubmitBatch} className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg">💾 Gửi batch</button>
-              <button type="button" disabled={!lastBatchResponse} onClick={handlePrintLastBatch} className="bg-purple-600 hover:bg-purple-700 disabled:bg-gray-400 text-white px-4 py-2 rounded-lg">🖨️ In bill</button>
-            </div>
-          </div>
-        )}
-      </FormCard>
+      {/* (Đã gộp) Xóa FormCard thanh toán giỏ hàng riêng để tránh trùng lặp */}
 
       {/* Filters */}
       <FilterCard onClearFilters={clearFilters}>

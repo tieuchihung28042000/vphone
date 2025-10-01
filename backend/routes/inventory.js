@@ -134,3 +134,85 @@ router.delete('/:id', authenticateToken, requireRole(['admin', 'quan_ly']), asyn
 });
 
 export default router;
+
+// ==================== Supplier suggestions by product/sku ====================
+// GET /api/inventory/suppliers-suggest?product=...&sku=...&branch=...
+router.get('/suppliers-suggest', authenticateToken, filterByBranch, async (req, res) => {
+  try {
+    const { product = '', sku = '', branch } = req.query;
+
+    const match = {};
+    // Text match on product_name or tenSanPham and SKU
+    const ors = [];
+    if (product && product.trim()) {
+      ors.push({ product_name: { $regex: product.trim(), $options: 'i' } });
+      ors.push({ tenSanPham: { $regex: product.trim(), $options: 'i' } });
+    }
+    if (sku && sku.trim()) {
+      ors.push({ sku: { $regex: sku.trim(), $options: 'i' } });
+    }
+    if (ors.length > 0) match.$or = ors;
+
+    // Branch restriction: if requester is limited to a branch, prefer that; otherwise use provided branch filter
+    if (req.branchFilter) {
+      match.branch = req.user?.branch_name;
+    } else if (branch && branch !== 'all') {
+      match.branch = branch;
+    }
+
+    // Only consider records that actually have a supplier name
+    match.supplier = { $exists: true, $ne: '' };
+
+    const results = await Inventory.aggregate([
+      { $match: match },
+      {
+        $group: {
+          _id: { supplier: '$supplier', branch: '$branch' },
+          count: { $sum: 1 },
+          last_import: { $max: '$import_date' },
+          products: { $addToSet: { name: '$product_name', sku: '$sku' } }
+        }
+      },
+      { $sort: { count: -1, last_import: -1 } },
+      { $limit: 20 },
+      {
+        $project: {
+          _id: 0,
+          supplier: '$_id.supplier',
+          branch: '$_id.branch',
+          count: 1,
+          last_import: 1,
+          products: 1
+        }
+      }
+    ]);
+
+    return res.json({ suppliers: results });
+  } catch (error) {
+    console.error('Error getting supplier suggestions:', error);
+    return res.status(500).json({ message: 'Lỗi lấy gợi ý nhà cung cấp', error: error.message });
+  }
+});
+
+// ==================== Simple supplier name suggestions ====================
+// GET /api/inventory/suppliers?search=nc&branch=...
+router.get('/suppliers', authenticateToken, async (req, res) => {
+  try {
+    const { search = '' } = req.query;
+    const match = { supplier: { $exists: true, $ne: '' } };
+    if (search && search.trim()) {
+      match.supplier = { $regex: search.trim(), $options: 'i' };
+    }
+
+    const results = await Inventory.aggregate([
+      { $match: match },
+      { $group: { _id: { supplier: '$supplier' }, count: { $sum: 1 } } },
+      { $sort: { count: -1, _id: 1 } },
+      { $limit: 20 },
+      { $project: { _id: 0, supplier: '$_id.supplier', count: 1 } }
+    ]);
+    res.json({ suppliers: results });
+  } catch (e) {
+    res.status(500).json({ message: 'Lỗi lấy gợi ý nhà cung cấp', error: e.message });
+  }
+});
