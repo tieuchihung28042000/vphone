@@ -55,7 +55,7 @@ function NhapHang() {
     branch: getLocalBranch(),
     note: "",
     tenSanPham: "",
-    quantity: "",
+    quantity: "1",
     category: getLocalCategory(),
     source: "tien_mat"
   });
@@ -81,6 +81,9 @@ function NhapHang() {
   // ✅ Thêm states cho autocomplete
   const [suggestList, setSuggestList] = useState([]);
   const [showSuggest, setShowSuggest] = useState(false);
+  // ✅ Autocomplete nhà cung cấp
+  const [supplierSuggestList, setSupplierSuggestList] = useState([]);
+  const [showSupplierSuggest, setShowSupplierSuggest] = useState(false);
 
   // ✅ States cho modal trả hàng
   const [returnModal, setReturnModal] = useState({ open: false, item: null });
@@ -254,12 +257,27 @@ function NhapHang() {
     console.log('💡 Đã điền thông tin gợi ý vào form');
   };
 
+  // ✅ Gợi ý nhà cung cấp dựa trên dữ liệu đã nhập trước đó
+  const fetchSupplierSuggest = (query) => {
+    const q = (query || '').trim().toLowerCase();
+    if (q.length < 1) { setSupplierSuggestList([]); setShowSupplierSuggest(false); return; }
+    const all = Array.from(new Set(items.map(it => it.supplier).filter(Boolean)));
+    const matched = all
+      .filter(name => (name || '').toLowerCase().includes(q))
+      .slice(0, 10);
+    setSupplierSuggestList(matched);
+    setShowSupplierSuggest(matched.length > 0);
+  };
+
   const handleChange = (e) => {
     const { name, value } = e.target;
     if (name === "branch") localStorage.setItem('lastBranch', value);
     if (name === "category") localStorage.setItem('lastCategory', value);
     if (name === "price_import" || name === "da_thanh_toan_nhap") {
       setFormData((prev) => ({ ...prev, [name]: parseNumber(value) }));
+    } else if (name === 'supplier') {
+      setFormData((prev) => ({ ...prev, supplier: value }));
+      fetchSupplierSuggest(value);
     } else {
       setFormData((prev) => ({ ...prev, [name]: value }));
     }
@@ -277,7 +295,7 @@ function NhapHang() {
       branch: formData.branch,
       note: "",
       tenSanPham: "",
-      quantity: "",
+      quantity: "1",
       category: formData.category,
       source: "tien_mat"
     });
@@ -292,10 +310,19 @@ function NhapHang() {
         ? `${import.meta.env.VITE_API_URL || ''}/api/nhap-hang/${editingItemId}`
         : `${import.meta.env.VITE_API_URL || ''}/api/nhap-hang`;
 
+      // ✅ Chuẩn hóa số liệu: nếu để trống đã thanh toán -> 0
+      const normalizedDaTT = parseFloat(parseNumber(formData.da_thanh_toan_nhap)) || 0;
+
+      const payload = { 
+        ...formData, 
+        da_thanh_toan_nhap: normalizedDaTT,
+        tenSanPham: formData.product_name || formData.tenSanPham 
+      };
+
       const res = await fetch(url, {
         method,
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...formData, tenSanPham: formData.product_name || formData.tenSanPham })
+        body: JSON.stringify(payload)
       });
 
       const data = await res.json();
@@ -803,10 +830,12 @@ function NhapHang() {
       header: "Đã trả NCC",
       key: "da_thanh_toan_nhap",
       render: (item) => {
-        const daTT = parseFloat(item.da_thanh_toan_nhap) || 0;
+        const totalPaid = parseFloat(item.da_thanh_toan_nhap) || 0;
+        const qty = parseInt(item.quantity) || 1;
+        const paidPerUnit = totalPaid / qty;
         return (
-          <div className="text-sm font-bold text-blue-600">
-            {daTT > 0 ? formatCurrency(daTT) : (
+          <div className="text-sm font-bold text-blue-600" title={`Tổng đã trả: ${formatCurrency(totalPaid)} cho ${qty} sp`}>
+            {paidPerUnit > 0 ? formatCurrency(paidPerUnit) : (
               <span className="text-gray-400 italic">0đ</span>
             )}
           </div>
@@ -817,13 +846,14 @@ function NhapHang() {
       header: "Nợ NCC",
       key: "supplier_debt",
       render: (item) => {
-        const daTT = parseFloat(item.da_thanh_toan_nhap) || 0;
+        const totalPaid = parseFloat(item.da_thanh_toan_nhap) || 0;
         const giaNhap = parseFloat(item.price_import) || 0;
         const soLuong = parseInt(item.quantity) || 1;
-        const congNo = Math.max((giaNhap * soLuong) - daTT, 0);
+        const paidPerUnit = totalPaid / soLuong;
+        const congNoPerUnit = Math.max(giaNhap - paidPerUnit, 0);
         return (
-          <div className={`text-sm font-bold ${congNo > 0 ? 'text-red-600' : 'text-gray-400'}`}>
-            {congNo > 0 ? formatCurrency(congNo) : (
+          <div className={`text-sm font-bold ${congNoPerUnit > 0 ? 'text-red-600' : 'text-gray-400'}`} title={`Tổng nợ: ${formatCurrency(Math.max(giaNhap*soLuong - totalPaid, 0))}`}>
+            {congNoPerUnit > 0 ? formatCurrency(congNoPerUnit) : (
               <span className="text-green-600">✓ Đã trả</span>
             )}
           </div>
@@ -1031,7 +1061,7 @@ function NhapHang() {
             <input
               name="da_thanh_toan_nhap"
               type="text"
-              placeholder="Để trống sẽ tự động = Giá nhập × Số lượng"
+              placeholder="Để trống = 0"
               value={formatNumber(formData.da_thanh_toan_nhap)}
               onChange={handleChange}
               className="form-input"
@@ -1041,18 +1071,18 @@ function NhapHang() {
                 const importPrice = parseNumber(formData.price_import) || 0;
                 const quantity = parseInt(formData.quantity) || 1;
                 const daTT = parseNumber(formData.da_thanh_toan_nhap) || 0;
-                const autoAmount = importPrice * quantity;
-                const finalDaTT = daTT || autoAmount;
-                const congNo = Math.max(autoAmount - finalDaTT, 0);
+                const totalAmount = importPrice * quantity;
+                const finalDaTT = daTT; // ✅ Không tự động full, mặc định 0 nếu trống
+                const congNo = Math.max(totalAmount - finalDaTT, 0);
                 
                 return (
                   <div className="p-2 bg-blue-50 rounded border border-blue-200">
-                    <div className="font-medium text-blue-900">💡 Tính toán tự động:</div>
+                    <div className="font-medium text-blue-900">💡 Tính toán:</div>
                     <div className="text-blue-700">
-                      <strong>Tổng tiền hàng:</strong> {formatCurrency(importPrice)} × {quantity} = <strong>{formatCurrency(autoAmount)}</strong>
+                      <strong>Tổng tiền hàng:</strong> {formatCurrency(importPrice)} × {quantity} = <strong>{formatCurrency(totalAmount)}</strong>
                     </div>
                     <div className="text-blue-700">
-                      <strong>Sẽ thanh toán:</strong> {daTT > 0 ? formatCurrency(daTT) : `${formatCurrency(autoAmount)} (tự động)`}
+                      <strong>Đã thanh toán:</strong> {formatCurrency(finalDaTT)}
                     </div>
                     <div className={`font-semibold ${congNo > 0 ? 'text-red-600' : 'text-green-600'}`}>
                       <strong>Nợ NCC:</strong> {formatCurrency(congNo)} {congNo === 0 && '✅ Đã trả đủ'}
@@ -1075,15 +1105,29 @@ function NhapHang() {
             />
           </div>
 
-          <div>
+          <div className="relative">
             <label className="block text-sm font-semibold text-gray-700 mb-3">Nhà cung cấp</label>
             <input
               name="supplier"
-              placeholder="Tên nhà cung cấp"
+              placeholder="Nhập để gợi ý nhà cung cấp..."
               value={formData.supplier}
               onChange={handleChange}
               className="form-input"
+              autoComplete="off"
             />
+            {showSupplierSuggest && supplierSuggestList.length > 0 && (
+              <div className="absolute top-full left-0 right-0 bg-white border border-gray-300 rounded-lg shadow-lg z-50 max-h-60 overflow-y-auto">
+                {supplierSuggestList.map((name, idx) => (
+                  <div
+                    key={name + idx}
+                    className="p-3 hover:bg-blue-50 cursor-pointer border-b border-gray-100 last:border-b-0"
+                    onClick={() => { setFormData(prev => ({ ...prev, supplier: name })); setShowSupplierSuggest(false); }}
+                  >
+                    <div className="text-sm text-gray-900 font-medium">{name}</div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
           <div>

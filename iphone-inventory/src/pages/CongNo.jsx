@@ -49,6 +49,8 @@ function CongNo() {
     type: '', // 'customer' hoặc 'supplier'
     data: null 
   });
+  const [historyModal, setHistoryModal] = useState({ open: false, type: '', name: '' });
+  const [historyItems, setHistoryItems] = useState([]);
   const [editForm, setEditForm] = useState({ 
     name: '', 
     phone: '', 
@@ -218,6 +220,26 @@ function CongNo() {
     setShowAll(false);
   };
 
+  // Fetch histories
+  const openHistory = async (type, entity) => {
+    try {
+      setHistoryModal({ open: true, type, name: type==='customer' ? entity.customer_name : (entity.supplier_name || entity.supplier) });
+      let url = '';
+      if (type === 'customer') {
+        const params = new URLSearchParams({ customer_name: entity.customer_name });
+        url = `${import.meta.env.VITE_API_URL || ''}/api/cong-no/customer-history?${params}`;
+      } else {
+        const params = new URLSearchParams({ supplier_name: entity.supplier_name || entity.supplier });
+        url = `${import.meta.env.VITE_API_URL || ''}/api/cong-no/supplier-history?${params}`;
+      }
+      const res = await fetch(url);
+      const data = await res.json();
+      setHistoryItems(data.history || []);
+    } catch (e) {
+      setHistoryItems([]);
+    }
+  };
+
   // Table columns definition - ĐƠN GIẢN HÓA: Chỉ có thao tác cập nhật
   const tableColumns = activeTab === "khach_no" ? [
     {
@@ -278,12 +300,10 @@ function CongNo() {
       header: "Thao tác",
       key: "actions",
       render: (customer) => (
-        <button
-          onClick={() => handleEdit(customer, 'customer')} 
-            className="btn-action-edit text-xs"
-        >
-          ✏️ Cập nhật
-        </button>
+        <div className="flex gap-2">
+          <button onClick={() => handleEdit(customer, 'customer')} className="btn-action-edit text-xs">✏️ Cập nhật</button>
+          <button onClick={() => openHistory('customer', customer)} className="text-xs px-2 py-1 bg-gray-100 rounded hover:bg-gray-200">🕑 Lịch sử</button>
+        </div>
       )
     }
   ] : [
@@ -346,12 +366,10 @@ function CongNo() {
       header: "Thao tác",
       key: "actions",
       render: (supplier) => (
-          <button
-          onClick={() => handleEdit(supplier, 'supplier')} 
-            className="btn-action-edit text-xs"
-          >
-          ✏️ Cập nhật
-          </button>
+          <div className="flex gap-2">
+            <button onClick={() => handleEdit(supplier, 'supplier')} className="btn-action-edit text-xs">✏️ Cập nhật</button>
+            <button onClick={() => openHistory('supplier', supplier)} className="text-xs px-2 py-1 bg-gray-100 rounded hover:bg-gray-200">🕑 Lịch sử</button>
+          </div>
       )
     }
   ];
@@ -568,6 +586,42 @@ function CongNo() {
                 ❌ Hủy
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* History Modal */}
+      {historyModal.open && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl p-6 w-full max-w-lg mx-4 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-bold">🕑 Lịch sử {historyModal.type==='customer'?'trả nợ khách':'trả nợ NCC'} - {historyModal.name}</h3>
+              <button className="text-gray-600" onClick={()=>{setHistoryModal({open:false,type:'',name:''}); setHistoryItems([]);}}>✖</button>
+            </div>
+            {historyItems.length===0 ? (
+              <div className="text-sm text-gray-500">Chưa có lịch sử.</div>
+            ) : (
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="bg-gray-50 text-gray-600">
+                    <th className="p-2 text-left">Ngày</th>
+                    <th className="p-2 text-right">Số tiền</th>
+                    <th className="p-2">Nguồn</th>
+                    <th className="p-2">Ghi chú</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {historyItems.map((h, idx)=> (
+                    <tr key={idx} className="border-b">
+                      <td className="p-2">{new Date(h.date).toLocaleString('vi-VN')}</td>
+                      <td className="p-2 text-right">{formatCurrency(h.amount)}</td>
+                      <td className="p-2 text-center">{h.source}</td>
+                      <td className="p-2">{h.note || ''}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
           </div>
         </div>
       )}

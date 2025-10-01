@@ -75,19 +75,60 @@ const DataTable = ({
           {/* Desktop pagination */}
           <div className="hidden sm:flex justify-center mb-4">
             <nav className="relative z-0 inline-flex rounded-xl shadow-sm -space-x-px">
-              {Array.from({ length: totalPages }, (_, i) => (
-                <button
-                  key={i + 1}
-                  onClick={() => onPageChange && onPageChange(i + 1)}
-                  className={`relative inline-flex items-center px-4 py-2 border text-sm font-medium transition-all ${
-                    currentPage === i + 1
-                      ? 'z-10 bg-purple-50 border-purple-500 text-purple-600'
-                      : 'bg-white border-gray-300 text-gray-500 hover:bg-gray-50'
-                  } ${i === 0 ? 'rounded-l-xl' : ''} ${i === totalPages - 1 ? 'rounded-r-xl' : ''}`}
-                >
-                  {i + 1}
-                </button>
-              ))}
+              {(() => {
+                // ✅ Tạo danh sách phân trang rút gọn với dấu "..."
+                const pages = [];
+                const maxButtons = 9; // tối đa số "nút" hiển thị (bao gồm ...)
+                const add = (p) => pages.push(p);
+
+                if (totalPages <= maxButtons) {
+                  for (let i = 1; i <= totalPages; i++) add(i);
+                } else {
+                  const showNeighbors = 1; // số trang lân cận mỗi phía
+                  const left = Math.max(2, currentPage - showNeighbors);
+                  const right = Math.min(totalPages - 1, currentPage + showNeighbors);
+
+                  add(1);
+                  if (left > 2) add('...-left');
+
+                  for (let i = left; i <= right; i++) add(i);
+
+                  if (right < totalPages - 1) add('...-right');
+                  add(totalPages);
+                }
+
+                return pages.map((p, idx) => {
+                  if (typeof p === 'string' && p.startsWith('...')) {
+                    // dấu ...
+                    const isLeft = p === '...-left';
+                    const rounded = isLeft ? 'rounded-none' : 'rounded-none';
+                    return (
+                      <span
+                        key={p + idx}
+                        className={`relative inline-flex items-center px-4 py-2 border text-sm font-medium bg-white border-gray-300 text-gray-400 ${rounded}`}
+                      >
+                        ...
+                      </span>
+                    );
+                  }
+                  const i = p;
+                  const first = i === 1;
+                  const last = i === totalPages;
+                  return (
+                    <button
+                      key={i}
+                      onClick={() => onPageChange && onPageChange(i)}
+                      className={`relative inline-flex items-center px-4 py-2 border text-sm font-medium transition-all ${
+                        currentPage === i
+                          ? 'z-10 bg-purple-50 border-purple-500 text-purple-600'
+                          : 'bg-white border-gray-300 text-gray-500 hover:bg-gray-50'
+                      } ${first ? 'rounded-l-xl' : ''} ${last ? 'rounded-r-xl' : ''}`}
+                    >
+                      {i}
+                    </button>
+                  );
+                });
+              })()}
             </nav>
           </div>
 

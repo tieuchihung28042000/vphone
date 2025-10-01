@@ -1402,13 +1402,28 @@ function XuatHang() {
           total_amount: ((parseFloat(it.price_sell || it.sale_price || 0) || 0) * (parseInt(it.quantity) || 1)),
           total_paid: parseFloat(it.da_thanh_toan) || 0,
           quantity_sum: parseInt(it.quantity) || 1,
+          // ✅ Lưu toàn bộ danh sách sản phẩm trong đơn để hiển thị đầy đủ
+          items_list: [
+            {
+              product_name: it.product_name || it.item?.product_name || it.item?.tenSanPham || '',
+              sku: it.sku || it.item?.sku || '',
+              imei: it.imei || it.item?.imei || '',
+              quantity: parseInt(it.quantity) || 1
+            }
+          ]
         });
       } else {
         const g = map.get(key);
         g.total_amount += ((parseFloat(it.price_sell || it.sale_price || 0) || 0) * (parseInt(it.quantity) || 1));
         g.total_paid += (parseFloat(it.da_thanh_toan) || 0);
         g.quantity_sum += (parseInt(it.quantity) || 1);
-        // Giữ item đầu làm đại diện hiển thị
+        // ✅ Thêm sản phẩm vào danh sách để hiển thị đầy đủ trong cột Sản phẩm
+        g.items_list.push({
+          product_name: it.product_name || it.item?.product_name || it.item?.tenSanPham || '',
+          sku: it.sku || it.item?.sku || '',
+          imei: it.imei || it.item?.imei || '',
+          quantity: parseInt(it.quantity) || 1
+        });
         map.set(key, g);
       }
     }
@@ -1446,15 +1461,32 @@ function XuatHang() {
       key: "item",
       render: (item) => (
         <div>
-          <div className="text-sm font-semibold text-gray-900">
-            {item.item?.product_name || item.item?.tenSanPham}
-          </div>
-          <div className="text-sm text-gray-500">
-            IMEI: {item.item?.imei || 'N/A'} • SKU: {item.item?.sku}
-          </div>
-          <div className="text-xs text-gray-400">
-            {item.item?.category} • {item.branch}
-          </div>
+          {Array.isArray(item.items_list) && item.items_list.length > 1 ? (
+            <div>
+              <div className="text-sm font-semibold text-gray-900">{`Đơn ${item.items_list.length} sản phẩm`}</div>
+              <ul className="mt-1 text-sm text-gray-700 list-disc pl-5 space-y-1">
+                {item.items_list.map((p, idx) => (
+                  <li key={idx}>
+                    <span className="font-medium">{p.product_name}</span>
+                    <span className="text-gray-500"> {p.imei ? `• IMEI: ${p.imei}` : `• SKU: ${p.sku}`} • SL: {p.quantity}</span>
+                  </li>
+                ))}
+              </ul>
+              <div className="text-xs text-gray-400 mt-1">{item.branch}</div>
+            </div>
+          ) : (
+            <div>
+              <div className="text-sm font-semibold text-gray-900">
+                {item.item?.product_name || item.item?.tenSanPham || item.items_list?.[0]?.product_name}
+              </div>
+              <div className="text-sm text-gray-500">
+                IMEI: {item.item?.imei || item.items_list?.[0]?.imei || 'N/A'} • SKU: {item.item?.sku || item.items_list?.[0]?.sku}
+              </div>
+              <div className="text-xs text-gray-400">
+                {item.item?.category} • {item.branch}
+              </div>
+            </div>
+          )}
         </div>
       )
     },

@@ -238,7 +238,7 @@ app.post('/api/nhap-hang', async (req, res) => {
       }
       // Tính toán đã thanh toán
       const priceImportNum = Number(price_import) || 0;
-      const daTTNhapNum = Number(da_thanh_toan_nhap) || priceImportNum; // Tự động tính = giá nhập nếu không có
+      const daTTNhapNum = Number(da_thanh_toan_nhap) || 0; // ✅ Không tự động full, thiếu thì = 0
       
       const newItem = new Inventory({
         imei,
@@ -335,7 +335,7 @@ app.post('/api/nhap-hang', async (req, res) => {
       // Cập nhật số lượng
       const quantityNum = Number(quantity || 1);
       const priceImportNum = Number(price_import) || 0;
-      const daTTNhapNum = Number(da_thanh_toan_nhap) || (priceImportNum * quantityNum); // Tự động tính nếu không có
+      const daTTNhapNum = Number(da_thanh_toan_nhap) || 0; // ✅ Không tự động full, thiếu thì = 0
       
       existItem.quantity = (existItem.quantity || 1) + quantityNum;
       existItem.import_date = import_date || existItem.import_date;
@@ -385,7 +385,7 @@ app.post('/api/nhap-hang', async (req, res) => {
       // Tính toán cho phụ kiện mới
       const quantityNum = Number(quantity || 1);
       const priceImportNum = Number(price_import) || 0;
-      const daTTNhapNum = Number(da_thanh_toan_nhap) || (priceImportNum * quantityNum); // Tự động tính nếu không có
+      const daTTNhapNum = Number(da_thanh_toan_nhap) || 0; // ✅ Không tự động full, thiếu thì = 0
       
       const newItem = new Inventory({
         sku,

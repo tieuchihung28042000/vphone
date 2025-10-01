@@ -603,3 +603,66 @@ router.put('/update-supplier', async (req, res) => {
 });
 
 export default router;
+
+// ==================== LỊCH SỪ THANH TOÁN CÔNG NỢ (CUSTOMER & NCC) ====================
+// GET /api/cong-no/customer-history?customer_name=...&customer_phone=...
+router.get('/customer-history', async (req, res) => {
+  try {
+    const { customer_name, customer_phone } = req.query;
+    if (!customer_name) return res.status(400).json({ message: 'Thiếu tên khách hàng' });
+
+    // Ưu tiên lấy theo trường structured `customer`, fallback theo content text
+    const query = {
+      $or: [
+        { customer: customer_name },
+        { content: { $regex: `Thu nợ khách: ${customer_name}`, $options: 'i' } }
+      ]
+    };
+    if (customer_phone) {
+      query.$or.push({ customer_phone });
+    }
+
+    const items = await Cashbook.find(query).sort({ date: -1, createdAt: -1 }).lean();
+    const history = items.map(i => ({
+      date: i.date || i.createdAt,
+      amount: i.amount || 0,
+      type: i.type, // thu/chi
+      source: i.source || 'tien_mat',
+      note: i.note || '',
+      related_type: i.related_type || '',
+    }));
+    res.json({ history });
+  } catch (e) {
+    console.error('❌ Error in customer-history:', e);
+    res.status(500).json({ message: 'Lỗi lấy lịch sử trả nợ khách', error: e.message });
+  }
+});
+
+// GET /api/cong-no/supplier-history?supplier_name=...
+router.get('/supplier-history', async (req, res) => {
+  try {
+    const { supplier_name } = req.query;
+    if (!supplier_name) return res.status(400).json({ message: 'Thiếu tên nhà cung cấp' });
+
+    const query = {
+      $or: [
+        { supplier: supplier_name },
+        { content: { $regex: `Trả nợ NCC: ${supplier_name}`, $options: 'i' } }
+      ]
+    };
+
+    const items = await Cashbook.find(query).sort({ date: -1, createdAt: -1 }).lean();
+    const history = items.map(i => ({
+      date: i.date || i.createdAt,
+      amount: i.amount || 0,
+      type: i.type, // thu/chi
+      source: i.source || 'tien_mat',
+      note: i.note || '',
+      related_type: i.related_type || '',
+    }));
+    res.json({ history });
+  } catch (e) {
+    console.error('❌ Error in supplier-history:', e);
+    res.status(500).json({ message: 'Lỗi lấy lịch sử trả nợ NCC', error: e.message });
+  }
+});
