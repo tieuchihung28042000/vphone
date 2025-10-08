@@ -835,7 +835,7 @@ function NhapHang() {
         const paidPerUnit = totalPaid / qty;
         return (
           <div className="text-sm font-bold text-blue-600" title={`Tổng đã trả: ${formatCurrency(totalPaid)} cho ${qty} sp`}>
-            {paidPerUnit > 0 ? formatCurrency(paidPerUnit) : (
+            {totalPaid > 0 ? formatCurrency(totalPaid) : (
               <span className="text-gray-400 italic">0đ</span>
             )}
           </div>
@@ -849,11 +849,10 @@ function NhapHang() {
         const totalPaid = parseFloat(item.da_thanh_toan_nhap) || 0;
         const giaNhap = parseFloat(item.price_import) || 0;
         const soLuong = parseInt(item.quantity) || 1;
-        const paidPerUnit = totalPaid / soLuong;
-        const congNoPerUnit = Math.max(giaNhap - paidPerUnit, 0);
+        const totalDebt = Math.max(giaNhap * soLuong - totalPaid, 0);
         return (
-          <div className={`text-sm font-bold ${congNoPerUnit > 0 ? 'text-red-600' : 'text-gray-400'}`} title={`Tổng nợ: ${formatCurrency(Math.max(giaNhap*soLuong - totalPaid, 0))}`}>
-            {congNoPerUnit > 0 ? formatCurrency(congNoPerUnit) : (
+          <div className={`text-sm font-bold ${totalDebt > 0 ? 'text-red-600' : 'text-gray-400'}`} title={`Tổng nợ: ${formatCurrency(totalDebt)}`}>
+            {totalDebt > 0 ? formatCurrency(totalDebt) : (
               <span className="text-green-600">✓ Đã trả</span>
             )}
           </div>

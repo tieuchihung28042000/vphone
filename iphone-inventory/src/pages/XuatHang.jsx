@@ -1390,12 +1390,22 @@ function XuatHang() {
     }
   };
 
-  // Group by batch_id (nếu có) để hiển thị tổng tiền/SL theo đơn nhiều sản phẩm
+  // ✅ SỬA LỖI: Group by batch_id + customer + date để tránh duplicate
   const groupedSoldItems = (() => {
     if (!Array.isArray(soldItems) || soldItems.length === 0) return [];
     const map = new Map();
+    
     for (const it of soldItems) {
-      const key = it.batch_id || it._id; // đơn lẻ: group theo _id
+      // ✅ Tạo key duy nhất dựa trên batch_id + customer + date để tránh duplicate
+      const customerKey = `${it.buyer_name || it.customer_name || ''}_${it.buyer_phone || it.customer_phone || ''}`;
+      const dateKey = it.sale_date?.slice(0, 10) || '';
+      
+      // ✅ CẢI THIỆN: Nếu có batch_id, gộp theo batch_id + customer + date
+      // Nếu không có batch_id, gộp theo customer + date để tránh duplicate hoàn toàn
+      const key = it.batch_id ? 
+        `${it.batch_id}_${customerKey}_${dateKey}` : 
+        `${customerKey}_${dateKey}`;
+      
       if (!map.has(key)) {
         map.set(key, {
           ...it,

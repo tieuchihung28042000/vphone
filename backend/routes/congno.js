@@ -529,19 +529,55 @@ router.put('/update-customer', async (req, res) => {
       customer_phone: new_customer_phone.trim()
     };
 
-    // Nếu có cập nhật da_thanh_toan, áp dụng cho đơn gần nhất
-    if (da_thanh_toan && da_thanh_toan > 0) {
-      const latestOrder = await ExportHistory.findOne(query).sort({ sold_date: -1 });
-      if (latestOrder) {
-        await ExportHistory.findByIdAndUpdate(latestOrder._id, {
-          ...updateData,
-          da_thanh_toan: Number(da_thanh_toan)
+    // ✅ SỬA LỖI: Nếu có cập nhật da_thanh_toan, cần xử lý đúng logic
+    if (da_thanh_toan !== undefined && da_thanh_toan !== null && da_thanh_toan !== '') {
+      const daThanhToanValue = Number(da_thanh_toan) || 0;
+      
+      // Lấy tất cả đơn hàng của khách hàng này
+      const allOrders = await ExportHistory.find(query).sort({ sold_date: 1 });
+      
+      if (allOrders.length > 0) {
+        // Tính tổng giá bán của tất cả đơn hàng
+        let totalSalePrice = 0;
+        allOrders.forEach(order => {
+          const priceSell = parseFloat(order.price_sell) || 0;
+          const quantity = parseInt(order.quantity) || 1;
+          totalSalePrice += (priceSell * quantity);
         });
+        
+        // Kiểm tra logic: da_thanh_toan không được vượt quá total_sale_price
+        if (daThanhToanValue > totalSalePrice) {
+          return res.status(400).json({ 
+            message: `❌ Số tiền đã trả (${daThanhToanValue.toLocaleString()}đ) không được vượt quá tổng giá bán (${totalSalePrice.toLocaleString()}đ)` 
+          });
+        }
+        
+        // Phân bổ số tiền đã trả cho các đơn hàng theo thứ tự thời gian
+        let remainingPayment = daThanhToanValue;
+        
+        for (const order of allOrders) {
+          if (remainingPayment <= 0) break;
+          
+          const priceSell = parseFloat(order.price_sell) || 0;
+          const quantity = parseInt(order.quantity) || 1;
+          const orderTotal = priceSell * quantity;
+          
+          // Số tiền trả cho đơn hàng này
+          const paymentForThisOrder = Math.min(remainingPayment, orderTotal);
+          
+          // Cập nhật da_thanh_toan cho đơn hàng này
+          await ExportHistory.findByIdAndUpdate(order._id, {
+            ...updateData,
+            da_thanh_toan: paymentForThisOrder
+          });
+          
+          remainingPayment -= paymentForThisOrder;
+        }
       }
+    } else {
+      // Chỉ cập nhật thông tin khách hàng, không thay đổi da_thanh_toan
+      await ExportHistory.updateMany(query, updateData);
     }
-
-    // Cập nhật tất cả records khác
-    await ExportHistory.updateMany(query, updateData);
 
     res.json({
       message: `✅ Đã cập nhật thông tin khách hàng ${new_customer_name}`,
@@ -577,19 +613,55 @@ router.put('/update-supplier', async (req, res) => {
       supplier_phone: new_supplier_phone.trim()
     };
 
-    // Nếu có cập nhật da_thanh_toan_nhap, áp dụng cho đơn gần nhất
-    if (da_thanh_toan && da_thanh_toan > 0) {
-      const latestOrder = await Inventory.findOne(query).sort({ import_date: -1 });
-      if (latestOrder) {
-        await Inventory.findByIdAndUpdate(latestOrder._id, {
-          ...updateData,
-          da_thanh_toan_nhap: Number(da_thanh_toan)
+    // ✅ SỬA LỖI: Nếu có cập nhật da_thanh_toan_nhap, cần xử lý đúng logic
+    if (da_thanh_toan !== undefined && da_thanh_toan !== null && da_thanh_toan !== '') {
+      const daThanhToanValue = Number(da_thanh_toan) || 0;
+      
+      // Lấy tất cả đơn nhập của nhà cung cấp này
+      const allOrders = await Inventory.find(query).sort({ import_date: 1 });
+      
+      if (allOrders.length > 0) {
+        // Tính tổng giá nhập của tất cả đơn hàng
+        let totalImportPrice = 0;
+        allOrders.forEach(order => {
+          const priceImport = parseFloat(order.price_import) || 0;
+          const quantity = parseInt(order.quantity) || 1;
+          totalImportPrice += (priceImport * quantity);
         });
+        
+        // Kiểm tra logic: da_thanh_toan_nhap không được vượt quá total_import_price
+        if (daThanhToanValue > totalImportPrice) {
+          return res.status(400).json({ 
+            message: `❌ Số tiền đã trả (${daThanhToanValue.toLocaleString()}đ) không được vượt quá tổng giá nhập (${totalImportPrice.toLocaleString()}đ)` 
+          });
+        }
+        
+        // Phân bổ số tiền đã trả cho các đơn hàng theo thứ tự thời gian
+        let remainingPayment = daThanhToanValue;
+        
+        for (const order of allOrders) {
+          if (remainingPayment <= 0) break;
+          
+          const priceImport = parseFloat(order.price_import) || 0;
+          const quantity = parseInt(order.quantity) || 1;
+          const orderTotal = priceImport * quantity;
+          
+          // Số tiền trả cho đơn hàng này
+          const paymentForThisOrder = Math.min(remainingPayment, orderTotal);
+          
+          // Cập nhật da_thanh_toan_nhap cho đơn hàng này
+          await Inventory.findByIdAndUpdate(order._id, {
+            ...updateData,
+            da_thanh_toan_nhap: paymentForThisOrder
+          });
+          
+          remainingPayment -= paymentForThisOrder;
+        }
       }
+    } else {
+      // Chỉ cập nhật thông tin nhà cung cấp, không thay đổi da_thanh_toan_nhap
+      await Inventory.updateMany(query, updateData);
     }
-
-    // Cập nhật tất cả records khác
-    await Inventory.updateMany(query, updateData);
 
     res.json({
       message: `✅ Đã cập nhật thông tin nhà cung cấp ${new_supplier_name}`,
