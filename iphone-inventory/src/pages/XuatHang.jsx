@@ -2099,7 +2099,6 @@ function XuatHang() {
               <option value="tien_mat">💵 Tiền mặt</option>
               <option value="the">💳 Thẻ</option>
               <option value="vi_dien_tu">📱 Ví điện tử</option>
-              <option value="cong_no">📝 Công nợ</option>
             </select>
           </div>
 

@@ -97,8 +97,7 @@ jest.mock('../pages/XuatHang', () => {
           },
             React.createElement('option', { value: 'cash' }, 'Tiền mặt'),
             React.createElement('option', { value: 'the' }, 'Thẻ'),
-            React.createElement('option', { value: 'vi_dien_tu' }, 'Ví điện tử'),
-            React.createElement('option', { value: 'cong_no' }, 'Công nợ')
+            React.createElement('option', { value: 'vi_dien_tu' }, 'Ví điện tử')
           )
         ),
         React.createElement('button', { onClick: handleSubmitReturn }, 'Tạo phiếu trả hàng'),
@@ -195,7 +194,7 @@ describe('Sales Return Component (STORY_06)', () => {
       const returnMethodSelect = screen.getByLabelText('Phương thức trả lại');
       const options = Array.from(returnMethodSelect.querySelectorAll('option')).map(opt => opt.textContent);
 
-      expect(options).toEqual(expect.arrayContaining(['Tiền mặt', 'Thẻ', 'Ví điện tử', 'Công nợ']));
+      expect(options).toEqual(expect.arrayContaining(['Tiền mặt', 'Thẻ', 'Ví điện tử']));
     });
 
     it('should update return method when selection changes', async () => {

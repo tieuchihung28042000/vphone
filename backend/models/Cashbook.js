@@ -5,7 +5,7 @@ const CashbookSchema = new mongoose.Schema({
   amount: { type: Number, required: true },                       // Số tiền
   content: { type: String, required: true },                      // Nội dung/diễn giải
   category: { type: String },                                     // Phân loại giao dịch
-  source: { type: String, enum: ['tien_mat', 'the', 'vi_dien_tu', 'cong_no'], required: true }, // Nguồn tiền
+  source: { type: String, enum: ['tien_mat', 'the', 'vi_dien_tu'], required: true }, // Nguồn tiền
   supplier: { type: String },                                     // Nhà cung cấp (nếu có)
   customer: { type: String },                                     // Khách hàng (nếu có)
   createdAt: { type: Date, default: Date.now },

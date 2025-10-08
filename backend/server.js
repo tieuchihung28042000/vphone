@@ -69,9 +69,6 @@ function normalizeCashSource(input) {
     'Ví điện tử': 'vi_dien_tu',
     '📱 Ví điện tử': 'vi_dien_tu',
     'vi_dien_tu': 'vi_dien_tu',
-    'Công nợ': 'cong_no',
-    '📝 Công nợ': 'cong_no',
-    'cong_no': 'cong_no',
   };
   return map[input] || 'tien_mat';
 }

@@ -28,6 +28,15 @@ function parseNumber(val) {
   return val.toString().replace(/[^\d]/g, "");
 }
 
+function getPaymentSourceName(source) {
+  const sourceMap = {
+    'tien_mat': '💵 Tiền mặt',
+    'the': '💳 Thẻ',
+    'vi_dien_tu': '📱 Ví điện tử'
+  };
+  return sourceMap[source] || '💵 Tiền mặt';
+}
+
 function CongNo() {
   // Tab state - có 2 tab: khach_no (khách nợ mình) và minh_no_ncc (mình nợ nhà cung cấp)
   const [activeTab, setActiveTab] = useState("khach_no");
@@ -56,12 +65,10 @@ function CongNo() {
     phone: '', 
     da_thanh_toan: '' 
   });
-  // STORY 07: multi-payment
-  const [payments, setPayments] = useState([{ source: 'tien_mat', amount: '' }]);
-  const addPayRow = () => setPayments(prev => [...prev, { source: 'tien_mat', amount: '' }]);
-  const rmPayRow = (idx) => setPayments(prev => prev.filter((_, i) => i !== idx));
-  const upPayRow = (idx, key, val) => setPayments(prev => prev.map((p, i) => i===idx ? { ...p, [key]: key==='amount'? parseNumber(val): val } : p));
-  const sumPayments = () => payments.reduce((s,p)=> s + (parseFloat(p.amount||0) || 0), 0);
+  // Trả từng phần như ngân hàng
+  const [paymentSource, setPaymentSource] = useState('tien_mat');
+  const [paymentAmount, setPaymentAmount] = useState('');
+  const [paymentNote, setPaymentNote] = useState('');
 
   // Stats calculation - tách riêng cho 2 tab
   const customerStats = {
@@ -158,57 +165,75 @@ function CongNo() {
     
     try {
       const { type, data } = editModal;
-      // Nếu có nhập multi-payment thì gọi pay API tương ứng
-      const payList = payments.map(p=>({ source:p.source, amount: parseFloat(p.amount||0) || 0 })).filter(p=>p.amount>0);
       let ok = true;
-      if (payList.length>0) {
+      
+      // Nếu có nhập số tiền trả thì gọi API trả nợ
+      const paymentAmountValue = parseFloat(paymentAmount) || 0;
+      if (paymentAmountValue > 0) {
+        const payList = [{ source: paymentSource, amount: paymentAmountValue }];
         if (type === 'customer') {
-              const res = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/cong-no/cong-no-pay-customer`, {
+          const res = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/cong-no/cong-no-pay-customer`, {
             method: 'PUT',
             headers: { 'Content-Type':'application/json' },
-            body: JSON.stringify({ customer_name: data.customer_name, customer_phone: data.customer_phone, payments: payList })
+            body: JSON.stringify({ 
+              customer_name: data.customer_name, 
+              customer_phone: data.customer_phone, 
+              payments: payList,
+              note: paymentNote.trim() || ''
+            })
           });
           ok = res.ok;
         } else {
           const res = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/cong-no/supplier-debt-pay`, {
             method: 'PUT',
             headers: { 'Content-Type':'application/json' },
-            body: JSON.stringify({ supplier_name: data.supplier_name || data.supplier, payments: payList })
+            body: JSON.stringify({ 
+              supplier_name: data.supplier_name || data.supplier, 
+              payments: payList,
+              note: paymentNote.trim() || ''
+            })
           });
           ok = res.ok;
         }
       }
-      // Cập nhật thông tin tên/điện thoại nếu có
-      const apiEndpoint = type === 'customer' ? 'update-customer' : 'update-supplier';
-      const payload = type === 'customer' ? {
-        old_customer_name: data.customer_name,
-        old_customer_phone: data.customer_phone || '',
-        new_customer_name: editForm.name.trim(),
-        new_customer_phone: editForm.phone.trim(),
-        da_thanh_toan: parseNumber(editForm.da_thanh_toan) || 0
-      } : {
-        old_supplier_name: data.supplier_name || data.supplier,
-        old_supplier_phone: data.supplier_phone || '',
-        new_supplier_name: editForm.name.trim(),
-        new_supplier_phone: editForm.phone.trim(),
-        da_thanh_toan: parseNumber(editForm.da_thanh_toan) || 0
-      };
-      const res2 = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/cong-no/${apiEndpoint}`, {
-        method: 'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)
-      });
-      ok = ok && res2.ok;
+      
+      // Cập nhật thông tin tên/điện thoại nếu có thay đổi
+      if (editForm.name.trim() !== (data.customer_name || data.supplier_name || data.supplier) || 
+          editForm.phone.trim() !== (data.customer_phone || data.supplier_phone || '')) {
+        const apiEndpoint = type === 'customer' ? 'update-customer' : 'update-supplier';
+        const payload = type === 'customer' ? {
+          old_customer_name: data.customer_name,
+          old_customer_phone: data.customer_phone || '',
+          new_customer_name: editForm.name.trim(),
+          new_customer_phone: editForm.phone.trim()
+        } : {
+          old_supplier_name: data.supplier_name || data.supplier,
+          old_supplier_phone: data.supplier_phone || '',
+          new_supplier_name: editForm.name.trim(),
+          new_supplier_phone: editForm.phone.trim()
+        };
+        const res2 = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/cong-no/${apiEndpoint}`, {
+          method: 'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)
+        });
+        ok = ok && res2.ok;
+      }
        
-      const result = await res2.json().catch(()=>({}));
       if (ok) {
-        alert(`✅ Đã cập nhật thông tin ${type === 'customer' ? 'khách hàng' : 'nhà cung cấp'}!`);
+        if (paymentAmountValue > 0) {
+          alert(`✅ Đã ghi nhận thanh toán ${formatCurrency(paymentAmountValue)} cho ${type === 'customer' ? 'khách hàng' : 'nhà cung cấp'}!`);
+        } else {
+          alert(`✅ Đã cập nhật thông tin ${type === 'customer' ? 'khách hàng' : 'nhà cung cấp'}!`);
+        }
         type === 'customer' ? await fetchDebts() : await fetchSupplierDebts();
       } else {
-        alert("❌ " + (result.message || "Cập nhật thất bại!"));
+        alert("❌ Cập nhật thất bại!");
       }
       
       setEditModal({ open: false, type: '', data: null });
       setEditForm({ name: "", phone: "", da_thanh_toan: "" });
-      setPayments([{ source: 'tien_mat', amount: '' }]);
+      setPaymentSource('tien_mat');
+      setPaymentAmount('');
+      setPaymentNote('');
     } catch (err) {
       console.error('❌ Error saving edit:', err);
       alert("❌ Lỗi kết nối khi cập nhật!");
@@ -502,7 +527,7 @@ function CongNo() {
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded-xl p-6 w-full max-w-md mx-4">
             <h3 className="text-lg font-bold mb-4">
-              ✏️ Cập nhật {editModal.type === 'customer' ? 'khách hàng' : 'nhà cung cấp'}
+              💳 Trả nợ {editModal.type === 'customer' ? 'khách hàng' : 'nhà cung cấp'}
             </h3>
             
             <div className="space-y-4">
@@ -533,38 +558,44 @@ function CongNo() {
               </div>
               
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Cập nhật số tiền đã thanh toán
-                </label>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">Số tiền trả lần này</label>
                 <input
                   type="text"
-                  value={formatNumber(editForm.da_thanh_toan)}
-                  onChange={(e) => setEditForm({...editForm, da_thanh_toan: parseNumber(e.target.value)})}
+                  value={formatNumber(paymentAmount)}
+                  onChange={(e) => setPaymentAmount(parseNumber(e.target.value))}
                   className="form-input"
-                  placeholder="Nhập số tiền đã thanh toán..."
+                  placeholder="Nhập số tiền trả lần này..."
                 />
                 <p className="text-xs text-gray-500 mt-1">
-                  Để trống nếu không muốn thay đổi số tiền đã thanh toán
+                  Để trống nếu chỉ cập nhật thông tin khách hàng
                 </p>
               </div>
-              {/* Multi-payment rows */}
-              <div className="pt-2 border-t">
-                <div className="text-sm font-semibold mb-2">Thanh toán đa nguồn (tùy chọn)</div>
-                {payments.map((p, idx)=> (
-                  <div key={idx} className="grid grid-cols-5 gap-2 items-center mb-2">
-                    <select className="form-input col-span-2" value={p.source} onChange={e=>upPayRow(idx,'source',e.target.value)}>
-                      <option value="tien_mat">💵 Tiền mặt</option>
-                      <option value="the">💳 Thẻ</option>
-                      <option value="vi_dien_tu">📱 Ví điện tử</option>
-                    </select>
-                    <input className="form-input col-span-2" placeholder="Số tiền" value={formatNumber(p.amount)} onChange={e=>upPayRow(idx,'amount',e.target.value)} />
-                    <button type="button" className="text-red-600" onClick={()=>rmPayRow(idx)}>Xóa</button>
-                  </div>
-                ))}
-                <div className="flex items-center justify-between">
-                  <button type="button" onClick={addPayRow} className="bg-gray-100 px-3 py-2 rounded">+ Thêm nguồn</button>
-                  <div className="text-xs text-gray-600">Tổng: {formatCurrency(sumPayments())}</div>
-                </div>
+              
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">Nguồn tiền</label>
+                <select 
+                  value={paymentSource} 
+                  onChange={(e) => setPaymentSource(e.target.value)} 
+                  className="form-input"
+                >
+                  <option value="tien_mat">💵 Tiền mặt</option>
+                  <option value="the">💳 Thẻ</option>
+                  <option value="vi_dien_tu">📱 Ví điện tử</option>
+                </select>
+              </div>
+              
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">Ghi chú</label>
+                <input
+                  type="text"
+                  value={paymentNote}
+                  onChange={(e) => setPaymentNote(e.target.value)}
+                  className="form-input"
+                  placeholder="Nhập ghi chú về lần trả nợ này..."
+                />
+                <p className="text-xs text-gray-500 mt-1">
+                  Ví dụ: Trả nợ tháng 10, Trả một phần, v.v.
+                </p>
               </div>
             </div>
            
@@ -579,7 +610,9 @@ function CongNo() {
                 onClick={() => {
                   setEditModal({ open: false, type: '', data: null });
                   setEditForm({ name: "", phone: "", da_thanh_toan: "" });
-                  setPayments([{ source: 'tien_mat', amount: '' }]);
+                  setPaymentSource('tien_mat');
+                  setPaymentAmount('');
+                  setPaymentNote('');
                 }}
                 className="flex-1 bg-gray-300 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-400 transition-colors"
               >
@@ -615,7 +648,7 @@ function CongNo() {
                     <tr key={idx} className="border-b">
                       <td className="p-2">{new Date(h.date).toLocaleString('vi-VN')}</td>
                       <td className="p-2 text-right">{formatCurrency(h.amount)}</td>
-                      <td className="p-2 text-center">{h.source}</td>
+                      <td className="p-2 text-center">{getPaymentSourceName(h.source)}</td>
                       <td className="p-2">{h.note || ''}</td>
                     </tr>
                   ))}

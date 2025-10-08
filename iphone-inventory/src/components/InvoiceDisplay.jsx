@@ -14,8 +14,7 @@ const InvoiceDisplay = ({ invoiceData, isVisible, onClose }) => {
       'tien_mat': 'Tiền mặt',
       'the': 'Thẻ',
       'chuyen_khoan': 'Chuyển khoản',
-      'vi_dien_tu': 'Ví điện tử',
-      'cong_no': 'Công nợ'
+      'vi_dien_tu': 'Ví điện tử'
     };
     return methods[source] || source;
   };

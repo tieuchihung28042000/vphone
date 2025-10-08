@@ -4,6 +4,16 @@ import Inventory from '../models/Inventory.js';
 import ExportHistory from '../models/ExportHistory.js';
 import Cashbook from '../models/Cashbook.js';
 
+// Helper function để chuẩn hóa nguồn tiền
+function getValidPaymentSource(source) {
+  const validSources = ['tien_mat', 'the', 'vi_dien_tu'];
+  if (validSources.includes(source)) {
+    return source;
+  }
+  // Nếu là nguồn không hợp lý (như 'cong_no'), mặc định về 'tien_mat'
+  return 'tien_mat';
+}
+
 // ✅ API lấy danh sách khách hàng còn công nợ (tính từ ExportHistory)
 router.get('/cong-no-list', async (req, res) => {
   try {
@@ -40,7 +50,8 @@ router.get('/cong-no-list', async (req, res) => {
           total_paid: 0,
           total_sale_price: 0,
           debt_history: [],
-          product_list: []
+          product_list: [],
+          latest_date: null
         };
       }
       
@@ -58,6 +69,12 @@ router.get('/cong-no-list', async (req, res) => {
       
       // Tổng công nợ (chỉ đơn còn nợ)
       grouped[key].total_debt += congNo;
+
+      // Cập nhật ngày mới nhất
+      const itemDate = new Date(item.sold_date || item.createdAt || 0);
+      if (!grouped[key].latest_date || itemDate > new Date(grouped[key].latest_date)) {
+        grouped[key].latest_date = itemDate;
+      }
 
       // Thêm sản phẩm chi tiết
       grouped[key].product_list.push({
@@ -78,6 +95,13 @@ router.get('/cong-no-list', async (req, res) => {
     if (show_all !== "true") {
       result = result.filter(customer => customer.total_debt > 0);
     }
+
+    // Sắp xếp theo ngày mới nhất (newest first)
+    result.sort((a, b) => {
+      const dateA = new Date(a.latest_date || 0);
+      const dateB = new Date(b.latest_date || 0);
+      return dateB - dateA; // Mới nhất trước
+    });
 
     res.json(result);
   } catch (err) {
@@ -188,15 +212,24 @@ router.put('/cong-no-pay-customer', async (req, res) => {
     // Ghi sổ quỹ: thu tiền nợ theo payments (hoặc 1 dòng nếu không có payments)
     try {
       const payList = hasPayments ? payments : [{ source: 'tien_mat', amount: totalPaid }];
+      console.log('💰 Creating Cashbook records for:', payList);
       for (const p of payList) {
         if (!p || !p.amount) continue;
+        console.log('💰 Creating Cashbook record:', {
+          type: 'thu',
+          amount: Number(p.amount),
+          content: `Thu nợ khách: ${customer_name}`,
+          note: note || '',
+          customer: customer_name,
+          source: p.source || 'tien_mat'
+        });
         await Cashbook.create({
           type: 'thu',
           amount: Number(p.amount),
           content: `Thu nợ khách: ${customer_name}`,
           note: note || '',
           date: new Date(),
-          branch: branch || '',
+          branch: branch || 'Chi nhanh 1',
           source: p.source || 'tien_mat',
           customer: customer_name,
           related_type: 'tra_no',
@@ -204,7 +237,9 @@ router.put('/cong-no-pay-customer', async (req, res) => {
           editable: false
         });
       }
-    } catch (e) { /* ignore */ }
+    } catch (e) { 
+      console.error('❌ Error saving to Cashbook:', e);
+    }
   } catch (err) {
     console.error('❌ Error in cong-no-pay-customer:', err);
     res.status(500).json({ message: '❌ Lỗi server khi trả nợ', error: err.message });
@@ -315,7 +350,8 @@ router.get('/supplier-debt-list', async (req, res) => {
           total_paid: 0,
           total_import_price: 0,
           debt_history: [],
-          product_list: []
+          product_list: [],
+          latest_date: null
         };
       }
       
@@ -334,6 +370,12 @@ router.get('/supplier-debt-list', async (req, res) => {
       // CHỈ TÍNH CÔNG NỢ CHO CÁC ĐƠN CÒN NỢ
       if (congNo > 0) {
         grouped[key].total_debt += congNo;
+      }
+
+      // Cập nhật ngày mới nhất
+      const itemDate = new Date(item.import_date || item.createdAt || 0);
+      if (!grouped[key].latest_date || itemDate > new Date(grouped[key].latest_date)) {
+        grouped[key].latest_date = itemDate;
       }
 
       // Thêm sản phẩm chi tiết (chỉ đơn còn nợ hoặc show_all=true)
@@ -357,6 +399,13 @@ router.get('/supplier-debt-list', async (req, res) => {
     if (show_all !== "true") {
       result = result.filter(supplier => supplier.total_debt > 0);
     }
+
+    // Sắp xếp theo ngày mới nhất (newest first)
+    result.sort((a, b) => {
+      const dateA = new Date(a.latest_date || 0);
+      const dateB = new Date(b.latest_date || 0);
+      return dateB - dateA; // Mới nhất trước
+    });
 
     res.json(result);
   } catch (err) {
@@ -683,15 +732,22 @@ router.get('/customer-history', async (req, res) => {
     const { customer_name, customer_phone } = req.query;
     if (!customer_name) return res.status(400).json({ message: 'Thiếu tên khách hàng' });
 
-    // Ưu tiên lấy theo trường structured `customer`, fallback theo content text
+    // Tìm kiếm linh hoạt hơn - ưu tiên customer field, fallback theo content
     const query = {
-      $or: [
-        { customer: customer_name },
-        { content: { $regex: `Thu nợ khách: ${customer_name}`, $options: 'i' } }
+      $and: [
+        {
+          $or: [
+            { customer: customer_name },
+            { content: { $regex: `Thu nợ khách: ${customer_name}`, $options: 'i' } }
+          ]
+        },
+        { type: 'thu' }
       ]
     };
+    
+    // Thêm filter related_type nếu có, nhưng không bắt buộc
     if (customer_phone) {
-      query.$or.push({ customer_phone });
+      query.$and[0].$or.push({ customer_phone });
     }
 
     const items = await Cashbook.find(query).sort({ date: -1, createdAt: -1 }).lean();
@@ -699,7 +755,7 @@ router.get('/customer-history', async (req, res) => {
       date: i.date || i.createdAt,
       amount: i.amount || 0,
       type: i.type, // thu/chi
-      source: i.source || 'tien_mat',
+      source: getValidPaymentSource(i.source),
       note: i.note || '',
       related_type: i.related_type || '',
     }));
@@ -728,7 +784,7 @@ router.get('/supplier-history', async (req, res) => {
       date: i.date || i.createdAt,
       amount: i.amount || 0,
       type: i.type, // thu/chi
-      source: i.source || 'tien_mat',
+      source: getValidPaymentSource(i.source),
       note: i.note || '',
       related_type: i.related_type || '',
     }));
