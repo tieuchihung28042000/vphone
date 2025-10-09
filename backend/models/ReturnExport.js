@@ -21,7 +21,7 @@ const ReturnExportSchema = new mongoose.Schema({
   // Phương thức thanh toán trả lại
   return_method: { 
     type: String, 
-    enum: ['cash', 'transfer'], 
+    enum: ['cash', 'transfer', 'tien_mat', 'the', 'vi_dien_tu'], 
     required: true 
   },
   

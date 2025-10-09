@@ -95,7 +95,7 @@ function XuatHang() {
   const [returnModal, setReturnModal] = useState({ open: false, item: null });
   const [returnForm, setReturnForm] = useState({
     return_amount: '',
-    return_method: 'cash',
+    return_method: 'tien_mat',
     return_reason: '',
     note: ''
   });
@@ -946,13 +946,30 @@ function XuatHang() {
 
   // ✅ Xử lý mở modal trả hàng bán
   const handleOpenReturnModal = (item) => {
-    setReturnModal({ open: true, item });
+    // Tính tổng tiền đơn và tổng đã thanh toán (hỗ trợ cả đơn lẻ và batch)
+    const totalAmount = (item?.total_amount !== undefined && item?.total_amount !== null)
+      ? Number(item.total_amount)
+      : ((Number(item.price_sell || item.sale_price || 0)) * (parseInt(item.quantity) || 1));
+    const totalPaid = (item?.total_paid !== undefined && item?.total_paid !== null)
+      ? Number(item.total_paid)
+      : Number(item.da_thanh_toan || 0);
+
+    setReturnModal({ open: true, item: { ...item, total_amount: totalAmount, total_paid: totalPaid } });
     setReturnForm({
-      return_amount: item.sale_price || '',
-      return_method: 'cash',
+      // Mặc định hoàn lại đúng số đã thanh toán (có thể sửa lại tùy trường hợp)
+      return_amount: String(totalPaid || ''),
+      return_method: 'tien_mat',
       return_reason: '',
       note: ''
     });
+  };
+
+  // ⚠️ Chặn trả hàng nếu chưa thanh toán đủ (kiểm tra ngay khi mở modal và khi submit)
+  const isReturnAllowed = () => {
+    const it = returnModal.item || {};
+    const total = Number(it.total_amount || 0);
+    const paid = Number(it.total_paid || 0);
+    return paid >= total && total > 0;
   };
 
   // ✅ Xử lý đóng modal trả hàng bán
@@ -960,7 +977,7 @@ function XuatHang() {
     setReturnModal({ open: false, item: null });
     setReturnForm({
       return_amount: '',
-      return_method: 'cash',
+      return_method: 'tien_mat',
       return_reason: '',
       note: ''
     });
@@ -970,7 +987,11 @@ function XuatHang() {
   const handleReturnFormChange = (e) => {
     const { name, value } = e.target;
     if (name === "return_amount") {
-      setReturnForm(prev => ({ ...prev, [name]: parseNumber(value) }));
+      const clean = parseNumber(value);
+      // Không cho vượt quá số đã thanh toán
+      const paid = Number(returnModal.item?.total_paid ?? returnModal.item?.da_thanh_toan ?? 0);
+      const next = Math.min(Number(clean || 0), paid);
+      setReturnForm(prev => ({ ...prev, [name]: String(next) }));
     } else {
       setReturnForm(prev => ({ ...prev, [name]: value }));
     }
@@ -980,7 +1001,20 @@ function XuatHang() {
   const handleReturnSubmit = async (e) => {
     e.preventDefault();
     
+    // Chặn nếu chưa thanh toán đủ (double check)
+    if (!isReturnAllowed()) {
+      setMessage("❌ Đơn chưa thanh toán đủ, không thể trả hàng");
+      setTimeout(() => setMessage(""), 3000);
+      return;
+    }
+
     const returnAmount = parseFloat(parseNumber(returnForm.return_amount)) || 0;
+    const maxPaid = Number(returnModal.item?.total_paid ?? returnModal.item?.da_thanh_toan ?? 0);
+    if (returnAmount > maxPaid) {
+      setMessage(`❌ Số tiền trả lại (${formatCurrency(returnAmount)}) vượt quá số khách đã thanh toán (${formatCurrency(maxPaid)})`);
+      setTimeout(() => setMessage(""), 3000);
+      return;
+    }
     
     if (returnAmount <= 0) {
       setMessage("❌ Số tiền trả lại phải lớn hơn 0");
@@ -996,6 +1030,13 @@ function XuatHang() {
 
     try {
       const token = localStorage.getItem("token") || sessionStorage.getItem("token");
+      
+      // ✅ Chuẩn bị dữ liệu payments cho backend
+      const payments = [{
+        source: returnForm.return_method,
+        amount: returnAmount
+      }];
+      
       const res = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/return-export`, {
         method: "POST",
         headers: { 
@@ -1006,6 +1047,7 @@ function XuatHang() {
           original_export_id: returnModal.item._id,
           return_amount: returnAmount,
           return_method: returnForm.return_method,
+          payments: payments,
           return_reason: returnForm.return_reason,
           note: returnForm.note
         })
@@ -1523,6 +1565,14 @@ function XuatHang() {
       header: "Đã thanh toán",
       key: "da_thanh_toan",
       render: (item) => {
+        // Nếu đã trả hàng: hiển thị trạng thái rõ ràng để tránh nhầm lẫn
+        if (item.is_returned) {
+          return (
+            <div className="text-sm font-semibold text-gray-500">
+              Đã trả hàng
+            </div>
+          );
+        }
         const daTT = (item.total_paid !== undefined)
           ? (parseFloat(item.total_paid) || 0)
           : (parseFloat(item.da_thanh_toan) || 0);
@@ -1539,6 +1589,12 @@ function XuatHang() {
       header: "Công nợ",
       key: "calculated_debt", // ✅ CHANGED: Không dùng field debt nữa, tính trực tiếp
       render: (item) => {
+        // Nếu đã trả hàng: hiển thị rõ ràng và đặt công nợ = 0
+        if (item.is_returned) {
+          return (
+            <div className="text-sm font-bold text-gray-500">Đã trả hàng</div>
+          );
+        }
         const daTT = (item.total_paid !== undefined)
           ? (parseFloat(item.total_paid) || 0)
           : (parseFloat(item.da_thanh_toan) || 0);
@@ -1598,6 +1654,11 @@ function XuatHang() {
       header: "Nguồn tiền",
       key: "source",
       render: (item) => {
+        if (item.is_returned) {
+          return (
+            <span className="text-sm text-gray-500">—</span>
+          );
+        }
         const sourceMap = {
           'tien_mat': { label: 'Tiền mặt', color: 'green', icon: '💵' },
           'the': { label: 'Thẻ', color: 'blue', icon: '💳' },
@@ -2232,17 +2293,55 @@ function XuatHang() {
             <div className="bg-gray-50 rounded-lg p-4 mb-6">
               <h4 className="font-semibold text-gray-900 mb-2">📋 Thông tin giao dịch</h4>
               <div className="text-sm space-y-1">
-                <div><strong>Sản phẩm:</strong> {returnModal.item?.product_name}</div>
-                <div><strong>SKU:</strong> {returnModal.item?.sku}</div>
-                {returnModal.item?.imei && <div><strong>IMEI:</strong> {returnModal.item?.imei}</div>}
-                <div><strong>Giá bán:</strong> {formatCurrency(returnModal.item?.sale_price)}</div>
-                <div><strong>Khách hàng:</strong> {returnModal.item?.buyer_name}</div>
-                <div><strong>SĐT:</strong> {returnModal.item?.buyer_phone}</div>
+                {/* Hiển thị danh sách sản phẩm đầy đủ cho đơn batch */}
+                {returnModal.item?.items_list && returnModal.item.items_list.length > 1 ? (
+                  <div>
+                    <div><strong>Đơn {returnModal.item.items_list.length} sản phẩm:</strong></div>
+                    <ul className="ml-4 mt-2 space-y-1">
+                      {returnModal.item.items_list.map((product, idx) => (
+                        <li key={idx} className="border-l-2 border-blue-300 pl-2">
+                          <div><strong>{product.product_name}</strong></div>
+                          <div>SKU: {product.sku} • SL: {product.quantity}</div>
+                          {product.imei && <div>IMEI: {product.imei}</div>}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : (
+                  <div>
+                    <div><strong>Sản phẩm:</strong> {returnModal.item?.product_name || returnModal.item?.item?.product_name}</div>
+                    <div><strong>SKU:</strong> {returnModal.item?.sku || returnModal.item?.item?.sku}</div>
+                    {(returnModal.item?.imei || returnModal.item?.item?.imei) && (
+                      <div><strong>IMEI:</strong> {returnModal.item?.imei || returnModal.item?.item?.imei}</div>
+                    )}
+                  </div>
+                )}
+                {/* Tổng tiền đơn (batch thì lấy total_amount, đơn lẻ lấy price*quantity) */}
+                <div>
+                  <strong>Tổng tiền đơn:</strong>{' '}
+                  {(() => {
+                    const total = (returnModal.item?.total_amount !== undefined && returnModal.item?.total_amount !== null)
+                      ? Number(returnModal.item.total_amount)
+                      : (Number(returnModal.item?.sale_price || returnModal.item?.price_sell || 0) * (parseInt(returnModal.item?.quantity) || 1));
+                    return formatCurrency(total || 0);
+                  })()}
+                </div>
+                <div>
+                  <strong>Đã thanh toán:</strong>{' '}
+                  {formatCurrency(Number(returnModal.item?.total_paid ?? returnModal.item?.da_thanh_toan ?? 0))}
+                </div>
+                <div><strong>Khách hàng:</strong> {returnModal.item?.buyer_name || returnModal.item?.customer_name}</div>
+                <div><strong>SĐT:</strong> {returnModal.item?.buyer_phone || returnModal.item?.customer_phone}</div>
                 <div><strong>Ngày bán:</strong> {returnModal.item?.sale_date?.slice(0, 10)}</div>
               </div>
             </div>
             
             <form onSubmit={handleReturnSubmit} className="space-y-4">
+              {!isReturnAllowed() && (
+                <div className="p-3 rounded-lg bg-red-50 text-red-700 text-sm">
+                  ⚠️ Đơn hàng chưa thanh toán đủ. Chỉ được trả hàng khi đã thanh toán đủ.
+                </div>
+              )}
               <div>
                 <label className="block text-sm font-semibold text-gray-700 mb-2">Số tiền trả lại khách *</label>
                 <input
@@ -2257,7 +2356,7 @@ function XuatHang() {
               </div>
 
               <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">Phương thức trả tiền *</label>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">Nguồn tiền *</label>
                 <select
                   name="return_method"
                   value={returnForm.return_method}
@@ -2265,8 +2364,9 @@ function XuatHang() {
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500"
                   required
                 >
-                  <option value="cash">💵 Tiền mặt</option>
-                  <option value="transfer">🏦 Chuyển khoản</option>
+                  <option value="tien_mat">💵 Tiền mặt</option>
+                  <option value="the">💳 Thẻ</option>
+                  <option value="vi_dien_tu">📱 Ví điện tử</option>
                 </select>
               </div>
 
@@ -2320,7 +2420,8 @@ function XuatHang() {
                 </button>
                 <button
                   type="submit"
-                  className="flex-1 bg-orange-600 hover:bg-orange-700 text-white py-3 px-4 rounded-xl font-medium transition-colors"
+                  disabled={!isReturnAllowed()}
+                  className={`flex-1 ${isReturnAllowed() ? 'bg-orange-600 hover:bg-orange-700' : 'bg-gray-300 cursor-not-allowed'} text-white py-3 px-4 rounded-xl font-medium transition-colors`}
                 >
                   🔄 Tạo phiếu trả hàng
                 </button>

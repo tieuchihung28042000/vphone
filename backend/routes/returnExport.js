@@ -158,6 +158,28 @@ router.post('/', authenticateToken, requireRole(['admin', 'quan_ly', 'thu_ngan',
       return res.status(400).json({ message: 'Sản phẩm này đã được trả hàng' });
     }
 
+    // ✅ Chỉ cho phép trả hàng khi đã thanh toán ĐỦ
+    // Tính tổng tiền đơn và tổng đã thanh toán (hỗ trợ batch)
+    let totalAmount = 0;
+    let totalPaid = 0;
+    if (originalExport.batch_id) {
+      const batchItems = await ExportHistory.find({ batch_id: originalExport.batch_id, branch: originalExport.branch });
+      totalAmount = batchItems.reduce((s, it) => s + (Number(it.price_sell || it.sale_price || 0) * (parseInt(it.quantity) || 1)), 0);
+      totalPaid = batchItems.reduce((s, it) => s + (Number(it.da_thanh_toan) || 0), 0);
+    } else {
+      totalAmount = (Number(originalExport.price_sell || originalExport.sale_price || 0) * (parseInt(originalExport.quantity) || 1));
+      totalPaid = Number(originalExport.da_thanh_toan || 0);
+    }
+
+    if (totalPaid < totalAmount) {
+      return res.status(400).json({ message: 'Chỉ được trả hàng khi đơn đã thanh toán đủ' });
+    }
+
+    // Chuẩn hóa dữ liệu trước khi lưu
+    const normalizedPriceSell = Number(originalExport.price_sell || originalExport.sale_price || 0);
+    const normalizedCustomerName = originalExport.customer_name || 'Khách lẻ';
+    const normalizedMethod = (['tien_mat','the','vi_dien_tu'].includes(return_method)) ? return_method : (return_method === 'cash' ? 'tien_mat' : (return_method === 'transfer' ? 'the' : 'tien_mat'));
+
     // Tạo phiếu trả hàng
     const returnExport = new ReturnExport({
       original_export_id,
@@ -165,11 +187,11 @@ router.post('/', authenticateToken, requireRole(['admin', 'quan_ly', 'thu_ngan',
       sku: originalExport.sku,
       product_name: originalExport.product_name,
       quantity: originalExport.quantity,
-      price_sell: originalExport.price_sell,
+      price_sell: normalizedPriceSell,
       return_amount,
-      return_method,
+      return_method: normalizedMethod,
       return_reason,
-      customer_name: originalExport.customer_name,
+      customer_name: normalizedCustomerName,
       customer_phone: originalExport.customer_phone,
       branch: originalExport.branch,
       created_by: req.user._id,
@@ -190,49 +212,125 @@ router.post('/', authenticateToken, requireRole(['admin', 'quan_ly', 'thu_ngan',
       });
     } catch (e) { }
 
-    // Đánh dấu đơn xuất đã được hoàn trả để disable nút hoàn trả lần nữa
+    // ✅ Đánh dấu đơn xuất đã được hoàn trả - xử lý cả batch và single item
     try {
-      await ExportHistory.findByIdAndUpdate(original_export_id, {
-        $set: { is_returned: true, return_id: returnExport._id }
-      });
+      if (originalExport.batch_id) {
+        // Đánh dấu tất cả items trong batch là đã trả hàng
+        await ExportHistory.updateMany(
+          { 
+            batch_id: originalExport.batch_id,
+            branch: originalExport.branch
+          },
+          { 
+            $set: { is_returned: true, return_id: returnExport._id }
+          }
+        );
+      } else {
+        // Đánh dấu single item như cũ
+        await ExportHistory.findByIdAndUpdate(original_export_id, {
+          $set: { is_returned: true, return_id: returnExport._id }
+        });
+      }
     } catch (e) { /* ignore */ }
 
-    // Tạo lại sản phẩm trong tồn kho (bật mặc định)
-    if (true) {
-      const newInventoryItem = new Inventory({
-        imei: originalExport.imei,
-        sku: originalExport.sku,
-        product_name: originalExport.product_name,
-        price_import: originalExport.price_import || 0,
-        price_sell: originalExport.price_sell,
-        import_date: new Date(),
-        quantity: originalExport.quantity,
-        category: originalExport.category,
-        branch: originalExport.branch,
-        status: 'in_stock',
-        note: `Trả hàng từ: ${originalExport.customer_name}`,
-        is_return_item: true // Đánh dấu là hàng trả
-      });
+    // ✅ Hoàn kho: KHÔNG tạo bản ghi nhập hàng mới
+    //    - Với hàng có IMEI: chuyển trạng thái bản ghi Inventory tương ứng về in_stock
+    //    - Với phụ kiện (không IMEI): cộng dồn quantity vào bản ghi hiện có (cùng sku/branch)
+    {
+      const restoreOne = async (exp) => {
+        if (exp.imei && exp.imei !== 'No IMEI (accessory)') {
+          // Hàng có IMEI: tìm đúng bản ghi đã bán và khôi phục
+          await Inventory.findOneAndUpdate(
+            { imei: exp.imei },
+            {
+              $set: {
+                status: 'in_stock',
+                sold_date: null,
+                customer_name: '',
+                customer_phone: '',
+                note: `Khôi phục từ trả hàng: ${exp.customer_name || ''}`,
+                is_return_item: true
+              }
+            }
+          );
+        } else {
+          // Phụ kiện: cộng dồn vào bản ghi hiện có (ưu tiên cùng sku + branch)
+          const filter = { sku: exp.sku, branch: exp.branch };
+          const updated = await Inventory.findOneAndUpdate(
+            filter,
+            {
+              $inc: { quantity: exp.quantity || 1 },
+              $set: { status: 'in_stock' }
+            },
+            { new: true }
+          );
+          if (!updated) {
+            // Fallback: nếu không có bản ghi sẵn, tạo mới (trường hợp hiếm)
+            await Inventory.create({
+              imei: null,
+              sku: exp.sku,
+              product_name: exp.product_name,
+              price_import: exp.price_import || 0,
+              price_sell: exp.price_sell,
+              import_date: new Date(),
+              quantity: exp.quantity || 1,
+              category: exp.category,
+              branch: exp.branch,
+              status: 'in_stock',
+              note: `Khôi phục từ trả hàng: ${exp.customer_name || ''}`,
+              is_return_item: true,
+              is_accessory: true
+            });
+          }
+        }
+      };
 
-      await newInventoryItem.save();
+      if (originalExport.batch_id) {
+        const batchItems = await ExportHistory.find({ batch_id: originalExport.batch_id, branch: originalExport.branch });
+        for (const bi of batchItems) await restoreOne(bi);
+      } else {
+        await restoreOne(originalExport);
+      }
     }
 
     // ✅ Điều chỉnh công nợ khách: giảm đã thanh toán tương ứng với số tiền hoàn
     try {
-      const after = Math.max((originalExport.da_thanh_toan || 0) - Number(return_amount || 0), 0);
-      const update = { da_thanh_toan: after };
-      // Nếu đã hoàn đủ số khách đã thanh toán, đánh dấu đơn đã hoàn tất trả
-      if (after <= 0) {
-        update.is_returned = true;
-        update.return_id = returnExport._id;
+      if (originalExport.batch_id) {
+        // Với batch, tính tổng đã thanh toán của tất cả items trong batch
+        const batchItems = await ExportHistory.find({ 
+          batch_id: originalExport.batch_id,
+          branch: originalExport.branch
+        });
+        
+        const totalPaid = batchItems.reduce((sum, item) => sum + (item.da_thanh_toan || 0), 0);
+        const after = Math.max(totalPaid - Number(return_amount || 0), 0);
+        
+        // Cập nhật da_thanh_toan cho item đầu tiên (đại diện cho batch)
+        const firstItem = batchItems[0];
+        if (firstItem) {
+          const update = { da_thanh_toan: after };
+          await ExportHistory.findByIdAndUpdate(firstItem._id, { $set: update });
+        }
+      } else {
+        // Xử lý single item như cũ
+        const after = Math.max((originalExport.da_thanh_toan || 0) - Number(return_amount || 0), 0);
+        const update = { da_thanh_toan: after };
+        // Nếu đã hoàn đủ số khách đã thanh toán, đánh dấu đơn đã hoàn tất trả
+        if (after <= 0) {
+          update.is_returned = true;
+          update.return_id = returnExport._id;
+        }
+        await ExportHistory.findByIdAndUpdate(original_export_id, { $set: update });
       }
-      await ExportHistory.findByIdAndUpdate(original_export_id, { $set: update });
     } catch (e) { /* ignore */ }
 
     // ✅ Tích hợp với sổ quỹ - tạo phiếu chi khi trả hàng bán
     const sourceMapping = {
       'cash': 'tien_mat',
-      'transfer': 'the'
+      'transfer': 'the',
+      'tien_mat': 'tien_mat',
+      'the': 'the',
+      'vi_dien_tu': 'vi_dien_tu'
     };
 
     if (Array.isArray(payments) && payments.length > 0) {
@@ -243,7 +341,7 @@ router.post('/', authenticateToken, requireRole(['admin', 'quan_ly', 'thu_ngan',
           amount: Number(p.amount),
           content: `Trả hàng bán: ${returnExport.product_name}${returnExport.imei ? ` (IMEI: ${returnExport.imei})` : ''}`,
           category: 'tra_hang_ban',
-          source: p.source || 'tien_mat',
+          source: sourceMapping[p.source] || p.source || 'tien_mat',
           customer: returnExport.customer_name,
           date: new Date(),
           branch: returnExport.branch,
@@ -334,6 +432,50 @@ router.delete('/:id', authenticateToken, requireRole(['admin']), async (req, res
     res.json({ message: 'Hủy phiếu trả hàng thành công' });
   } catch (error) {
     res.status(500).json({ message: 'Lỗi server', error: error.message });
+  }
+});
+
+// ===== DIAGNOSTICS: Kiểm tra tính nhất quán trả hàng (tạm thời) =====
+router.get('/diagnostics/summary', authenticateToken, requireRole(['admin']), async (req, res) => {
+  try {
+    // Tổng phiếu trả hàng
+    const totalReturns = await ReturnExport.countDocuments({});
+    // Tổng chi trả hàng trong sổ quỹ
+    const totalCashOut = await Cashbook.aggregate([
+      { $match: { related_type: 'tra_hang_ban' } },
+      { $group: { _id: null, total: { $sum: '$amount' }, count: { $sum: 1 } } }
+    ]);
+    // Những đơn đã trả nhưng vẫn còn công nợ > 0
+    const inconsistentExports = await ExportHistory.aggregate([
+      { $match: { is_returned: true } },
+      { $project: {
+          price_sell: 1,
+          sale_price: 1,
+          quantity: 1,
+          da_thanh_toan: 1,
+          calc_amount: { $multiply: [ { $ifNull:['$price_sell', { $ifNull:['$sale_price', 0] }] }, { $ifNull:['$quantity', 1] } ] }
+        }
+      },
+      { $project: { remain: { $subtract: ['$calc_amount', { $ifNull:['$da_thanh_toan', 0] }] } } },
+      { $match: { remain: { $gt: 0 } } },
+      { $limit: 20 }
+    ]);
+
+    // Kiểm tra các bản ghi IMEI đã trả nhưng còn status != in_stock
+    const wrongImei = await Inventory.find({ is_return_item: true, imei: { $ne: null }, status: { $ne: 'in_stock' } })
+      .select('imei status product_name branch updatedAt')
+      .limit(20);
+
+    res.json({
+      returns: totalReturns,
+      cashbook: { count: totalCashOut[0]?.count || 0, totalAmount: totalCashOut[0]?.total || 0 },
+      exportInconsistencies: inconsistentExports.length,
+      sampleExportInconsistencies: inconsistentExports,
+      imeiIssues: wrongImei.length,
+      sampleImeiIssues: wrongImei
+    });
+  } catch (error) {
+    handleError(res, error, 'Lỗi diagnostics');
   }
 });
 
