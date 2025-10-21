@@ -1,7 +1,13 @@
 import React from 'react';
 
 const InvoiceDisplay = ({ invoiceData, isVisible, onClose }) => {
-  if (!isVisible || !invoiceData) return null;
+  console.log('🖨️ InvoiceDisplay render:', { isVisible, invoiceData: !!invoiceData });
+  if (!isVisible || !invoiceData) {
+    console.log('🖨️ InvoiceDisplay not rendering:', { isVisible, hasData: !!invoiceData });
+    return null;
+  }
+  
+  console.log('🖨️ InvoiceDisplay WILL render modal with data:', invoiceData);
 
   const formatCurrency = (amount) => {
     if (!amount || amount === 0) return '0đ';
@@ -24,6 +30,11 @@ const InvoiceDisplay = ({ invoiceData, isVisible, onClose }) => {
   ) || 0;
 
   const totalQuantity = invoiceData.items?.reduce((sum, item) => sum + (item.quantity || 1), 0) || 0;
+
+  // ✅ Tính tổng tiền khách đưa từ payments
+  const totalCustomerPaid = invoiceData.payments?.reduce((sum, payment) => 
+    sum + (payment.amount || 0), 0
+  ) || 0;
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
@@ -146,13 +157,13 @@ const InvoiceDisplay = ({ invoiceData, isVisible, onClose }) => {
             
             <div className="flex justify-between">
               <span>Tiền khách đưa:</span>
-              <span>{formatCurrency(invoiceData.customerPaid || totalAmount)}</span>
+              <span>{formatCurrency(totalCustomerPaid)}</span>
             </div>
             
-            {invoiceData.customerPaid && invoiceData.customerPaid > totalAmount && (
+            {totalCustomerPaid > totalAmount && (
               <div className="flex justify-between">
                 <span>Tiền trả lại:</span>
-                <span>{formatCurrency(invoiceData.customerPaid - totalAmount)}</span>
+                <span>{formatCurrency(totalCustomerPaid - totalAmount)}</span>
               </div>
             )}
           </div>

@@ -455,11 +455,6 @@ router.put('/supplier-debt-pay', async (req, res) => {
       totalPaid += toPay;
     }
 
-    res.json({
-      message: `✅ Đã trả nợ ${totalPaid.toLocaleString()}đ cho NCC ${supplier_name}`,
-      paid_amount: totalPaid
-    });
-
     // Ghi sổ quỹ: chi tiền trả NCC theo payments
     try {
       const payList = hasPayments ? payments : [{ source: 'tien_mat', amount: totalPaid }];
@@ -471,7 +466,7 @@ router.put('/supplier-debt-pay', async (req, res) => {
           content: `Trả nợ NCC: ${supplier_name}`,
           note: note || '',
           date: new Date(),
-          branch: branch || '',
+          branch: branch || 'Chi nhanh 1', // Fallback cho branch
           source: p.source || 'tien_mat',
           supplier: supplier_name,
           related_type: 'tra_no_ncc',
@@ -479,7 +474,15 @@ router.put('/supplier-debt-pay', async (req, res) => {
           editable: false
         });
       }
-    } catch (e) { /* ignore */ }
+    } catch (e) {
+      console.error('❌ Error creating cashbook entries:', e);
+      return res.status(500).json({ message: '❌ Lỗi ghi sổ quỹ', error: e.message });
+    }
+
+    res.json({
+      message: `✅ Đã trả nợ ${totalPaid.toLocaleString()}đ cho NCC ${supplier_name}`,
+      paid_amount: totalPaid
+    });
   } catch (err) {
     console.error('❌ Error in supplier-debt-pay:', err);
     res.status(500).json({ message: '❌ Lỗi server khi trả nợ NCC', error: err.message });

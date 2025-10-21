@@ -727,6 +727,24 @@ function XuatHang() {
         });
         const data = await res.json();
         if (!res.ok) throw new Error(data?.message || 'Tạo đơn batch thất bại');
+        
+        // ✅ Tạo hóa đơn inline cho batch
+        const invoiceData = {
+          invoiceNumber: data.batch_id || `HD${Date.now()}`,
+          date: new Date().toLocaleDateString('vi-VN'),
+          branch: formData.branch || '',
+          customerName: formData.buyer_name || '',
+          customerPhone: formData.buyer_phone || '',
+          items: items,
+          payments: paymentsArr,
+          salesChannel: formData.salesChannel || ''
+        };
+        
+        // Hiển thị hóa đơn inline
+        console.log('🖨️ Setting batch invoice data:', invoiceData);
+        setCurrentInvoice(invoiceData);
+        setShowInvoice(true);
+        console.log('🖨️ Batch invoice should be visible now');
         setMessage('✅ Tạo đơn thành công!');
         setCartItems([]);
         await Promise.all([fetchSoldItems(), fetchAvailableItems()]);
@@ -2564,10 +2582,14 @@ function XuatHang() {
       )}
 
       {/* Hóa đơn inline */}
+      {console.log('🖨️ InvoiceDisplay props:', { isVisible: showInvoice, hasData: !!currentInvoice })}
       <InvoiceDisplay 
         invoiceData={currentInvoice}
         isVisible={showInvoice}
-        onClose={() => setShowInvoice(false)}
+        onClose={() => {
+          setShowInvoice(false);
+          resetForm(); // ✅ Reset form khi đóng modal
+        }}
       />
     </Layout>
   );

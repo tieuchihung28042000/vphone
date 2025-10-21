@@ -89,8 +89,7 @@ function NhapHang() {
   const [returnModal, setReturnModal] = useState({ open: false, item: null });
   const [returnForm, setReturnForm] = useState({
     return_amount: '',
-    return_cash: '',
-    return_transfer: '',
+    return_method: 'tien_mat',
     return_reason: '',
     note: ''
   });
@@ -366,8 +365,7 @@ function NhapHang() {
     setReturnModal({ open: true, item });
     setReturnForm({
       return_amount: item.price_import || '',
-      return_cash: '',
-      return_transfer: '',
+      return_method: 'tien_mat',
       return_reason: '',
       note: ''
     });
@@ -378,8 +376,7 @@ function NhapHang() {
     setReturnModal({ open: false, item: null });
     setReturnForm({
       return_amount: '',
-      return_cash: '',
-      return_transfer: '',
+      return_method: 'tien_mat',
       return_reason: '',
       note: ''
     });
@@ -388,7 +385,7 @@ function NhapHang() {
   // ✅ Xử lý thay đổi form trả hàng
   const handleReturnFormChange = (e) => {
     const { name, value } = e.target;
-    if (name === "return_amount" || name === "return_cash" || name === "return_transfer") {
+    if (name === "return_amount") {
       setReturnForm(prev => ({ ...prev, [name]: parseNumber(value) }));
     } else {
       setReturnForm(prev => ({ ...prev, [name]: value }));
@@ -400,15 +397,6 @@ function NhapHang() {
     e.preventDefault();
     
     const returnAmount = parseFloat(parseNumber(returnForm.return_amount)) || 0;
-    const returnCash = parseFloat(parseNumber(returnForm.return_cash)) || 0;
-    const returnTransfer = parseFloat(parseNumber(returnForm.return_transfer)) || 0;
-    
-    // Kiểm tra tổng tiền trả
-    if (returnCash + returnTransfer !== returnAmount) {
-      setMessage("❌ Tổng tiền mặt + chuyển khoản phải bằng số tiền trả");
-      setTimeout(() => setMessage(""), 3000);
-      return;
-    }
     
     if (!returnForm.return_reason.trim()) {
       setMessage("❌ Vui lòng nhập lý do trả hàng");
@@ -427,8 +415,7 @@ function NhapHang() {
         body: JSON.stringify({
           original_inventory_id: returnModal.item._id,
           return_amount: returnAmount,
-          return_cash: returnCash,
-          return_transfer: returnTransfer,
+          return_method: returnForm.return_method,
           return_reason: returnForm.return_reason,
           note: returnForm.note
         })
@@ -1558,52 +1545,19 @@ function NhapHang() {
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">Tiền mặt</label>
-                  <input
-                    type="text"
-                    name="return_cash"
-                    value={formatNumber(returnForm.return_cash)}
-                    onChange={handleReturnFormChange}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500"
-                    placeholder="0"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">Chuyển khoản</label>
-                  <input
-                    type="text"
-                    name="return_transfer"
-                    value={formatNumber(returnForm.return_transfer)}
-                    onChange={handleReturnFormChange}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500"
-                    placeholder="0"
-                  />
-                </div>
-              </div>
-
-              {/* Tính toán tự động */}
-              <div className="text-xs text-gray-500 bg-blue-50 p-3 rounded-lg">
-                {(() => {
-                  const returnAmount = parseFloat(parseNumber(returnForm.return_amount)) || 0;
-                  const returnCash = parseFloat(parseNumber(returnForm.return_cash)) || 0;
-                  const returnTransfer = parseFloat(parseNumber(returnForm.return_transfer)) || 0;
-                  const total = returnCash + returnTransfer;
-                  const isValid = total === returnAmount;
-                  
-                  return (
-                    <div>
-                      <div className="font-medium text-blue-900 mb-1">💡 Kiểm tra thanh toán:</div>
-                      <div className="text-blue-700">
-                        Tiền mặt: {formatCurrency(returnCash)} + Chuyển khoản: {formatCurrency(returnTransfer)} = <strong>{formatCurrency(total)}</strong>
-                      </div>
-                      <div className={`font-semibold ${isValid ? 'text-green-600' : 'text-red-600'}`}>
-                        {isValid ? '✅ Hợp lệ' : `❌ Chênh lệch: ${formatCurrency(Math.abs(returnAmount - total))}`}
-                      </div>
-                    </div>
-                  );
-                })()}
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">Nguồn tiền *</label>
+                <select
+                  name="return_method"
+                  value={returnForm.return_method}
+                  onChange={handleReturnFormChange}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500"
+                  required
+                >
+                  <option value="tien_mat">💵 Tiền mặt</option>
+                  <option value="the">💳 Thẻ</option>
+                  <option value="vi_dien_tu">📱 Ví điện tử</option>
+                </select>
               </div>
 
               <div>

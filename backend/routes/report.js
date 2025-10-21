@@ -84,15 +84,17 @@ router.get('/financial-report/summary', async (req, res) => {
     if (branch && branch !== 'all') cbQuery.branch = branch;
     const cashItems = await Cashbook.find(cbQuery);
 
+    // ✅ Chi phí chỉ tính những phiếu được tạo thủ công (không tính phiếu tự động)
     const totalExpense = cashItems
-      .filter(i => i.type === 'chi')
+      .filter(i => i.type === 'chi' && i.is_auto === false)
       .reduce((s, i) => s + (i.amount || 0), 0);
 
     const otherIncome = cashItems
       .filter(i => i.type === 'thu' && (!i.related_type || i.related_type === 'manual'))
       .reduce((s, i) => s + (i.amount || 0), 0);
 
-    const operatingProfit = netRevenue - totalExpense;
+    // ✅ Lợi nhuận thuần KHÔNG trừ chi phí (chỉ tính doanh thu thuần + thu nhập khác)
+    const operatingProfit = netRevenue; // Không trừ chi phí
     const netProfit = operatingProfit + otherIncome;
 
     res.json({

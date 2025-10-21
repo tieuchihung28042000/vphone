@@ -75,10 +75,7 @@ router.post('/', authenticateToken, async (req, res) => {
 
     // Tính số dư
     const balanceInfo = await calculateBalance(source, branch, Number(amount), type);
-    // Chặn âm số dư khi chi
-    if (type === 'chi' && balanceInfo.balance_after < 0) {
-      return res.status(400).json({ message: '❌ Số dư không đủ để chi. Vui lòng điều chỉnh số dư hoặc chọn nguồn khác.' });
-    }
+    // ✅ Bỏ logic kiểm tra số dư âm - cho phép tạo phiếu chi bất kể số dư
 
     const cashbook = new Cashbook({
       ...req.body,
