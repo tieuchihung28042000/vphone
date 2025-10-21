@@ -91,7 +91,8 @@ function NhapHang() {
     return_amount: '',
     return_method: 'tien_mat',
     return_reason: '',
-    note: ''
+    note: '',
+    return_quantity: 1 // ✅ Thêm số lượng trả
   });
 
   // ✅ Filter and pagination - Moved up to use in stats
@@ -367,7 +368,8 @@ function NhapHang() {
       return_amount: item.price_import || '',
       return_method: 'tien_mat',
       return_reason: '',
-      note: ''
+      note: '',
+      return_quantity: 1 // ✅ Mặc định trả 1 sản phẩm
     });
   };
 
@@ -396,10 +398,24 @@ function NhapHang() {
   const handleReturnSubmit = async (e) => {
     e.preventDefault();
     
-    const returnAmount = parseFloat(parseNumber(returnForm.return_amount)) || 0;
+    const returnQuantity = parseInt(returnForm.return_quantity) || 1;
+    const unitPrice = parseFloat(returnModal.item?.price_import) || 0;
+    const returnAmount = returnQuantity * unitPrice; // ✅ Tính số tiền dựa trên số lượng
     
     if (!returnForm.return_reason.trim()) {
       setMessage("❌ Vui lòng nhập lý do trả hàng");
+      setTimeout(() => setMessage(""), 3000);
+      return;
+    }
+
+    if (returnQuantity <= 0) {
+      setMessage("❌ Số lượng trả phải lớn hơn 0");
+      setTimeout(() => setMessage(""), 3000);
+      return;
+    }
+
+    if (returnQuantity > (returnModal.item?.quantity || 0)) {
+      setMessage("❌ Số lượng trả không được vượt quá số lượng hiện có");
       setTimeout(() => setMessage(""), 3000);
       return;
     }
@@ -415,9 +431,15 @@ function NhapHang() {
         body: JSON.stringify({
           original_inventory_id: returnModal.item._id,
           return_amount: returnAmount,
-          return_method: returnForm.return_method,
+          return_quantity: returnQuantity, // ✅ Số lượng trả
+          return_method: returnForm.return_method, // Legacy field
           return_reason: returnForm.return_reason,
-          note: returnForm.note
+          note: returnForm.note,
+          // ✅ Thêm payments array để tạo phiếu chi
+          payments: [{
+            source: returnForm.return_method,
+            amount: returnAmount
+          }]
         })
       });
       
@@ -1527,22 +1549,41 @@ function NhapHang() {
                 <div><strong>SKU:</strong> {returnModal.item?.sku}</div>
                 {returnModal.item?.imei && <div><strong>IMEI:</strong> {returnModal.item?.imei}</div>}
                 <div><strong>Giá nhập:</strong> {formatCurrency(returnModal.item?.price_import)}</div>
+                <div><strong>Số lượng hiện có:</strong> {returnModal.item?.quantity || 0}</div>
                 <div><strong>Nhà cung cấp:</strong> {returnModal.item?.supplier}</div>
               </div>
             </div>
             
             <form onSubmit={handleReturnSubmit} className="space-y-4">
               <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">Số tiền trả lại *</label>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">Số lượng trả *</label>
                 <input
-                  type="text"
-                  name="return_amount"
-                  value={formatNumber(returnForm.return_amount)}
+                  type="number"
+                  name="return_quantity"
+                  value={returnForm.return_quantity}
                   onChange={handleReturnFormChange}
+                  min="1"
+                  max={returnModal.item?.quantity || 1}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500"
-                  placeholder="Số tiền trả lại nhà cung cấp"
+                  placeholder="Số lượng sản phẩm trả"
                   required
                 />
+                <div className="text-xs text-gray-600 mt-1">
+                  Tối đa: {returnModal.item?.quantity || 0} sản phẩm
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">Số tiền trả lại (tự động tính) *</label>
+                <input
+                  type="text"
+                  value={formatCurrency((parseInt(returnForm.return_quantity) || 1) * (parseFloat(returnModal.item?.price_import) || 0))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-100"
+                  readOnly
+                />
+                <div className="text-xs text-gray-600 mt-1">
+                  = {returnForm.return_quantity || 1} × {formatCurrency(returnModal.item?.price_import || 0)}
+                </div>
               </div>
 
               <div>

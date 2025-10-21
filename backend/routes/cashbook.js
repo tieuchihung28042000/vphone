@@ -256,7 +256,7 @@ router.get('/', async (req, res) => {
 
     const skip = (page - 1) * limit;
     const items = await Cashbook.find(query)
-      .sort({ date: -1, createdAt: -1 })
+      .sort({ createdAt: -1, date: -1 })
       .skip(skip)
       .limit(Number(limit));
 
@@ -424,7 +424,7 @@ router.get('/export-excel', async (req, res) => {
       };
     }
 
-    const items = await Cashbook.find(query).sort({ date: -1 });
+    const items = await Cashbook.find(query).sort({ createdAt: -1, date: -1 });
 
     // Format data cho Excel
     const excelData = items.map(item => ({

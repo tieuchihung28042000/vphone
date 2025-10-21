@@ -2,10 +2,35 @@ import express from 'express';
 import ReturnImport from '../models/ReturnImport.js';
 import Inventory from '../models/Inventory.js';
 import Cashbook from '../models/Cashbook.js';
+import SupplierDebt from '../models/SupplierDebt.js'; // ✅ Import lại để tính công nợ
 import { authenticateToken, requireRole, filterByBranch } from '../middleware/auth.js';
 import ActivityLog from '../models/ActivityLog.js';
 
 const router = express.Router();
+
+// ✅ Helper function tính công nợ nhà cung cấp
+const calculateSupplierDebt = async (supplier, branch) => {
+  try {
+    const inventoryItems = await Inventory.find({
+      supplier: { $eq: supplier },
+      branch: branch
+    });
+
+    let totalDebt = 0;
+    for (const item of inventoryItems) {
+      const priceImport = parseFloat(item.price_import) || 0;
+      const quantity = parseInt(item.quantity) || 1;
+      const daTT = parseFloat(item.da_thanh_toan_nhap) || 0;
+      const congNo = Math.max((priceImport * quantity) - daTT, 0);
+      totalDebt += congNo;
+    }
+    
+    return totalDebt;
+  } catch (error) {
+    console.error('Error calculating supplier debt:', error);
+    return 0;
+  }
+};
 
 // Error handling middleware
 const handleError = (res, error, message = 'Internal server error') => {
@@ -71,9 +96,8 @@ router.post('/', authenticateToken, requireRole(['admin', 'thu_ngan']), async (r
     const {
       original_inventory_id,
       return_amount,
-      return_cash = 0,
-      return_transfer = 0,
-      payments = [],
+      return_quantity = 1, // ✅ Số lượng trả
+      return_method = 'tien_mat', // ✅ Nguồn tiền mặc định
       return_reason,
       note = ''
     } = req.body;
@@ -94,23 +118,18 @@ router.post('/', authenticateToken, requireRole(['admin', 'thu_ngan']), async (r
       return res.status(400).json({ message: 'Không thể trả hàng đã bán' });
     }
 
-    // Kiểm tra tổng tiền trả
-    const hasPayments = Array.isArray(payments) && payments.length > 0;
-    if (!hasPayments) {
-      const rc = Number(return_cash) || 0;
-      const rt = Number(return_transfer) || 0;
-      const ra = Number(return_amount) || 0;
-      // Nếu UI chỉ gửi return_amount mà không tách nguồn, mặc định trả bằng tiền mặt
-      if (rc + rt === 0 && ra > 0) {
-        req.body.return_cash = ra;
-      } else if ((rc + rt) !== ra) {
-        return res.status(400).json({ message: 'Tổng tiền trả không khớp' });
-      }
-    } else {
-      const sum = payments.reduce((s, p) => s + Number(p?.amount || 0), 0);
-      if (sum !== Number(return_amount)) {
-        return res.status(400).json({ message: 'Tổng payments không khớp return_amount' });
-      }
+    // ✅ Kiểm tra số lượng trả
+    if (return_quantity <= 0) {
+      return res.status(400).json({ message: 'Số lượng trả phải lớn hơn 0' });
+    }
+
+    if (return_quantity > originalItem.quantity) {
+      return res.status(400).json({ message: 'Số lượng trả không được vượt quá số lượng hiện có' });
+    }
+
+    // ✅ Chỉ validate return_amount (logic mới không cần return_cash/return_transfer)
+    if (!return_amount || return_amount <= 0) {
+      return res.status(400).json({ message: 'Số tiền trả phải lớn hơn 0' });
     }
 
     // Tạo phiếu trả hàng
@@ -119,11 +138,9 @@ router.post('/', authenticateToken, requireRole(['admin', 'thu_ngan']), async (r
       imei: originalItem.imei,
       sku: originalItem.sku,
       product_name: originalItem.product_name,
-      quantity: originalItem.quantity,
+      quantity: return_quantity, // ✅ Số lượng trả thực tế
       price_import: originalItem.price_import,
       return_amount: req.body.return_amount,
-      return_cash: req.body.return_cash || 0,
-      return_transfer: req.body.return_transfer || 0,
       return_reason,
       supplier: originalItem.supplier,
       branch: originalItem.branch,
@@ -145,73 +162,100 @@ router.post('/', authenticateToken, requireRole(['admin', 'thu_ngan']), async (r
       });
     } catch (e) { }
 
-    // Xóa sản phẩm khỏi tồn kho
-    await Inventory.findByIdAndDelete(original_inventory_id);
-
-    // ✅ Tích hợp với sổ quỹ - tạo phiếu chi khi trả hàng nhập (legacy fields)
-    const returnCash = Number(return_cash) || 0;
-    const returnTransfer = Number(return_transfer) || 0;
-    if (!hasPayments) {
-      if (returnCash > 0) {
-        await Cashbook.create({
-          type: 'chi',
-          amount: returnCash,
-          content: `Trả hàng nhập: ${returnImport.product_name}${returnImport.imei ? ` (IMEI: ${returnImport.imei})` : ''}`,
-          category: 'tra_hang_nhap',
-          source: 'tien_mat',
-          supplier: returnImport.supplier,
-          date: new Date(),
-          branch: returnImport.branch,
-          related_id: returnImport._id.toString(),
-          related_type: 'tra_hang_nhap',
-          note: `Lý do: ${return_reason}. ${note || ''}`,
-          user: req.user.full_name || req.user.email,
-          is_auto: true,
-          editable: false
-        });
-      }
-
-      if (returnTransfer > 0) {
-        await Cashbook.create({
-          type: 'chi',
-          amount: returnTransfer,
-          content: `Trả hàng nhập: ${returnImport.product_name}${returnImport.imei ? ` (IMEI: ${returnImport.imei})` : ''}`,
-          category: 'tra_hang_nhap',
-          source: 'the',
-          supplier: returnImport.supplier,
-          date: new Date(),
-          branch: returnImport.branch,
-          related_id: returnImport._id.toString(),
-          related_type: 'tra_hang_nhap',
-          note: `Lý do: ${return_reason}. ${note || ''}`,
-          user: req.user.full_name || req.user.email,
-          is_auto: true,
-          editable: false
-        });
-      }
+    // ✅ Cập nhật số lượng trong tồn kho thay vì xóa
+    const newQuantity = originalItem.quantity - return_quantity;
+    if (newQuantity <= 0) {
+      // Nếu hết hàng thì xóa
+      await Inventory.findByIdAndDelete(original_inventory_id);
+    } else {
+      // Nếu còn hàng thì cập nhật số lượng và status
+      await Inventory.findByIdAndUpdate(original_inventory_id, {
+        quantity: newQuantity,
+        status: newQuantity > 0 ? 'in_stock' : 'sold'
+      });
     }
 
-    // payments[] đa nguồn
-    if (hasPayments) {
-      for (const p of payments) {
-        if (!p || !p.amount) continue;
+    // ✅ Logic ưu tiên: Trả công nợ nhà cung cấp trước, nếu không có công nợ thì cộng vào sổ quỹ
+    const currentDebt = await calculateSupplierDebt(returnImport.supplier, returnImport.branch);
+    console.log(`🔍 Supplier debt for ${returnImport.supplier}: ${currentDebt}, Return amount: ${return_amount}`);
+    
+    if (currentDebt > 0) {
+      // ✅ Có công nợ: Ưu tiên trả công nợ trước
+      const debtToPay = Math.min(currentDebt, return_amount);
+      const remainingAmount = return_amount - debtToPay;
+      
+      console.log(`💰 Paying debt: ${debtToPay}, Remaining: ${remainingAmount}`);
+      
+      // Trả công nợ
+      if (debtToPay > 0) {
+        // Tìm hoặc tạo SupplierDebt record
+        let supplierDebt = await SupplierDebt.findOne({
+          supplier_name: returnImport.supplier,
+          branch: returnImport.branch
+        });
+        
+        if (!supplierDebt) {
+          supplierDebt = new SupplierDebt({
+            supplier_name: returnImport.supplier,
+            branch: returnImport.branch,
+            total_debt: currentDebt,
+            total_paid: 0,
+            debt_history: []
+          });
+        }
+        
+        // Cập nhật công nợ
+        supplierDebt.total_debt = Math.max(0, supplierDebt.total_debt - debtToPay);
+        supplierDebt.total_paid += debtToPay;
+        supplierDebt.debt_history.push({
+          type: 'pay',
+          amount: debtToPay,
+          note: `Trả hàng nhập: ${returnImport.product_name} (${return_quantity} sản phẩm)`,
+          date: new Date(),
+          related_id: returnImport._id.toString()
+        });
+        await supplierDebt.save();
+      }
+      
+      // Nếu còn tiền thừa thì cộng vào sổ quỹ
+      if (remainingAmount > 0) {
+        console.log(`💵 Adding remaining amount to cashbook: ${remainingAmount}`);
         await Cashbook.create({
-          type: 'chi',
-          amount: Number(p.amount),
+          type: 'thu', // ✅ Cộng tiền vào sổ quỹ
+          amount: remainingAmount,
           content: `Trả hàng nhập: ${returnImport.product_name}${returnImport.imei ? ` (IMEI: ${returnImport.imei})` : ''}`,
           category: 'tra_hang_nhap',
-          source: p.source || 'tien_mat',
+        source: return_method || 'tien_mat',
           supplier: returnImport.supplier,
           date: new Date(),
           branch: returnImport.branch,
           related_id: returnImport._id.toString(),
           related_type: 'tra_hang_nhap',
-          note: `Lý do: ${return_reason}. ${note || ''}`,
+          note: `Lý do: ${return_reason}. ${note || ''} (Số tiền thừa sau khi trả công nợ)`,
           user: req.user.full_name || req.user.email,
           is_auto: true,
           editable: false
         });
       }
+    } else {
+      // ✅ Không có công nợ: Cộng toàn bộ vào sổ quỹ
+      console.log(`💵 No debt, adding full amount to cashbook: ${return_amount}`);
+      await Cashbook.create({
+        type: 'thu', // ✅ Cộng tiền vào sổ quỹ
+        amount: return_amount,
+        content: `Trả hàng nhập: ${returnImport.product_name}${returnImport.imei ? ` (IMEI: ${returnImport.imei})` : ''}`,
+        category: 'tra_hang_nhap',
+        source: return_method || 'tien_mat',
+        supplier: returnImport.supplier,
+        date: new Date(),
+        branch: returnImport.branch,
+        related_id: returnImport._id.toString(),
+        related_type: 'tra_hang_nhap',
+        note: `Lý do: ${return_reason}. ${note || ''}`,
+        user: req.user.full_name || req.user.email,
+        is_auto: true,
+        editable: false
+      });
     }
 
     res.status(201).json({
