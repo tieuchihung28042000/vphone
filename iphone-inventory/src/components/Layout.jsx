@@ -46,14 +46,14 @@ const Sidebar = ({ activeTab }) => {
 
   // Định nghĩa tất cả menu items theo yêu cầu phân quyền
   const allMenuItems = [
-    { id: 'nhap-hang', label: 'Nhập hàng', icon: '📥', path: '/nhap-hang', roles: ['admin', 'quan_ly'] },
-    { id: 'xuat-hang', label: 'Xuất hàng', icon: '📤', path: '/xuat-hang', roles: ['admin', 'quan_ly', 'thu_ngan', 'nhan_vien_ban_hang'] },
-    { id: 'ton-kho', label: 'Tồn kho', icon: '📦', path: '/ton-kho-so-luong', roles: ['admin', 'quan_ly'] },
-    { id: 'so-quy', label: 'Sổ quỹ', icon: '💰', path: '/so-quy', roles: ['admin', 'quan_ly', 'thu_ngan', 'nhan_vien_ban_hang'] }, // Thu ngân và nhân viên có thể xem sổ quỹ
-    { id: 'cong-no', label: 'Công nợ', icon: '💳', path: '/cong-no', roles: ['admin', 'quan_ly', 'thu_ngan'] },
-    { id: 'bao-cao', label: 'Báo cáo', icon: '📊', path: '/bao-cao', roles: ['admin', 'quan_ly'] }, // Thu ngân KHÔNG được xem báo cáo
-    { id: 'lich-su-hoat-dong', label: 'Lịch sử hoạt động', icon: '📋', path: '/lich-su-hoat-dong', roles: ['admin', 'quan_ly'] },
-    { id: 'quan-ly-user', label: 'Quản lý User', icon: '👥', path: '/quan-ly-user', roles: ['admin', 'quan_ly'] },
+    { id: 'nhap-hang', label: 'Nhập hàng', icon: '📥', path: '/nhap-hang', roles: ['admin', 'thu_ngan'] },
+    { id: 'xuat-hang', label: 'Xuất hàng', icon: '📤', path: '/xuat-hang', roles: ['admin', 'thu_ngan', 'nhan_vien_ban_hang'] },
+    { id: 'ton-kho', label: 'Tồn kho', icon: '📦', path: '/ton-kho-so-luong', roles: ['admin', 'thu_ngan'] },
+    { id: 'so-quy', label: 'Sổ quỹ', icon: '💰', path: '/so-quy', roles: ['admin', 'thu_ngan', 'nhan_vien_ban_hang'] }, // Thu ngân và nhân viên có thể xem sổ quỹ
+    { id: 'cong-no', label: 'Công nợ', icon: '💳', path: '/cong-no', roles: ['admin', 'thu_ngan'] },
+    { id: 'bao-cao', label: 'Báo cáo', icon: '📊', path: '/bao-cao', roles: ['admin', 'thu_ngan'] }, // Thu ngân được xem báo cáo
+    { id: 'lich-su-hoat-dong', label: 'Lịch sử hoạt động', icon: '📋', path: '/lich-su-hoat-dong', roles: ['admin', 'thu_ngan'] },
+    { id: 'quan-ly-user', label: 'Quản lý User', icon: '👥', path: '/quan-ly-user', roles: ['admin', 'thu_ngan'] },
   ];
 
   // Lọc menu theo quyền
@@ -65,7 +65,6 @@ const Sidebar = ({ activeTab }) => {
   const getRoleLabel = (role) => {
     const roleLabels = {
       admin: "👑 Admin",
-      quan_ly: "👨‍💼 Quản lý", 
       thu_ngan: "💰 Thu ngân",
       nhan_vien_ban_hang: "🛒 Nhân viên bán hàng",
       user: "👤 User"

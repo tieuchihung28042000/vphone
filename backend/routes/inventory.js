@@ -56,7 +56,7 @@ router.get('/', authenticateToken, filterByBranch, async (req, res) => {
 });
 
 // POST /api/inventory - Tạo inventory mới
-router.post('/', authenticateToken, requireRole(['admin', 'quan_ly']), async (req, res) => {
+router.post('/', authenticateToken, requireRole(['admin', 'thu_ngan']), async (req, res) => {
   try {
     const inventory = new Inventory(req.body);
     await inventory.save();
@@ -77,7 +77,7 @@ router.post('/', authenticateToken, requireRole(['admin', 'quan_ly']), async (re
 });
 
 // PUT /api/inventory/:id - Cập nhật inventory
-router.put('/:id', authenticateToken, requireRole(['admin', 'quan_ly']), async (req, res) => {
+router.put('/:id', authenticateToken, requireRole(['admin', 'thu_ngan']), async (req, res) => {
   try {
     const { quantity, ...otherFields } = req.body;
     
@@ -118,7 +118,7 @@ router.put('/:id', authenticateToken, requireRole(['admin', 'quan_ly']), async (
 });
 
 // DELETE /api/inventory/:id - Xóa inventory
-router.delete('/:id', authenticateToken, requireRole(['admin', 'quan_ly']), async (req, res) => {
+router.delete('/:id', authenticateToken, requireRole(['admin', 'thu_ngan']), async (req, res) => {
   try {
     const inventory = await Inventory.findByIdAndDelete(req.params.id);
     

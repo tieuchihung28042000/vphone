@@ -9,7 +9,7 @@ import { authenticateToken, requireRole } from '../middleware/auth.js';
 const router = express.Router();
 
 // ===== Đăng ký tài khoản user =====
-router.post('/register', authenticateToken, requireRole(['admin', 'quan_ly']), async (req, res) => {
+router.post('/register', authenticateToken, requireRole(['admin', 'thu_ngan']), async (req, res) => {
   try {
     console.log('🔧 [REGISTER] Received registration request:', req.body);
     const { email, password, username, role, branch_id, branch_name, full_name, phone } = req.body;
@@ -19,7 +19,7 @@ router.post('/register', authenticateToken, requireRole(['admin', 'quan_ly']), a
     }
 
     // Kiểm tra vai trò hợp lệ
-    const validRoles = ['user', 'admin', 'thu_ngan', 'quan_ly', 'nhan_vien_ban_hang'];
+    const validRoles = ['user', 'admin', 'thu_ngan', 'nhan_vien_ban_hang'];
     if (role && !validRoles.includes(role)) {
       return res.status(400).json({ message: '❌ Vai trò không hợp lệ' });
     }

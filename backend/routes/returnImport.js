@@ -66,7 +66,7 @@ router.get('/', authenticateToken, filterByBranch, async (req, res) => {
 });
 
 // Tạo phiếu trả hàng nhập
-router.post('/', authenticateToken, requireRole(['admin', 'quan_ly', 'thu_ngan']), async (req, res) => {
+router.post('/', authenticateToken, requireRole(['admin', 'thu_ngan']), async (req, res) => {
   try {
     const {
       original_inventory_id,

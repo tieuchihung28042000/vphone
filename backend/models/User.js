@@ -26,7 +26,7 @@ const userSchema = new mongoose.Schema(
     },
     role: {
       type: String,
-      enum: ["user", "admin", "thu_ngan", "quan_ly", "nhan_vien_ban_hang"],
+      enum: ["user", "admin", "thu_ngan", "nhan_vien_ban_hang"],
       default: "user",
     },
     branch_id: {

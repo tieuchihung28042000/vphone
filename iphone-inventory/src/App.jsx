@@ -31,7 +31,7 @@ function App() {
       <Route
         path="/nhap-hang"
         element={
-          <PrivateRoute requiredRole={["admin", "quan_ly"]}>
+          <PrivateRoute requiredRole={["admin", "thu_ngan"]}>
             <NhapHang />
           </PrivateRoute>
         }
@@ -39,7 +39,7 @@ function App() {
       <Route
         path="/xuat-hang"
         element={
-          <PrivateRoute requiredRole={["admin", "quan_ly", "thu_ngan", "nhan_vien_ban_hang"]}>
+          <PrivateRoute requiredRole={["admin", "thu_ngan", "nhan_vien_ban_hang"]}>
             <XuatHang />
           </PrivateRoute>
         }
@@ -47,7 +47,7 @@ function App() {
       <Route
         path="/ton-kho-so-luong"
         element={
-          <PrivateRoute requiredRole={["admin", "quan_ly"]}>
+          <PrivateRoute requiredRole={["admin", "thu_ngan"]}>
             <TonKhoSoLuong />
           </PrivateRoute>
         }
@@ -63,7 +63,7 @@ function App() {
       <Route
         path="/cong-no"
         element={
-          <PrivateRoute requiredRole={["admin", "quan_ly", "thu_ngan"]}>
+          <PrivateRoute requiredRole={["admin", "thu_ngan"]}>
             <CongNo />
           </PrivateRoute>
         }
@@ -72,7 +72,7 @@ function App() {
       <Route
         path="/canh-bao-ton-kho"
         element={
-          <PrivateRoute requiredRole={["admin", "quan_ly", "thu_ngan"]}>
+          <PrivateRoute requiredRole={["admin", "thu_ngan"]}>
             <DanhSachCanhBao />
           </PrivateRoute>
         }
@@ -82,7 +82,7 @@ function App() {
       <Route
         path="/so-quy"
         element={
-          <PrivateRoute requiredRole={["admin", "quan_ly", "thu_ngan", "nhan_vien_ban_hang"]}>
+          <PrivateRoute requiredRole={["admin", "thu_ngan", "nhan_vien_ban_hang"]}>
             <Cashbook />
           </PrivateRoute>
         }
@@ -92,7 +92,7 @@ function App() {
       <Route
         path="/lich-su-hoat-dong"
         element={
-          <PrivateRoute requiredRole={["admin", "quan_ly"]}>
+          <PrivateRoute requiredRole={["admin", "thu_ngan"]}>
             <LichSuHoatDong />
           </PrivateRoute>
         }
@@ -102,7 +102,7 @@ function App() {
       <Route
         path="/quan-ly-user"
         element={
-          <PrivateRoute requiredRole={["admin", "quan_ly"]}>
+          <PrivateRoute requiredRole={["admin", "thu_ngan"]}>
             <QuanLyUser />
           </PrivateRoute>
         }

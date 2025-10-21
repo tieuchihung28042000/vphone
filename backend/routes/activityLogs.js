@@ -4,7 +4,7 @@ import ActivityLog from '../models/ActivityLog.js';
 import { authenticateToken, requireRole } from '../middleware/auth.js';
 
 // Chỉ admin và quản lý được xem log
-router.get('/', authenticateToken, requireRole(['admin','quan_ly']), async (req, res) => {
+router.get('/', authenticateToken, requireRole(['admin','thu_ngan']), async (req, res) => {
   try {
     const { from, to, user, module, branch, page = 1, limit = 50 } = req.query;
     const query = {};
@@ -19,7 +19,7 @@ router.get('/', authenticateToken, requireRole(['admin','quan_ly']), async (req,
     if (branch && branch !== 'all') query.branch = branch;
 
     // Quản lý chỉ xem log trong chi nhánh của mình
-    if (req.user.role === 'quan_ly' && req.user.branch_name) {
+    if (req.user.role === 'thu_ngan' && req.user.branch_name) {
       query.branch = req.user.branch_name;
     }
 

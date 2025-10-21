@@ -43,7 +43,7 @@ function Login() {
           setTimeout(() => {
             if (role === 'nhan_vien_ban_hang') {
               navigate("/xuat-hang"); // Nhân viên bán hàng vào xuất hàng
-            } else if (role === 'quan_ly' || role === 'admin') {
+            } else if (role === 'thu_ngan' || role === 'admin') {
               navigate("/bao-cao"); // Quản lý/Admin vào báo cáo
             } else {
               navigate("/nhap-hang"); // Thu ngân và các role khác vào nhập hàng

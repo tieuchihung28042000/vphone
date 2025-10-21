@@ -293,7 +293,7 @@ describe('Role and Branch Permissions (STORY_01)', () => {
 
   describe('User Management Permissions', () => {
     it('should allow admin to create users with any role', async () => {
-      const roles = ['admin', 'quan_ly', 'nhan_vien_ban_hang', 'thu_ngan'];
+      const roles = ['admin', 'thu_ngan', 'nhan_vien_ban_hang'];
 
       for (const role of roles) {
         const userData = {
@@ -317,7 +317,7 @@ describe('Role and Branch Permissions (STORY_01)', () => {
 
     it('should allow manager to create users with limited roles', async () => {
       const allowedRoles = ['nhan_vien_ban_hang', 'thu_ngan'];
-      const deniedRoles = ['admin', 'quan_ly'];
+      const deniedRoles = ['admin', 'thu_ngan'];
 
       for (const role of allowedRoles) {
         const userData = {

@@ -6,7 +6,7 @@ import Cashbook from '../models/Cashbook.js';
 import { authenticateToken, requireRole } from '../middleware/auth.js';
 
 // POST /api/report/xuat-hang-batch
-router.post('/report/xuat-hang-batch', authenticateToken, requireRole(['admin','quan_ly','thu_ngan','nhan_vien_ban_hang']), async (req, res) => {
+router.post('/report/xuat-hang-batch', authenticateToken, requireRole(['admin','thu_ngan','nhan_vien_ban_hang']), async (req, res) => {
   try {
     const { items = [], customer_name, customer_phone, branch, sold_date, note, payments = [], sales_channel, auto_cashbook = true } = req.body;
     if (!Array.isArray(items) || items.length === 0) {
@@ -167,7 +167,7 @@ router.get('/report/xuat-hang-batch/:batch_id', authenticateToken, async (req, r
 });
 
 // PUT /api/report/xuat-hang-batch/:batch_id -> cập nhật nhiều items trong batch
-router.put('/report/xuat-hang-batch/:batch_id', authenticateToken, requireRole(['admin','quan_ly','thu_ngan','nhan_vien_ban_hang']), async (req, res) => {
+router.put('/report/xuat-hang-batch/:batch_id', authenticateToken, requireRole(['admin','thu_ngan','nhan_vien_ban_hang']), async (req, res) => {
   try {
     const { batch_id } = req.params;
     const { items = [], customer_name, customer_phone, branch, sold_date, note, payments = [], total_paid } = req.body;

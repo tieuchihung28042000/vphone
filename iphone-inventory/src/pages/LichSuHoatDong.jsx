@@ -115,7 +115,6 @@ function LichSuHoatDong() {
       render: (item) => {
         const roleLabels = {
           admin: "👑 Admin",
-          quan_ly: "👨‍💼 Quản lý",
           thu_ngan: "💰 Thu ngân",
           nhan_vien_ban_hang: "🛒 Nhân viên bán hàng",
           user: "👤 User"

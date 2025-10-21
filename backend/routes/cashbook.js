@@ -115,10 +115,10 @@ router.put('/:id', authenticateToken, async (req, res) => {
     }
 
     // Kiểm tra quyền chỉnh sửa: cho phép nếu chưa bị khóa (editable !== false),
-    // hoặc nếu user có vai trò admin/quan_ly
+    // hoặc nếu user có vai trò admin/thu_ngan
     const role = req.user?.role;
     const isLocked = transaction.editable === false;
-    const canOverride = role === 'admin' || role === 'quan_ly';
+    const canOverride = role === 'admin' || role === 'thu_ngan';
     if (isLocked && !canOverride) {
       return res.status(403).json({ message: 'Giao dịch đã bị khóa, chỉ Admin/Quản lý được chỉnh sửa' });
     }
@@ -172,10 +172,10 @@ router.delete('/:id', authenticateToken, async (req, res) => {
     }
 
     // Kiểm tra quyền xóa: cho phép nếu chưa bị khóa (editable !== false),
-    // hoặc nếu user có vai trò admin/quan_ly
+    // hoặc nếu user có vai trò admin/thu_ngan
     const role = req.user?.role;
     const isLocked = transaction.editable === false;
-    const canOverride = role === 'admin' || role === 'quan_ly';
+    const canOverride = role === 'admin' || role === 'thu_ngan';
     if (isLocked && !canOverride) {
       return res.status(403).json({ message: 'Giao dịch đã bị khóa, chỉ Admin/Quản lý được xoá' });
     }

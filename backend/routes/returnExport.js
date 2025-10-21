@@ -126,7 +126,7 @@ router.get('/', authenticateToken, filterByBranch, async (req, res) => {
 });
 
 // Tạo phiếu trả hàng bán
-router.post('/', authenticateToken, requireRole(['admin', 'quan_ly', 'thu_ngan', 'nhan_vien_ban_hang']), async (req, res) => {
+router.post('/', authenticateToken, requireRole(['admin', 'thu_ngan', 'nhan_vien_ban_hang']), async (req, res) => {
   try {
     const {
       original_export_id,

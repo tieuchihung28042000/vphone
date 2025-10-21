@@ -5,7 +5,7 @@ import { authenticateToken, requireRole } from '../middleware/auth.js';
 const router = express.Router();
 
 // API lấy danh sách user chưa duyệt
-router.get('/pending-users', authenticateToken, requireRole(['admin', 'quan_ly']), async (req, res) => {
+router.get('/pending-users', authenticateToken, requireRole(['admin', 'thu_ngan']), async (req, res) => {
   try {
     const pendingUsers = await User.find({ approved: false }).populate('branch_id');
     res.status(200).json(pendingUsers);
@@ -15,7 +15,7 @@ router.get('/pending-users', authenticateToken, requireRole(['admin', 'quan_ly']
 });
 
 // API lấy tất cả user
-router.get('/all-users', authenticateToken, requireRole(['admin', 'quan_ly']), async (req, res) => {
+router.get('/all-users', authenticateToken, requireRole(['admin', 'thu_ngan']), async (req, res) => {
   try {
     let query = {};
     
@@ -32,7 +32,7 @@ router.get('/all-users', authenticateToken, requireRole(['admin', 'quan_ly']), a
 });
 
 // API phê duyệt user (cập nhật approved = true)
-router.post('/approve-user/:id', authenticateToken, requireRole(['admin', 'quan_ly']), async (req, res) => {
+router.post('/approve-user/:id', authenticateToken, requireRole(['admin', 'thu_ngan']), async (req, res) => {
   try {
     const userId = req.params.id;
     const user = await User.findById(userId);
@@ -62,12 +62,12 @@ router.post('/approve-user/:id', authenticateToken, requireRole(['admin', 'quan_
 });
 
 // API cập nhật vai trò user
-router.put('/update-role/:id', authenticateToken, requireRole(['admin', 'quan_ly']), async (req, res) => {
+router.put('/update-role/:id', authenticateToken, requireRole(['admin', 'thu_ngan']), async (req, res) => {
   try {
     const userId = req.params.id;
     const { role } = req.body;
 
-    const validRoles = ['user', 'admin', 'thu_ngan', 'quan_ly', 'nhan_vien_ban_hang'];
+    const validRoles = ['user', 'admin', 'thu_ngan', 'nhan_vien_ban_hang'];
     if (!validRoles.includes(role)) {
       return res.status(400).json({ message: 'Vai trò không hợp lệ' });
     }

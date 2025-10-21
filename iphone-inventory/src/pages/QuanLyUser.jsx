@@ -286,7 +286,6 @@ function QuanLyUser() {
       render: (user) => {
         const roleLabels = {
           admin: "👑 Admin",
-          quan_ly: "👨‍💼 Quản lý",
           thu_ngan: "💰 Thu ngân",
           nhan_vien_ban_hang: "🛒 Nhân viên bán hàng",
           user: "👤 User"
@@ -298,7 +297,7 @@ function QuanLyUser() {
             className="text-sm bg-white border border-gray-300 rounded px-2 py-1"
           >
             <option value="nhan_vien_ban_hang">🛒 Nhân viên bán hàng</option>
-            <option value="quan_ly">👨‍💼 Quản lý</option>
+            <option value="thu_ngan">💰 Thu ngân</option>
             <option value="admin">👑 Admin</option>
           </select>
         );
@@ -521,7 +520,7 @@ function QuanLyUser() {
                   required
                 >
                   <option value="nhan_vien_ban_hang">🛒 Nhân viên bán hàng</option>
-                  <option value="quan_ly">👨‍💼 Quản lý</option>
+                  <option value="thu_ngan">💰 Thu ngân</option>
                   <option value="admin">👑 Admin</option>
                 </select>
               </div>
