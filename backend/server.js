@@ -485,6 +485,17 @@ app.put('/api/nhap-hang/:id', async (req, res) => {
       }
     }
 
+    // ✅ Tự động cập nhật status dựa trên quantity
+    if (updateData.quantity !== undefined) {
+      const newQuantity = Number(updateData.quantity) || 0;
+      // Logic: nếu quantity > 0 thì status = 'in_stock', nếu quantity = 0 thì status = 'sold'
+      updateData.status = newQuantity > 0 ? 'in_stock' : 'sold';
+      console.log('🔄 Auto-updating status based on quantity:', {
+        quantity: newQuantity,
+        newStatus: updateData.status
+      });
+    }
+
     console.log('🔄 Updating inventory item:', {
       id: req.params.id,
       oldPriceImport: existingItem.price_import,

@@ -12,6 +12,10 @@ const ExportHistorySchema = new mongoose.Schema({
   warranty: String,
   note: String,
   da_thanh_toan: { type: Number, default: 0 }, // Số tiền đã thanh toán
+  payments: [{
+    source: { type: String, enum: ['tien_mat', 'the', 'vi_dien_tu'], required: true },
+    amount: { type: Number, required: true }
+  }],
   branch: String,
   category: String,
   export_type: { type: String, default: 'normal' }, // phân biệt phụ kiện / iPhone

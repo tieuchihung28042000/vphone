@@ -46,7 +46,9 @@ router.post('/report/xuat-hang-batch', authenticateToken, requireRole(['admin','
           batch_id, sales_channel: sales_channel || '',
           created_by: req.user?._id,
           created_by_email: req.user?.email || '',
-          created_by_name: req.user?.full_name || ''
+          created_by_name: req.user?.full_name || '',
+          da_thanh_toan: Array.isArray(payments) ? payments.reduce((s,p)=> s + (Number(p?.amount)||0), 0) : 0,
+          payments: Array.isArray(payments) ? payments.filter(p => p && p.source && Number(p.amount) > 0) : []
         });
         created.push(rec);
       } else {
@@ -94,7 +96,9 @@ router.post('/report/xuat-hang-batch', authenticateToken, requireRole(['admin','
           sales_channel: sales_channel || '',
           created_by: req.user?._id,
           created_by_email: req.user?.email || '',
-          created_by_name: req.user?.full_name || ''
+          created_by_name: req.user?.full_name || '',
+          da_thanh_toan: Array.isArray(payments) ? payments.reduce((s,p)=> s + (Number(p?.amount)||0), 0) : 0,
+          payments: Array.isArray(payments) ? payments.filter(p => p && p.source && Number(p.amount) > 0) : []
         });
         created.push(rec);
       }
@@ -129,7 +133,7 @@ router.post('/report/xuat-hang-batch', authenticateToken, requireRole(['admin','
           type: 'thu', amount: Number(p.amount), source: p.source,
           content: 'Doanh thu bán hàng (batch)',
           customer: customer_name || '',
-          date: soldDate, branch,
+          date: soldDate, branch: branch || 'Chi nhanh 1',
           related_id: batch_id, related_type: 'ban_hang',
           is_auto: true, editable: false
         });
@@ -148,7 +152,15 @@ router.get('/report/xuat-hang-batch/:batch_id', authenticateToken, async (req, r
     const { batch_id } = req.params;
     if (!batch_id) return res.status(400).json({ message: 'Thiếu batch_id' });
     const items = await ExportHistory.find({ batch_id }).sort({ sold_date: -1, _id: -1 });
-    return res.json({ batch_id, items });
+
+    // Fetch and aggregate payments for this batch
+    const cashbookPayments = await Cashbook.aggregate([
+      { $match: { related_type: 'ban_hang', related_id: batch_id, type: 'thu' } },
+      { $group: { _id: '$source', totalAmount: { $sum: '$amount' } } }
+    ]);
+    const payments = cashbookPayments.map(p => ({ source: p._id, amount: p.totalAmount }));
+
+    return res.json({ batch_id, items, payments });
   } catch (err) {
     return res.status(500).json({ message: '❌ Lỗi lấy batch', error: err.message });
   }
@@ -249,13 +261,50 @@ router.put('/report/xuat-hang-batch/:batch_id', authenticateToken, requireRole([
       }
     } catch (e) { /* ignore */ }
 
+    // ✅ Chuẩn hoá payments và cập nhật sổ quỹ cho batch (thay thế toàn bộ bút toán cũ)
+    let normalizedPayments = [];
+    try {
+      const validSources = new Set(['tien_mat', 'the', 'vi_dien_tu']);
+      const mapBySource = new Map();
+      if (Array.isArray(payments)) {
+        for (const p of payments) {
+          if (!p || !validSources.has(p.source)) continue;
+          const amt = Number(p.amount) || 0;
+          if (amt <= 0) continue;
+          mapBySource.set(p.source, (mapBySource.get(p.source) || 0) + amt);
+        }
+      }
+      normalizedPayments = Array.from(mapBySource.entries()).map(([source, amount]) => ({ source, amount }));
+
+      // Ghi sổ quỹ: xoá cũ, ghi mới
+      await Cashbook.deleteMany({ related_type: 'ban_hang', related_id: batch_id });
+      if (normalizedPayments.length > 0) {
+        const paidDate = sold_date ? new Date(sold_date) : new Date();
+        const branchForEntry = branch || '';
+        const customerForEntry = customer_name || '';
+        for (const p of normalizedPayments) {
+          await Cashbook.create({
+            type: 'thu', amount: Number(p.amount), source: p.source,
+            content: 'Doanh thu bán hàng (batch - cập nhật)',
+            customer: customerForEntry,
+            date: paidDate, branch: branchForEntry,
+            related_id: batch_id, related_type: 'ban_hang',
+            is_auto: true, editable: false
+          });
+        }
+      }
+    } catch (e) {
+      // Không chặn flow chính nếu sổ quỹ lỗi
+    }
+
     const refreshed = await ExportHistory.find({ batch_id });
-    return res.json({ message: '✅ Cập nhật batch thành công', batch_id, updated_count: updateResults.length, items: refreshed });
+    return res.json({ message: '✅ Cập nhật batch thành công', batch_id, updated_count: updateResults.length, items: refreshed, payments: normalizedPayments });
   } catch (err) {
     return res.status(500).json({ message: '❌ Lỗi cập nhật batch', error: err.message });
   }
 });
 
 export default router;
+
 
 

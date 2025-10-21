@@ -253,8 +253,23 @@ router.post('/xuat-hang', async (req, res) => {
       note,
       debt,
       sold_date,
-      branch
+      branch,
+      payments = []
     } = req.body;
+
+    // Chuẩn hoá payments: lọc số >0, gộp theo nguồn, tối đa mỗi nguồn 1 dòng
+    const validSources = new Set(['tien_mat', 'the', 'vi_dien_tu']);
+    const normalizedMap = new Map();
+    if (Array.isArray(payments)) {
+      for (const p of payments) {
+        if (!p || !validSources.has(p.source)) continue;
+        const amt = Number(p.amount) || 0;
+        if (amt <= 0) continue;
+        normalizedMap.set(p.source, (normalizedMap.get(p.source) || 0) + amt);
+      }
+    }
+    const normalizedPayments = Array.from(normalizedMap.entries()).map(([source, amount]) => ({ source, amount }));
+    const totalPaidFromPayments = normalizedPayments.reduce((s, p) => s + (Number(p.amount) || 0), 0);
 
     if (imei && imei.toString().trim() !== "") {
       // ===== XUẤT iPHONE =====
@@ -280,7 +295,7 @@ router.post('/xuat-hang', async (req, res) => {
       }
 
       // === GHI LỊCH SỬ XUẤT iPHONE ===
-      await ExportHistory.create({
+      const createdExport = await ExportHistory.create({
         imei,
         sku: item.sku,
         product_name: item.product_name || item.tenSanPham,
@@ -292,14 +307,29 @@ router.post('/xuat-hang', async (req, res) => {
         customer_phone,
         warranty,
         note,
-        da_thanh_toan: parseFloat(req.body.da_thanh_toan) || 0, // ✅ FIX: Thêm field da_thanh_toan
+        da_thanh_toan: totalPaidFromPayments,
+        payments: normalizedPayments,
         branch,
         category: item.category || "",
         export_type: "iphone",
       });
 
+      // === Ghi sổ quỹ theo từng payment
+      if (normalizedPayments.length > 0) {
+        const paidDate = sold_date ? new Date(sold_date) : new Date();
+        const branchForEntry = branch || item.branch || '';
+        for (const p of normalizedPayments) {
+          await Cashbook.create({
+            type: 'thu', amount: Number(p.amount), source: p.source,
+            content: 'Doanh thu bán hàng', customer: customer_name || '',
+            date: paidDate, branch: branchForEntry, related_id: String(createdExport._id), related_type: 'ban_hang',
+            is_auto: true, editable: false
+          });
+        }
+      }
+
       const profit = (item.price_sell || item.giaBan || 0) - (item.price_import || item.giaNhap || 0);
-      return res.status(200).json({ message: "✅ Xuất máy thành công!", profit, item });
+      return res.status(200).json({ message: "✅ Xuất máy thành công!", profit, export: createdExport });
     } else {
       // ===== XUẤT PHỤ KIỆN =====
       if (!sku || !product_name) {
@@ -349,7 +379,7 @@ router.post('/xuat-hang', async (req, res) => {
       console.log('✅ Xuất phụ kiện - ĐÃ trừ quantity trong Inventory');
 
       // === GHI LỊCH SỬ XUẤT PHỤ KIỆN ===
-      await ExportHistory.create({
+      const createdExport = await ExportHistory.create({
         imei: null,
         sku: acc.sku,
         product_name: acc.product_name || acc.tenSanPham,
@@ -361,17 +391,33 @@ router.post('/xuat-hang', async (req, res) => {
         customer_phone,
         warranty,
         note,
-        da_thanh_toan: parseFloat(req.body.da_thanh_toan) || 0, // ✅ FIX: Thêm field da_thanh_toan
+        da_thanh_toan: totalPaidFromPayments,
+        payments: normalizedPayments,
         branch,
         category: acc.category || "",
         export_type: "accessory",
       });
 
+      // === Ghi sổ quỹ theo từng payment
+      if (normalizedPayments.length > 0) {
+        const paidDate = sold_date ? new Date(sold_date) : new Date();
+        const branchForEntry = branch || acc.branch || '';
+        for (const p of normalizedPayments) {
+          await Cashbook.create({
+            type: 'thu', amount: Number(p.amount), source: p.source,
+            content: 'Doanh thu bán phụ kiện', customer: customer_name || '',
+            date: paidDate, branch: branchForEntry, related_id: String(createdExport._id), related_type: 'ban_hang',
+            is_auto: true, editable: false
+          });
+        }
+      }
+
       let totalProfit = (price_sell || 0) * quantity - (acc.price_import || 0) * quantity;
       return res.status(200).json({
         message: "✅ Xuất phụ kiện thành công!",
         profit: totalProfit,
-        quantity
+        quantity,
+        export: createdExport
       });
     }
   } catch (err) {
@@ -417,7 +463,8 @@ router.put('/xuat-hang/:id', async (req, res) => {
       sold_date,
       sale_date,     // ✅ Thêm field từ frontend
       source,
-      da_thanh_toan  // ✅ FIX: Thêm field da_thanh_toan
+      da_thanh_toan,  // ✅ FIX: Thêm field da_thanh_toan
+      payments = []   // ✅ Mảng đa nguồn tiền khi cập nhật
     } = req.body;
 
     console.log('🔄 Routes PUT Request data:', req.body); // Debug
@@ -456,6 +503,20 @@ router.put('/xuat-hang/:id', async (req, res) => {
       buyer_name, customer_name, finalCustomerName
     }); // Debug
 
+    // Chuẩn hoá payments khi cập nhật
+    const validSources = new Set(['tien_mat', 'the', 'vi_dien_tu']);
+    const mapUpdate = new Map();
+    if (Array.isArray(payments)) {
+      for (const p of payments) {
+        if (!p || !validSources.has(p.source)) continue;
+        const amt = Number(p.amount) || 0;
+        if (amt <= 0) continue;
+        mapUpdate.set(p.source, (mapUpdate.get(p.source) || 0) + amt);
+      }
+    }
+    const normalizedPayments = Array.from(mapUpdate.entries()).map(([source, amount]) => ({ source, amount }));
+    const totalPaidFromPayments = normalizedPayments.reduce((s, p) => s + (Number(p.amount) || 0), 0);
+
     const updateFields = {
       // Price fields - ưu tiên field từ frontend
       price_sell: finalSalePrice,
@@ -472,7 +533,8 @@ router.put('/xuat-hang/:id', async (req, res) => {
       branch: branch || '',
       source: source || 'tien_mat',
       sold_date: finalSaleDate ? new Date(finalSaleDate) : new Date(),
-      da_thanh_toan: parseFloat(da_thanh_toan) || 0, // ✅ FIX: Thêm field da_thanh_toan
+      da_thanh_toan: totalPaidFromPayments,
+      payments: normalizedPayments,
       quantity: parseInt(req.body.quantity) || existingRecord.quantity || 1, // ✅ THÊM QUANTITY
       updatedAt: new Date()
     };
@@ -509,7 +571,36 @@ router.put('/xuat-hang/:id', async (req, res) => {
       price_sell: updated.price_sell,
       customer_name: updated.customer_name
     }); // Debug
-    res.json({ message: "✅ Đã cập nhật đơn xuất thành công!", item: updated });
+    // ✅ Ghi nhận đa nguồn tiền khi cập nhật: thay thế toàn bộ bút toán cũ bằng mảng payments mới (nếu truyền lên)
+    let savedPayments = [];
+    try {
+      if (normalizedPayments.length > 0) {
+        await Cashbook.deleteMany({ related_type: 'ban_hang', related_id: String(updated._id) });
+        const paidDate = updated.sold_date || new Date();
+        const branchForEntry = updated.branch || branch || '';
+        const customerForEntry = updated.customer_name || finalCustomerName || '';
+        for (const p of normalizedPayments) {
+          const created = await Cashbook.create({
+            type: 'thu', amount: Number(p.amount), source: p.source,
+            content: 'Doanh thu bán hàng (cập nhật)', customer: customerForEntry,
+            date: paidDate, branch: branchForEntry,
+            related_id: String(updated._id), related_type: 'ban_hang',
+            is_auto: true, editable: false
+          });
+          savedPayments.push({ source: created.source, amount: created.amount });
+        }
+      }
+    } catch (e) {
+      console.error('❌ Lỗi cập nhật payments cho đơn lẻ:', e.message);
+    }
+
+    // Lấy lại payments từ sổ quỹ theo export_id nếu chưa có savedPayments
+    if (savedPayments.length === 0) {
+      const existed = await Cashbook.find({ related_type: 'ban_hang', related_id: String(updated._id) }).select('source amount').sort({ _id: 1 });
+      savedPayments = existed.map(p => ({ source: p.source, amount: p.amount }));
+    }
+
+    res.json({ message: "✅ Đã cập nhật đơn xuất thành công!", item: updated, payments: savedPayments });
   } catch (err) {
     console.error('❌ Routes PUT error:', err);
     res.status(500).json({ message: "❌ Lỗi khi cập nhật đơn xuất", error: err.message });
@@ -611,3 +702,17 @@ router.post('/migrate-export-history', async (req, res) => {
 });
 
 export default router;
+// Phụ trợ: trả về payments của 1 export theo id (đơn lẻ)
+// GET /api/report/xuat-hang/:id/payments
+// Lưu ý: mount path ngoài server sẽ là /api/report/...
+router.get('/xuat-hang/:id/payments', async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!id) return res.status(400).json({ message: 'Thiếu id' });
+    const existed = await Cashbook.find({ related_type: 'ban_hang', related_id: String(id) }).select('source amount').sort({ _id: 1 });
+    const payments = existed.map(p => ({ source: p.source, amount: p.amount }));
+    return res.json({ id, payments });
+  } catch (err) {
+    return res.status(500).json({ message: '❌ Lỗi lấy payments', error: err.message });
+  }
+});

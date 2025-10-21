@@ -79,9 +79,19 @@ router.post('/', authenticateToken, requireRole(['admin', 'quan_ly']), async (re
 // PUT /api/inventory/:id - Cập nhật inventory
 router.put('/:id', authenticateToken, requireRole(['admin', 'quan_ly']), async (req, res) => {
   try {
+    const { quantity, ...otherFields } = req.body;
+    
+    // ✅ Tự động cập nhật status dựa trên quantity
+    let updateData = { ...otherFields };
+    if (quantity !== undefined) {
+      updateData.quantity = quantity;
+      // Logic: nếu quantity > 0 thì status = 'in_stock', nếu quantity = 0 thì status = 'sold'
+      updateData.status = quantity > 0 ? 'in_stock' : 'sold';
+    }
+    
     const inventory = await Inventory.findByIdAndUpdate(
       req.params.id,
-      req.body,
+      updateData,
       { new: true, runValidators: true }
     );
     
