@@ -435,8 +435,8 @@ function NhapHang() {
           return_method: returnForm.return_method, // Legacy field
           return_reason: returnForm.return_reason,
           note: returnForm.note,
-          // ✅ Thêm payments array để tạo phiếu chi
-          payments: [{
+          // ✅ Xử lý payments dựa trên return_method
+          payments: returnForm.return_method === 'cong_no' ? [] : [{
             source: returnForm.return_method,
             amount: returnAmount
           }]
@@ -1595,10 +1595,17 @@ function NhapHang() {
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500"
                   required
                 >
+                  <option value="cong_no">📋 Công nợ</option>
                   <option value="tien_mat">💵 Tiền mặt</option>
                   <option value="the">💳 Thẻ</option>
                   <option value="vi_dien_tu">📱 Ví điện tử</option>
                 </select>
+                <div className="text-xs text-gray-600 mt-1">
+                  {returnForm.return_method === 'cong_no' 
+                    ? 'Số tiền sẽ được trừ vào công nợ nhà cung cấp'
+                    : 'Số tiền sẽ được cộng vào sổ quỹ'
+                  }
+                </div>
               </div>
 
               <div>
