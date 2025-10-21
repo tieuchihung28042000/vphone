@@ -206,8 +206,18 @@ router.post('/', authenticateToken, requireRole(['admin', 'thu_ngan', 'nhan_vien
         role: req.user?.role,
         action: 'create',
         module: 'return_export',
-        payload_snapshot: returnExport.toObject(),
-        ref_id: String(returnExport._id),
+        payload_snapshot: {
+          return_code: returnExport.return_code,
+          product_name: returnExport.product_name,
+          imei: returnExport.imei,
+          return_amount: returnExport.return_amount,
+          customer_name: returnExport.customer_name,
+          customer_phone: returnExport.customer_phone,
+          reason: returnExport.reason,
+          note: returnExport.note,
+          quantity: returnExport.quantity
+        },
+        ref_id: returnExport.return_code || String(returnExport._id),
         branch: returnExport.branch
       });
     } catch (e) { }
@@ -423,8 +433,17 @@ router.delete('/:id', authenticateToken, requireRole(['admin']), async (req, res
         role: req.user?.role,
         action: 'delete',
         module: 'return_export',
-        payload_snapshot: returnExport.toObject(),
-        ref_id: String(returnExport._id),
+        payload_snapshot: {
+          return_code: returnExport.return_code,
+          product_name: returnExport.product_name,
+          imei: returnExport.imei,
+          return_amount: returnExport.return_amount,
+          customer_name: returnExport.customer_name,
+          customer_phone: returnExport.customer_phone,
+          reason: returnExport.reason,
+          status: 'cancelled'
+        },
+        ref_id: returnExport.return_code || String(returnExport._id),
         branch: returnExport.branch
       });
     } catch (e) { }

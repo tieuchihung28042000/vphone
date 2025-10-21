@@ -9,6 +9,7 @@ const ActivityLogSchema = new mongoose.Schema({
   payload_snapshot: { type: Object },
   ref_id: { type: String },
   branch: { type: String },
+  description: { type: String }, // Mô tả chi tiết đã được tạo
   createdAt: { type: Date, default: Date.now }
 });
 

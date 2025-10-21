@@ -3,6 +3,7 @@ const router = express.Router();
 import Inventory from '../models/Inventory.js';
 import ExportHistory from '../models/ExportHistory.js';
 import Cashbook from '../models/Cashbook.js';
+import ActivityLog from '../models/ActivityLog.js';
 
 // Helper function để chuẩn hóa nguồn tiền
 function getValidPaymentSource(source) {
@@ -202,6 +203,32 @@ router.put('/cong-no-pay-customer', async (req, res) => {
       const daTT = parseFloat(order.da_thanh_toan) || 0;
       totalDebt += Math.max((priceSell * quantity) - daTT, 0);
     });
+
+    // Ghi nhận hoạt động
+    try {
+      const activityData = {
+        user_id: req.user?._id,
+        username: req.user?.username || req.user?.email || '',
+        role: req.user?.role,
+        action: 'update',
+        module: 'cong_no',
+        payload_snapshot: {
+          customer_name: customer_name,
+          customer_phone: customer_phone,
+          paid_amount: totalPaid,
+          remaining_debt: totalDebt,
+          note: note
+        },
+        ref_id: customer_name,
+        branch: branch
+      };
+      
+      // Tạo mô tả chi tiết
+      const roleLabel = req.user?.role === 'admin' ? 'Admin' : (req.user?.role === 'thu_ngan' ? 'Thu ngân' : 'User');
+      activityData.description = `Nhân viên ${activityData.username} (${roleLabel}) thu nợ khách hàng - Khách hàng: ${customer_name}${customer_phone ? ` (${customer_phone})` : ''} - Số tiền thu: ${new Intl.NumberFormat('vi-VN').format(totalPaid)}đ - Nợ còn lại: ${new Intl.NumberFormat('vi-VN').format(totalDebt)}đ`;
+      
+      await ActivityLog.create(activityData);
+    } catch (e) { /* ignore log error */ }
 
     res.json({
       message: `✅ Đã trả nợ ${totalPaid.toLocaleString()}đ cho khách hàng ${customer_name}`,
@@ -772,28 +799,24 @@ router.get('/customer-history', async (req, res) => {
 // GET /api/cong-no/supplier-history?supplier_name=...
 router.get('/supplier-history', async (req, res) => {
   try {
-    const { supplier_name } = req.query;
+    const { supplier_name, branch } = req.query;
     if (!supplier_name) return res.status(400).json({ message: 'Thiếu tên nhà cung cấp' });
 
-    const query = {
-      $or: [
-        { supplier: supplier_name },
-        { content: { $regex: `Trả nợ NCC: ${supplier_name}`, $options: 'i' } }
-      ]
-    };
-
-    const items = await Cashbook.find(query).sort({ date: -1, createdAt: -1 }).lean();
-    const history = items.map(i => ({
-      date: i.date || i.createdAt,
-      amount: i.amount || 0,
-      type: i.type, // thu/chi
-      source: getValidPaymentSource(i.source),
-      note: i.note || '',
-      related_type: i.related_type || '',
-    }));
+    // Lịch sử công nợ NCC được lấy từ SupplierDebt.debt_history
+    const SupplierDebt = (await import('../models/SupplierDebt.js')).default;
+    const record = await SupplierDebt.findOne({ supplier_name, ...(branch ? { branch } : {}) }).lean();
+    const history = (record?.debt_history || [])
+      .sort((a,b) => new Date(b.date) - new Date(a.date))
+      .map(h => ({
+        date: h.date,
+        amount: h.amount,
+        action: h.type === 'add' ? 'Cộng nợ' : 'Trả nợ',
+        note: h.note || '',
+        related_id: h.related_id || ''
+      }));
     res.json({ history });
   } catch (e) {
     console.error('❌ Error in supplier-history:', e);
-    res.status(500).json({ message: 'Lỗi lấy lịch sử trả nợ NCC', error: e.message });
+    res.status(500).json({ message: 'Lỗi lấy lịch sử công nợ NCC', error: e.message });
   }
 });

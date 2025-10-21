@@ -12,7 +12,7 @@ const CashbookSchema = new mongoose.Schema({
   date: { type: Date, default: Date.now },                        // Ngày giao dịch
   branch: { type: String, required: true },                       // Chi nhánh (bắt buộc)
   related_id: { type: String },                                   // ID liên kết (vd: đơn nhập/xuất)
-  related_type: { type: String, enum: ['ban_hang', 'nhap_hang', 'tra_no', 'tra_no_ncc', 'tra_hang_nhap', 'tra_hang_ban', 'manual'] }, // Loại liên kết
+  related_type: { type: String, enum: ['ban_hang', 'nhap_hang', 'tra_no', 'tra_no_ncc', 'tra_hang_nhap', 'tra_hang_ban', 'manual', 'adjustment'] }, // Loại liên kết
   note: { type: String },                                         // Ghi chú
   user: { type: String },                                         // Người thực hiện
   is_auto: { type: Boolean, default: false },                    // Tự động tạo hay thủ công

@@ -89,16 +89,33 @@ router.post('/', authenticateToken, async (req, res) => {
 
     await cashbook.save();
     try {
-      await ActivityLog.create({
+      const activityData = {
         user_id: req.user?._id,
         username: req.user?.username || req.user?.email || '',
         role: req.user?.role,
         action: 'create',
         module: 'cashbook',
-        payload_snapshot: cashbook.toObject(),
-        ref_id: String(cashbook._id),
+        payload_snapshot: {
+          receipt_code: cashbook.receipt_code,
+          type: cashbook.type,
+          content: cashbook.content,
+          amount: cashbook.amount,
+          customer: cashbook.customer,
+          supplier: cashbook.supplier,
+          balance_after: cashbook.balance_after,
+          source: cashbook.source,
+          related_type: cashbook.related_type
+        },
+        ref_id: cashbook.receipt_code || String(cashbook._id),
         branch: cashbook.branch
-      });
+      };
+      
+      // Tạo mô tả chi tiết
+      const typeLabel = cashbook.type === 'thu' ? 'phiếu thu' : 'phiếu chi';
+      const roleLabel = req.user?.role === 'admin' ? 'Admin' : (req.user?.role === 'thu_ngan' ? 'Thu ngân' : 'User');
+      activityData.description = `Nhân viên ${activityData.username} (${roleLabel}) tạo ${typeLabel} #${cashbook.receipt_code || 'N/A'} - Nội dung: ${cashbook.content || 'N/A'} - Số tiền: ${new Intl.NumberFormat('vi-VN').format(cashbook.amount || 0)}đ${cashbook.customer ? ` - Khách hàng: ${cashbook.customer}` : ''}${cashbook.supplier ? ` - Nhà cung cấp: ${cashbook.supplier}` : ''} - Số dư sau: ${new Intl.NumberFormat('vi-VN').format(cashbook.balance_after || 0)}đ`;
+      
+      await ActivityLog.create(activityData);
     } catch (e) { /* ignore log error */ }
     res.json({ message: '✅ Thêm giao dịch thành công', cashbook });
   } catch (err) {
@@ -146,16 +163,39 @@ router.put('/:id', authenticateToken, async (req, res) => {
       await reindexBalances(updated.source, updated.branch);
     } catch (e) { /* ignore reindex error */ }
     try {
-      await ActivityLog.create({
+      const activityData = {
         user_id: req.user?._id,
         username: req.user?.username || req.user?.email || '',
         role: req.user?.role,
         action: 'update',
         module: 'cashbook',
-        payload_snapshot: { before: transaction.toObject(), after: updated.toObject() },
-        ref_id: String(updated._id),
+        payload_snapshot: {
+          receipt_code: updated.receipt_code,
+          before: {
+            content: transaction.content,
+            amount: transaction.amount,
+            type: transaction.type,
+            customer: transaction.customer,
+            supplier: transaction.supplier
+          },
+          after: {
+            content: updated.content,
+            amount: updated.amount,
+            type: updated.type,
+            customer: updated.customer,
+            supplier: updated.supplier
+          }
+        },
+        ref_id: updated.receipt_code || String(updated._id),
         branch: updated.branch
-      });
+      };
+      
+      // Tạo mô tả chi tiết
+      const roleLabel = req.user?.role === 'admin' ? 'Admin' : (req.user?.role === 'thu_ngan' ? 'Thu ngân' : 'User');
+      const typeLabel = updated.type === 'thu' ? 'phiếu thu' : 'phiếu chi';
+      activityData.description = `Nhân viên ${activityData.username} (${roleLabel}) cập nhật ${typeLabel} #${updated.receipt_code || 'N/A'} - Nội dung: ${updated.content || 'N/A'} - Số tiền từ ${new Intl.NumberFormat('vi-VN').format(transaction.amount || 0)}đ thành ${new Intl.NumberFormat('vi-VN').format(updated.amount || 0)}đ${updated.customer ? ` - Khách hàng: ${updated.customer}` : ''}${updated.supplier ? ` - Nhà cung cấp: ${updated.supplier}` : ''}`;
+      
+      await ActivityLog.create(activityData);
     } catch (e) { /* ignore log error */ }
     res.json({ message: '✅ Đã cập nhật giao dịch', cashbook: updated });
   } catch (err) {
@@ -184,16 +224,31 @@ router.delete('/:id', authenticateToken, async (req, res) => {
     const br = transaction.branch;
     await Cashbook.findByIdAndDelete(req.params.id);
     try {
-      await ActivityLog.create({
+      const activityData = {
         user_id: req.user?._id,
         username: req.user?.username || req.user?.email || '',
         role: req.user?.role,
         action: 'delete',
         module: 'cashbook',
-        payload_snapshot: transaction.toObject(),
-        ref_id: String(transaction._id),
+        payload_snapshot: {
+          receipt_code: transaction.receipt_code,
+          type: transaction.type,
+          content: transaction.content,
+          amount: transaction.amount,
+          customer: transaction.customer,
+          supplier: transaction.supplier,
+          source: transaction.source
+        },
+        ref_id: transaction.receipt_code || String(transaction._id),
         branch: transaction.branch
-      });
+      };
+      
+      // Tạo mô tả chi tiết
+      const roleLabel = req.user?.role === 'admin' ? 'Admin' : (req.user?.role === 'thu_ngan' ? 'Thu ngân' : 'User');
+      const typeLabel = transaction.type === 'thu' ? 'phiếu thu' : 'phiếu chi';
+      activityData.description = `Nhân viên ${activityData.username} (${roleLabel}) xóa ${typeLabel} #${transaction.receipt_code || 'N/A'} - Nội dung: ${transaction.content || 'N/A'} - Số tiền: ${new Intl.NumberFormat('vi-VN').format(transaction.amount || 0)}đ${transaction.customer ? ` - Khách hàng: ${transaction.customer}` : ''}${transaction.supplier ? ` - Nhà cung cấp: ${transaction.supplier}` : ''}`;
+      
+      await ActivityLog.create(activityData);
     } catch (e) { /* ignore log error */ }
     // Reindex balances cho cùng nguồn và chi nhánh để số dư chính xác
     try {
@@ -580,7 +635,7 @@ router.post('/adjust-balance', async (req, res) => {
             branch,
             note: note || 'Điều chỉnh tổng quỹ',
             user: user || 'System',
-            related_type: 'manual',
+            related_type: 'adjustment',
             receipt_code,
             balance_before: currentTienMat,
             balance_after: newBalance,
@@ -613,7 +668,7 @@ router.post('/adjust-balance', async (req, res) => {
             branch,
             note: note || 'Điều chỉnh tổng quỹ',
             user: user || 'System',
-            related_type: 'manual',
+            related_type: 'adjustment',
             receipt_code,
             balance_before: currentThe,
             balance_after: newBalance,
@@ -646,7 +701,7 @@ router.post('/adjust-balance', async (req, res) => {
             branch,
             note: note || 'Điều chỉnh tổng quỹ',
             user: user || 'System',
-            related_type: 'manual',
+            related_type: 'adjustment',
             receipt_code,
             balance_before: currentViDienTu,
             balance_after: newBalance,

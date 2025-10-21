@@ -28,6 +28,51 @@ function parseNumber(val) {
   return val.toString().replace(/[^\d]/g, "");
 }
 
+// Hàm trích xuất thông tin sản phẩm từ ghi chú
+function extractProductInfo(note) {
+  if (!note) return { productName: '', imei: '', sku: '', quantity: '' };
+  
+  const result = { productName: '', imei: '', sku: '', quantity: '' };
+  
+  // Trích xuất tên sản phẩm từ các pattern phổ biến
+  const productPatterns = [
+    /Trả hàng nhập:\s*([^(]+)/i,  // "Trả hàng nhập: Sản phẩm ABC"
+    /Cộng nợ từ nhập phụ kiện mới:\s*([^(]+)/i,  // "Cộng nợ từ nhập phụ kiện mới: Sản phẩm ABC"
+    /Nhập hàng:\s*([^(]+)/i,  // "Nhập hàng: Sản phẩm ABC"
+    /Sản phẩm:\s*([^(]+)/i,  // "Sản phẩm: ABC"
+    /Trả nợ cho\s*([^:]+):/i,  // "Trả nợ cho NCC ABC:"
+    /Nhà cung cấp:\s*([^(]+)/i,  // "Nhà cung cấp: ABC"
+  ];
+  
+  for (const pattern of productPatterns) {
+    const match = note.match(pattern);
+    if (match) {
+      result.productName = match[1].trim();
+      break;
+    }
+  }
+  
+  // Trích xuất SKU
+  const skuMatch = note.match(/SKU:\s*([A-Za-z0-9\-_]+)/i);
+  if (skuMatch) {
+    result.sku = skuMatch[1].trim();
+  }
+  
+  // Trích xuất IMEI
+  const imeiMatch = note.match(/IMEI:\s*([A-Za-z0-9\-_]+)/i);
+  if (imeiMatch) {
+    result.imei = imeiMatch[1].trim();
+  }
+  
+  // Trích xuất số lượng
+  const quantityMatch = note.match(/(\d+)\s*sản phẩm/i);
+  if (quantityMatch) {
+    result.quantity = quantityMatch[1];
+  }
+  
+  return result;
+}
+
 function getPaymentSourceName(source) {
   const sourceMap = {
     'tien_mat': '💵 Tiền mặt',
@@ -626,7 +671,7 @@ function CongNo() {
       {/* History Modal */}
       {historyModal.open && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-xl p-6 w-full max-w-lg mx-4 max-h-[90vh] overflow-y-auto">
+          <div className="bg-white rounded-xl p-6 w-full max-w-6xl mx-4 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-bold">🕑 Lịch sử {historyModal.type==='customer'?'trả nợ khách':'trả nợ NCC'} - {historyModal.name}</h3>
               <button className="text-gray-600" onClick={()=>{setHistoryModal({open:false,type:'',name:''}); setHistoryItems([]);}}>✖</button>
@@ -637,21 +682,55 @@ function CongNo() {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="bg-gray-50 text-gray-600">
-                    <th className="p-2 text-left">Ngày</th>
-                    <th className="p-2 text-right">Số tiền</th>
-                    <th className="p-2">Nguồn</th>
-                    <th className="p-2">Ghi chú</th>
+                    <th className="p-2 text-left w-32">Ngày</th>
+                    <th className="p-2 text-right w-24">Số tiền</th>
+                    <th className="p-2 text-center w-32">Hành động</th>
+                    <th className="p-2 text-left w-48">Sản phẩm</th>
+                    <th className="p-2 text-left w-32">IMEI/SKU</th>
+                    <th className="p-2 text-left">Ghi chú</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {historyItems.map((h, idx)=> (
-                    <tr key={idx} className="border-b">
-                      <td className="p-2">{new Date(h.date).toLocaleString('vi-VN')}</td>
-                      <td className="p-2 text-right">{formatCurrency(h.amount)}</td>
-                      <td className="p-2 text-center">{getPaymentSourceName(h.source)}</td>
-                      <td className="p-2">{h.note || ''}</td>
-                    </tr>
-                  ))}
+                  {historyItems.map((h, idx)=> {
+                    // Phân tích hành động để xác định màu sắc
+                    const isPayment = h.action === 'Trả nợ' || h.action === 'Trả hàng';
+                    const isDebt = h.action === 'Cộng nợ' || h.action === 'Nhập hàng';
+                    
+                    // Trích xuất thông tin sản phẩm từ ghi chú
+                    const productInfo = extractProductInfo(h.note || '');
+                    
+                    return (
+                      <tr key={idx} className="border-b hover:bg-gray-50">
+                        <td className="p-2">{new Date(h.date).toLocaleString('vi-VN')}</td>
+                        <td className="p-2 text-right font-medium">{formatCurrency(h.amount)}</td>
+                        <td className="p-2 text-center">
+                          <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
+                            isPayment 
+                              ? 'bg-green-100 text-green-800' 
+                              : isDebt 
+                                ? 'bg-red-100 text-red-800' 
+                                : 'bg-gray-100 text-gray-800'
+                          }`}>
+                            {isPayment ? '+' : isDebt ? '-' : ''} {h.action || ''}
+                          </span>
+                        </td>
+                        <td className="p-2 text-left">
+                          <div className="font-medium text-gray-900">{productInfo.productName || '-'}</div>
+                          {productInfo.quantity && (
+                            <div className="text-xs text-gray-500">SL: {productInfo.quantity}</div>
+                          )}
+                        </td>
+                        <td className="p-2 text-left">
+                          <div className="text-xs font-mono text-gray-600">
+                            {productInfo.imei || productInfo.sku || '-'}
+                          </div>
+                        </td>
+                        <td className="p-2 text-left">
+                          <div className="text-xs text-gray-600">{h.note || ''}</div>
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             )}

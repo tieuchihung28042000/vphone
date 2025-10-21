@@ -1,6 +1,7 @@
 import express from 'express';
 const router = express.Router();
 import SupplierDebt from '../models/SupplierDebt.js';
+import ActivityLog from '../models/ActivityLog.js';
 
 // 1. Lấy danh sách công nợ nhà cung cấp
 router.get('/list', async (req, res) => {
@@ -88,6 +89,33 @@ router.post('/add-debt', async (req, res) => {
       await supplier.save();
     }
     
+    // === GHI NHẬN HOẠT ĐỘNG ===
+    try {
+      const activityData = {
+        user_id: null, // Supplier debt có thể không có user cụ thể
+        username: user || 'Hệ thống',
+        role: 'system',
+        action: 'create',
+        module: 'supplier_debt',
+        payload_snapshot: {
+          supplier_name: supplier_name,
+          supplier_phone: supplier_phone || '',
+          amount: Number(amount),
+          note: note || '',
+          branch: branch,
+          related_id: related_id,
+          action_type: 'add_debt'
+        },
+        ref_id: supplier._id.toString(),
+        branch: branch
+      };
+      
+      // Tạo mô tả chi tiết
+      activityData.description = `Hệ thống cộng nợ nhà cung cấp - Nhà cung cấp: ${supplier_name}${supplier_phone ? ` (${supplier_phone})` : ''} - Số tiền: ${new Intl.NumberFormat('vi-VN').format(Number(amount))}đ - Chi nhánh: ${branch}${note ? ` - Ghi chú: ${note}` : ''}`;
+      
+      await ActivityLog.create(activityData);
+    } catch (e) { /* ignore log error */ }
+    
     res.json({ 
       message: '✅ Đã cập nhật công nợ nhà cung cấp',
       supplier 
@@ -148,6 +176,34 @@ router.post('/pay-debt', async (req, res) => {
         user: user || 'System'
       });
     }
+    
+    // === GHI NHẬN HOẠT ĐỘNG ===
+    try {
+      const activityData = {
+        user_id: null,
+        username: user || 'Hệ thống',
+        role: 'system',
+        action: 'update',
+        module: 'supplier_debt',
+        payload_snapshot: {
+          supplier_name: supplier_name,
+          supplier_phone: supplier_phone || '',
+          paid_amount: payAmount,
+          remaining_debt: supplier.total_debt,
+          note: note || '',
+          branch: branch,
+          source: source,
+          action_type: 'pay_debt'
+        },
+        ref_id: supplier._id.toString(),
+        branch: branch
+      };
+      
+      // Tạo mô tả chi tiết
+      activityData.description = `Hệ thống trả nợ nhà cung cấp - Nhà cung cấp: ${supplier_name}${supplier_phone ? ` (${supplier_phone})` : ''} - Số tiền trả: ${new Intl.NumberFormat('vi-VN').format(payAmount)}đ - Nợ còn lại: ${new Intl.NumberFormat('vi-VN').format(supplier.total_debt)}đ - Chi nhánh: ${branch}${note ? ` - Ghi chú: ${note}` : ''}`;
+      
+      await ActivityLog.create(activityData);
+    } catch (e) { /* ignore log error */ }
     
     res.json({ 
       message: '✅ Đã trả nợ nhà cung cấp thành công',

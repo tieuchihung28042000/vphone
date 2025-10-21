@@ -1,6 +1,8 @@
 import express from 'express';
 import User from '../models/User.js';
+import ActivityLog from '../models/ActivityLog.js';
 import { authenticateToken, requireRole } from '../middleware/auth.js';
+import bcrypt from 'bcryptjs';
 
 const router = express.Router();
 
@@ -55,6 +57,26 @@ router.post('/approve-user/:id', authenticateToken, requireRole(['admin', 'thu_n
     user.approved = true;
     await user.save();
 
+    // Ghi nhận hoạt động
+    try {
+      await ActivityLog.create({
+        user_id: req.user?._id,
+        username: req.user?.username || req.user?.email || '',
+        role: req.user?.role,
+        action: 'update',
+        module: 'user',
+        payload_snapshot: {
+          email: user.email,
+          full_name: user.full_name,
+          role: user.role,
+          approved: true,
+          branch_name: user.branch_id?.name || 'N/A'
+        },
+        ref_id: user.email || String(user._id),
+        branch: req.user?.branch_name || 'N/A'
+      });
+    } catch (e) { /* ignore log error */ }
+
     res.status(200).json({ message: 'Phê duyệt user thành công' });
   } catch (error) {
     res.status(500).json({ message: 'Lỗi server khi phê duyệt user', error: error.message });
@@ -89,8 +111,29 @@ router.put('/update-role/:id', authenticateToken, requireRole(['admin', 'thu_nga
       }
     }
 
+    const oldRole = user.role;
     user.role = role;
     await user.save();
+
+    // Ghi nhận hoạt động
+    try {
+      await ActivityLog.create({
+        user_id: req.user?._id,
+        username: req.user?.username || req.user?.email || '',
+        role: req.user?.role,
+        action: 'update',
+        module: 'user',
+        payload_snapshot: {
+          email: user.email,
+          full_name: user.full_name,
+          old_role: oldRole,
+          new_role: role,
+          branch_name: user.branch_id?.name || 'N/A'
+        },
+        ref_id: user.email || String(user._id),
+        branch: req.user?.branch_name || 'N/A'
+      });
+    } catch (e) { /* ignore log error */ }
 
     res.status(200).json({ message: 'Cập nhật vai trò thành công' });
   } catch (error) {
@@ -107,11 +150,31 @@ router.delete('/delete-user/:id', authenticateToken, requireRole(['admin']), asy
       return res.status(400).json({ message: 'Không thể xóa chính mình' });
     }
 
-    const user = await User.findByIdAndDelete(userId);
+    const user = await User.findById(userId);
     if (!user) {
       return res.status(404).json({ message: 'User không tồn tại' });
     }
 
+    // Ghi nhận hoạt động trước khi xóa
+    try {
+      await ActivityLog.create({
+        user_id: req.user?._id,
+        username: req.user?.username || req.user?.email || '',
+        role: req.user?.role,
+        action: 'delete',
+        module: 'user',
+        payload_snapshot: {
+          email: user.email,
+          full_name: user.full_name,
+          role: user.role,
+          branch_name: user.branch_id?.name || 'N/A'
+        },
+        ref_id: user.email || String(user._id),
+        branch: req.user?.branch_name || 'N/A'
+      });
+    } catch (e) { /* ignore log error */ }
+
+    await User.findByIdAndDelete(userId);
     res.status(200).json({ message: 'Xóa user thành công' });
   } catch (error) {
     res.status(500).json({ message: 'Lỗi server khi xóa user', error: error.message });
@@ -119,3 +182,98 @@ router.delete('/delete-user/:id', authenticateToken, requireRole(['admin']), asy
 });
 
 export default router;
+
+// =============== APIs mở rộng quản lý user ===============
+// Đổi mật khẩu
+router.put('/change-password/:id', authenticateToken, requireRole(['admin', 'thu_ngan']), async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { currentPassword, newPassword } = req.body;
+    const user = await User.findById(id);
+    if (!user) return res.status(404).json({ message: 'User không tồn tại' });
+
+    // Nếu không phải admin và đổi mật khẩu người khác → chặn
+    if (req.user.role !== 'admin' && String(req.user._id) !== String(id)) {
+      return res.status(403).json({ message: 'Không có quyền đổi mật khẩu người khác' });
+    }
+
+    if (req.user.role !== 'admin') {
+      // kiểm tra currentPassword khi tự đổi mật khẩu
+      const ok = await bcrypt.compare(currentPassword || '', user.password || '');
+      if (!ok) return res.status(400).json({ message: 'Mật khẩu hiện tại không đúng' });
+    }
+
+    const hashed = await bcrypt.hash(newPassword, 10);
+    user.password = hashed;
+    await user.save();
+    res.json({ message: 'Đổi mật khẩu thành công' });
+  } catch (err) {
+    res.status(500).json({ message: 'Lỗi đổi mật khẩu', error: err.message });
+  }
+});
+
+// Cập nhật thông tin user
+router.put('/update/:id', authenticateToken, requireRole(['admin', 'thu_ngan']), async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { full_name, email, phone, branch_id, role } = req.body;
+
+    const target = await User.findById(id);
+    if (!target) return res.status(404).json({ message: 'User không tồn tại' });
+
+    if (req.user.role !== 'admin' && String(req.user.branch_id) !== String(target.branch_id)) {
+      return res.status(403).json({ message: 'Chỉ cập nhật user trong chi nhánh của bạn' });
+    }
+
+    if (role === 'admin' && req.user.role !== 'admin') {
+      return res.status(403).json({ message: 'Chỉ admin mới gán quyền admin' });
+    }
+
+    if (email && email !== target.email) {
+      const exists = await User.findOne({ email });
+      if (exists) return res.status(400).json({ message: 'Email đã tồn tại' });
+      target.email = email;
+    }
+
+    if (full_name !== undefined) target.full_name = full_name;
+    if (phone !== undefined) target.phone = phone;
+    if (branch_id !== undefined) {
+      // Xử lý branch_id: nếu role là admin hoặc branch_id là empty string thì set null
+      target.branch_id = (role === 'admin' || branch_id === '') ? null : branch_id;
+    }
+    if (role !== undefined) {
+      target.role = role;
+      // Nếu role là admin thì clear branch_name
+      if (role === 'admin') {
+        target.branch_name = null;
+      }
+    }
+
+    await target.save();
+    res.json({ message: 'Cập nhật user thành công' });
+  } catch (err) {
+    res.status(500).json({ message: 'Lỗi cập nhật user', error: err.message });
+  }
+});
+
+// Xóa user
+router.delete('/:id', authenticateToken, requireRole(['admin', 'thu_ngan']), async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (String(req.user._id) === String(id)) {
+      return res.status(400).json({ message: 'Không thể tự xóa chính mình' });
+    }
+    const target = await User.findById(id);
+    if (!target) return res.status(404).json({ message: 'User không tồn tại' });
+    if (target.role === 'admin' && req.user.role !== 'admin') {
+      return res.status(403).json({ message: 'Không thể xóa admin' });
+    }
+    if (req.user.role !== 'admin' && String(req.user.branch_id) !== String(target.branch_id)) {
+      return res.status(403).json({ message: 'Chỉ xóa user trong chi nhánh của bạn' });
+    }
+    await target.deleteOne();
+    res.json({ message: 'Xóa user thành công' });
+  } catch (err) {
+    res.status(500).json({ message: 'Lỗi xóa user', error: err.message });
+  }
+});

@@ -18,7 +18,7 @@ const DataTable = ({
         <div className="flex items-center justify-between">
           <h3 className="text-xl font-bold text-gray-900">{title}</h3>
           <div className="text-sm text-gray-600 bg-white px-3 py-1 rounded-full">
-            {totalItems} sản phẩm
+            {totalItems} hoạt động
           </div>
         </div>
       </div>
@@ -30,7 +30,7 @@ const DataTable = ({
               {columns.map((column, index) => (
                 <th 
                   key={index}
-                  className="px-6 py-4 text-left text-xs font-bold text-gray-600 uppercase tracking-wider"
+                  className={`px-6 py-4 text-left text-xs font-bold text-gray-600 uppercase tracking-wider ${column.width || ''}`}
                 >
                   {column.header}
                 </th>
@@ -41,7 +41,10 @@ const DataTable = ({
             {data.map((item, index) => (
               <tr key={item.id || index} className="table-row">
                 {columns.map((column, colIndex) => (
-                  <td key={colIndex} className="px-6 py-4 whitespace-nowrap">
+                  <td 
+                    key={colIndex} 
+                    className={`px-6 py-4 ${column.width === 'flex-1' ? 'whitespace-normal' : 'whitespace-nowrap'} ${column.width || ''}`}
+                  >
                     {column.render ? column.render(item) : item[column.key]}
                   </td>
                 ))}

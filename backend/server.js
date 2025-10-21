@@ -271,20 +271,29 @@ app.post('/api/nhap-hang', async (req, res) => {
       const totalImportCost = priceImportNum; // IMEI luôn số lượng 1
       const totalPaidToSupplier = daTTNhapNum;
       const supplierDebtIncrease = Math.max(totalImportCost - totalPaidToSupplier, 0);
-      if (supplierDebtIncrease > 0 && supplier) {
-        await SupplierDebt.findOneAndUpdate(
-          { supplier_name: supplier, branch: branch || '' },
-          {
-            $inc: { total_debt: supplierDebtIncrease },
-            $push: {
-              debt_history: {
-                type: 'add', amount: supplierDebtIncrease, date: new Date(),
-                note: `Cộng nợ từ nhập hàng: ${product_name} (IMEI: ${imei})`, related_id: newItem._id?.toString() || ''
+      if (supplier && priceImportNum > 0) {
+        // Luôn ghi lịch sử công nợ: số nợ tăng = giá nhập - đã thanh toán
+        const supplierDebtIncrease = Math.max(priceImportNum - (daTTNhapNum || 0), 0);
+        try {
+          await SupplierDebt.findOneAndUpdate(
+            { supplier_name: supplier, branch: branch || '' },
+            {
+              $inc: { total_debt: supplierDebtIncrease, total_paid: daTTNhapNum || 0 },
+              $push: {
+                debt_history: {
+                  type: supplierDebtIncrease > 0 ? 'add' : 'pay',
+                  amount: supplierDebtIncrease > 0 ? supplierDebtIncrease : (daTTNhapNum || 0),
+                  date: new Date(),
+                  note: `Nhập đơn hàng ${product_name} (IMEI: ${imei || 'N/A'}) - Giá: ${priceImportNum}đ, Đã thanh toán: ${daTTNhapNum || 0}đ`,
+                  related_id: newItem._id?.toString() || ''
+                }
               }
-            }
-          },
-          { upsert: true, new: true }
-        );
+            },
+            { upsert: true, new: true }
+          );
+        } catch (e) {
+          console.error('⚠️ Ghi lịch sử công nợ NCC (import) lỗi:', e.message);
+        }
       }
 
       // --- Ghi SỔ QUỸ: hỗ trợ đa nguồn ---

@@ -3,6 +3,7 @@ import mongoose from 'mongoose';
 const router = express.Router();
 import Inventory from '../models/Inventory.js';
 import ExportHistory from '../models/ExportHistory.js'; // Thêm dòng này
+import ActivityLog from '../models/ActivityLog.js';
 import { sendResetPasswordEmail } from '../utils/mail.js';
 import { authenticateToken, requireReportAccess } from '../middleware/auth.js';
 import ReturnExport from '../models/ReturnExport.js';
@@ -90,7 +91,9 @@ router.get('/financial-report/summary', async (req, res) => {
       .reduce((s, i) => s + (i.amount || 0), 0);
 
     const otherIncome = cashItems
-      .filter(i => i.type === 'thu' && (!i.related_type || i.related_type === 'manual'))
+      // Chỉ tính thu nhập khác cho các phiếu thu tạo thủ công (manual)
+      // Loại trừ điều chỉnh tổng quỹ (adjustment) và các phiếu tự động khác
+      .filter(i => i.type === 'thu' && i.related_type === 'manual')
       .reduce((s, i) => s + (i.amount || 0), 0);
 
     // ✅ Lợi nhuận thuần KHÔNG trừ chi phí (chỉ tính doanh thu thuần + thu nhập khác)
@@ -316,6 +319,35 @@ router.post('/xuat-hang', async (req, res) => {
         export_type: "iphone",
       });
 
+      // === GHI NHẬN HOẠT ĐỘNG ===
+      try {
+        const activityData = {
+          user_id: req.user?._id,
+          username: req.user?.username || req.user?.email || '',
+          role: req.user?.role,
+          action: 'create',
+          module: 'xuat_hang',
+          payload_snapshot: {
+            imei: imei,
+            product_name: item.product_name || item.tenSanPham,
+            quantity: 1,
+            price_sell: price_sell || item.price_sell,
+            customer_name: customer_name,
+            customer_phone: customer_phone,
+            total_paid: totalPaidFromPayments,
+            branch: branch
+          },
+          ref_id: imei || String(createdExport._id),
+          branch: branch
+        };
+        
+        // Tạo mô tả chi tiết
+        const roleLabel = req.user?.role === 'admin' ? 'Admin' : (req.user?.role === 'thu_ngan' ? 'Thu ngân' : 'User');
+        activityData.description = `Nhân viên ${activityData.username} (${roleLabel}) tạo đơn xuất hàng - Sản phẩm: ${item.product_name || item.tenSanPham}${imei ? ` (IMEI: ${imei})` : ''} - Giá bán: ${new Intl.NumberFormat('vi-VN').format(price_sell || item.price_sell || 0)}đ${customer_name ? ` - Khách hàng: ${customer_name}` : ''}${customer_phone ? ` (${customer_phone})` : ''} - Đã thanh toán: ${new Intl.NumberFormat('vi-VN').format(totalPaidFromPayments || 0)}đ`;
+        
+        await ActivityLog.create(activityData);
+      } catch (e) { /* ignore log error */ }
+
       // === Ghi sổ quỹ theo từng payment
       if (normalizedPayments.length > 0) {
         const paidDate = sold_date ? new Date(sold_date) : new Date();
@@ -399,6 +431,36 @@ router.post('/xuat-hang', async (req, res) => {
         category: acc.category || "",
         export_type: "accessory",
       });
+
+      // === GHI NHẬN HOẠT ĐỘNG ===
+      try {
+        const activityData = {
+          user_id: req.user?._id,
+          username: req.user?.username || req.user?.email || '',
+          role: req.user?.role,
+          action: 'create',
+          module: 'xuat_hang',
+          payload_snapshot: {
+            sku: acc.sku,
+            product_name: acc.product_name || acc.tenSanPham,
+            quantity: quantity,
+            price_sell: price_sell || 0,
+            customer_name: customer_name,
+            customer_phone: customer_phone,
+            total_paid: totalPaidFromPayments,
+            branch: branch,
+            export_type: 'accessory'
+          },
+          ref_id: acc.sku || String(createdExport._id),
+          branch: branch
+        };
+        
+        // Tạo mô tả chi tiết
+        const roleLabel = req.user?.role === 'admin' ? 'Admin' : (req.user?.role === 'thu_ngan' ? 'Thu ngân' : 'User');
+        activityData.description = `Nhân viên ${activityData.username} (${roleLabel}) tạo đơn xuất hàng phụ kiện - Sản phẩm: ${acc.product_name || acc.tenSanPham} (SKU: ${acc.sku}) - Số lượng: ${quantity} - Giá bán: ${new Intl.NumberFormat('vi-VN').format(price_sell || 0)}đ${customer_name ? ` - Khách hàng: ${customer_name}` : ''}${customer_phone ? ` (${customer_phone})` : ''} - Đã thanh toán: ${new Intl.NumberFormat('vi-VN').format(totalPaidFromPayments || 0)}đ`;
+        
+        await ActivityLog.create(activityData);
+      } catch (e) { /* ignore log error */ }
 
       // === Ghi sổ quỹ theo từng payment
       if (normalizedPayments.length > 0) {

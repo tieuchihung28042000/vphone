@@ -3,6 +3,7 @@ const router = express.Router();
 import Inventory from '../models/Inventory.js';
 import ExportHistory from '../models/ExportHistory.js';
 import Cashbook from '../models/Cashbook.js';
+import ActivityLog from '../models/ActivityLog.js';
 import { authenticateToken, requireRole } from '../middleware/auth.js';
 
 // POST /api/report/xuat-hang-batch
@@ -51,6 +52,36 @@ router.post('/report/xuat-hang-batch', authenticateToken, requireRole(['admin','
           payments: Array.isArray(payments) ? payments.filter(p => p && p.source && Number(p.amount) > 0) : []
         });
         created.push(rec);
+
+        // === GHI NHẬN HOẠT ĐỘNG ===
+        try {
+          const activityData = {
+            user_id: req.user?._id,
+            username: req.user?.username || req.user?.email || '',
+            role: req.user?.role,
+            action: 'create',
+            module: 'xuat_hang',
+            payload_snapshot: {
+              imei: item.imei,
+              product_name: item.product_name || item.tenSanPham,
+              quantity: 1,
+              price_sell: Number(price_sell) || item.price_sell || 0,
+              customer_name: customer_name,
+              customer_phone: customer_phone,
+              total_paid: Array.isArray(payments) ? payments.reduce((s,p)=> s + (Number(p?.amount)||0), 0) : 0,
+              branch: branch || item.branch,
+              batch_id: batch_id
+            },
+            ref_id: item.imei || String(rec._id),
+            branch: branch || item.branch
+          };
+          
+          // Tạo mô tả chi tiết
+          const roleLabel = req.user?.role === 'admin' ? 'Admin' : (req.user?.role === 'thu_ngan' ? 'Thu ngân' : 'User');
+          activityData.description = `Nhân viên ${activityData.username} (${roleLabel}) tạo đơn xuất hàng batch - Sản phẩm: ${item.product_name || item.tenSanPham}${item.imei ? ` (IMEI: ${item.imei})` : ''} - Giá bán: ${new Intl.NumberFormat('vi-VN').format(Number(price_sell) || item.price_sell || 0)}đ${customer_name ? ` - Khách hàng: ${customer_name}` : ''}${customer_phone ? ` (${customer_phone})` : ''} - Đã thanh toán: ${new Intl.NumberFormat('vi-VN').format(Array.isArray(payments) ? payments.reduce((s,p)=> s + (Number(p?.amount)||0), 0) : 0)}đ`;
+          
+          await ActivityLog.create(activityData);
+        } catch (e) { /* ignore log error */ }
       } else {
         // Xuất phụ kiện: nới điều kiện tìm theo SKU + chi nhánh, bỏ ràng buộc tên; trừ tồn trên nhiều bản ghi nếu cần
         const q = parseInt(quantity) || 1;
@@ -101,6 +132,37 @@ router.post('/report/xuat-hang-batch', authenticateToken, requireRole(['admin','
           payments: Array.isArray(payments) ? payments.filter(p => p && p.source && Number(p.amount) > 0) : []
         });
         created.push(rec);
+
+        // === GHI NHẬN HOẠT ĐỘNG ===
+        try {
+          const activityData = {
+            user_id: req.user?._id,
+            username: req.user?.username || req.user?.email || '',
+            role: req.user?.role,
+            action: 'create',
+            module: 'xuat_hang',
+            payload_snapshot: {
+              sku: refInv?.sku || sku,
+              product_name: refInv?.product_name || refInv?.tenSanPham || (product_name || ''),
+              quantity: q,
+              price_sell: Number(price_sell) || 0,
+              customer_name: customer_name,
+              customer_phone: customer_phone,
+              total_paid: Array.isArray(payments) ? payments.reduce((s,p)=> s + (Number(p?.amount)||0), 0) : 0,
+              branch: branch || refInv?.branch || '',
+              batch_id: batch_id,
+              export_type: 'accessory'
+            },
+            ref_id: refInv?.sku || sku || String(rec._id),
+            branch: branch || refInv?.branch || ''
+          };
+          
+          // Tạo mô tả chi tiết
+          const roleLabel = req.user?.role === 'admin' ? 'Admin' : (req.user?.role === 'thu_ngan' ? 'Thu ngân' : 'User');
+          activityData.description = `Nhân viên ${activityData.username} (${roleLabel}) tạo đơn xuất hàng phụ kiện batch - Sản phẩm: ${refInv?.product_name || refInv?.tenSanPham || (product_name || '')} (SKU: ${refInv?.sku || sku}) - Số lượng: ${q} - Giá bán: ${new Intl.NumberFormat('vi-VN').format(Number(price_sell) || 0)}đ${customer_name ? ` - Khách hàng: ${customer_name}` : ''}${customer_phone ? ` (${customer_phone})` : ''} - Đã thanh toán: ${new Intl.NumberFormat('vi-VN').format(Array.isArray(payments) ? payments.reduce((s,p)=> s + (Number(p?.amount)||0), 0) : 0)}đ`;
+          
+          await ActivityLog.create(activityData);
+        } catch (e) { /* ignore log error */ }
       }
     }
 

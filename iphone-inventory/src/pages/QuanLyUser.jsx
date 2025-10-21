@@ -25,6 +25,26 @@ function QuanLyUser() {
     phone: "",
   });
 
+  // States cho các modal mới
+  const [changePasswordModal, setChangePasswordModal] = useState({ open: false, user: null });
+  const [updateUserModal, setUpdateUserModal] = useState({ open: false, user: null });
+  const [deleteUserModal, setDeleteUserModal] = useState({ open: false, user: null });
+  
+  // Forms cho các modal
+  const [changePasswordForm, setChangePasswordForm] = useState({
+    currentPassword: "",
+    newPassword: "",
+    confirmPassword: ""
+  });
+  
+  const [updateUserForm, setUpdateUserForm] = useState({
+    full_name: "",
+    email: "",
+    phone: "",
+    role: "",
+    branch_id: ""
+  });
+
   // Load danh sách chi nhánh
   const fetchBranches = async () => {
     try {
@@ -192,6 +212,143 @@ function QuanLyUser() {
     }
   };
 
+  // Handlers cho các modal mới
+  const handleChangePassword = async () => {
+    if (!changePasswordForm.newPassword || !changePasswordForm.confirmPassword) {
+      alert("❌ Vui lòng nhập mật khẩu mới");
+      return;
+    }
+    
+    if (changePasswordForm.newPassword !== changePasswordForm.confirmPassword) {
+      alert("❌ Mật khẩu xác nhận không khớp");
+      return;
+    }
+    
+    try {
+      const token = localStorage.getItem("token") || sessionStorage.getItem("token");
+      const payload = {
+        newPassword: changePasswordForm.newPassword
+      };
+      
+      // Nếu không phải admin đổi mật khẩu cho người khác thì cần mật khẩu hiện tại
+      const currentUser = JSON.parse(localStorage.getItem('user') || '{}');
+      if (currentUser.role !== 'admin' && changePasswordModal.user._id !== currentUser._id) {
+        payload.currentPassword = changePasswordForm.currentPassword;
+      }
+      
+      const res = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/user/change-password/${changePasswordModal.user._id}`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify(payload),
+      });
+
+      if (res.ok) {
+        alert("✅ Đổi mật khẩu thành công");
+        setChangePasswordModal({ open: false, user: null });
+        setChangePasswordForm({ currentPassword: "", newPassword: "", confirmPassword: "" });
+      } else {
+        const data = await res.json();
+        alert(`❌ ${data.message || 'Đổi mật khẩu thất bại'}`);
+      }
+    } catch (err) {
+      alert("❌ Lỗi khi đổi mật khẩu");
+    }
+  };
+
+  const handleUpdateUser = async () => {
+    if (!updateUserForm.full_name.trim()) {
+      alert("❌ Vui lòng nhập họ tên");
+      return;
+    }
+    
+    try {
+      const token = localStorage.getItem("token") || sessionStorage.getItem("token");
+      
+      // Chuẩn bị payload, xử lý branch_id cho admin
+      const payload = { ...updateUserForm };
+      if (payload.role === 'admin') {
+        payload.branch_id = null; // Admin không cần branch_id
+        payload.branch_name = null;
+      } else if (!payload.branch_id) {
+        alert("❌ Vui lòng chọn chi nhánh cho user không phải admin");
+        return;
+      }
+      
+      const res = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/user/update/${updateUserModal.user._id}`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify(payload),
+      });
+
+      if (res.ok) {
+        alert("✅ Cập nhật thông tin user thành công");
+        setUpdateUserModal({ open: false, user: null });
+        setUpdateUserForm({ full_name: "", email: "", phone: "", role: "", branch_id: "" });
+        fetchAllUsers();
+      } else {
+        const data = await res.json();
+        alert(`❌ ${data.message || 'Cập nhật thất bại'}`);
+      }
+    } catch (err) {
+      console.error('❌ Error updating user:', err);
+      alert("❌ Lỗi khi cập nhật user");
+    }
+  };
+
+  const handleDeleteUser = async () => {
+    if (!window.confirm(`Bạn có chắc muốn xóa user "${deleteUserModal.user.email}"?`)) {
+      return;
+    }
+    
+    try {
+      const token = localStorage.getItem("token") || sessionStorage.getItem("token");
+      const res = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/user/${deleteUserModal.user._id}`, {
+        method: "DELETE",
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      if (res.ok) {
+        alert("✅ Xóa user thành công");
+        setDeleteUserModal({ open: false, user: null });
+        fetchAllUsers();
+      } else {
+        const data = await res.json();
+        alert(`❌ ${data.message || 'Xóa user thất bại'}`);
+      }
+    } catch (err) {
+      alert("❌ Lỗi khi xóa user");
+    }
+  };
+
+  // Mở các modal
+  const openChangePasswordModal = (user) => {
+    setChangePasswordModal({ open: true, user });
+    setChangePasswordForm({ currentPassword: "", newPassword: "", confirmPassword: "" });
+  };
+
+  const openUpdateUserModal = (user) => {
+    setUpdateUserModal({ open: true, user });
+    setUpdateUserForm({
+      full_name: user.full_name || "",
+      email: user.email || "",
+      phone: user.phone || "",
+      role: user.role || "",
+      branch_id: user.branch_id || ""
+    });
+  };
+
+  const openDeleteUserModal = (user) => {
+    setDeleteUserModal({ open: true, user });
+  };
+
   // Stats calculation
   const stats = {
     totalPending: users.length,
@@ -321,6 +478,32 @@ function QuanLyUser() {
         </span>
       )
     },
+    {
+      header: "Thao tác",
+      key: "actions",
+      render: (user) => (
+        <div className="flex gap-2">
+          <button
+            onClick={() => openChangePasswordModal(user)}
+            className="px-2 py-1 bg-blue-500 text-white text-xs rounded hover:bg-blue-600"
+          >
+            🔑 Đổi MK
+          </button>
+          <button
+            onClick={() => openUpdateUserModal(user)}
+            className="px-2 py-1 bg-green-500 text-white text-xs rounded hover:bg-green-600"
+          >
+            ✏️ Sửa
+          </button>
+          <button
+            onClick={() => openDeleteUserModal(user)}
+            className="px-2 py-1 bg-red-500 text-white text-xs rounded hover:bg-red-600"
+          >
+            🗑️ Xóa
+          </button>
+        </div>
+      )
+    }
   ];
 
   const renderContent = () => {
@@ -560,6 +743,194 @@ function QuanLyUser() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Change Password Modal */}
+      {changePasswordModal.open && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-2xl p-6 max-w-md w-full mx-4">
+            <h3 className="text-xl font-bold text-gray-900 mb-4">🔑 Đổi mật khẩu - {changePasswordModal.user?.email}</h3>
+            
+            <div className="space-y-4">
+              {/* Chỉ hiển thị mật khẩu hiện tại nếu không phải admin đổi cho người khác */}
+              {(() => {
+                const currentUser = JSON.parse(localStorage.getItem('user') || '{}');
+                const isAdminChangingOthers = currentUser.role === 'admin' && changePasswordModal.user._id !== currentUser._id;
+                return !isAdminChangingOthers ? (
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-700 mb-2">Mật khẩu hiện tại *</label>
+                    <input
+                      type="password"
+                      value={changePasswordForm.currentPassword}
+                      onChange={(e) => setChangePasswordForm({...changePasswordForm, currentPassword: e.target.value})}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      required
+                    />
+                  </div>
+                ) : null;
+              })()}
+              
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">Mật khẩu mới *</label>
+                <input
+                  type="password"
+                  value={changePasswordForm.newPassword}
+                  onChange={(e) => setChangePasswordForm({...changePasswordForm, newPassword: e.target.value})}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  required
+                />
+              </div>
+              
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">Xác nhận mật khẩu mới *</label>
+                <input
+                  type="password"
+                  value={changePasswordForm.confirmPassword}
+                  onChange={(e) => setChangePasswordForm({...changePasswordForm, confirmPassword: e.target.value})}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  required
+                />
+              </div>
+            </div>
+            
+            <div className="flex gap-3 mt-6">
+              <button
+                onClick={() => setChangePasswordModal({ open: false, user: null })}
+                className="flex-1 bg-gray-500 hover:bg-gray-600 text-white py-3 px-4 rounded-xl font-medium transition-colors"
+              >
+                ❌ Hủy
+              </button>
+              <button
+                onClick={handleChangePassword}
+                className="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-3 px-4 rounded-xl font-medium transition-colors"
+              >
+                🔑 Đổi mật khẩu
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Update User Modal */}
+      {updateUserModal.open && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-2xl p-6 max-w-md w-full mx-4 max-h-[90vh] overflow-y-auto">
+            <h3 className="text-xl font-bold text-gray-900 mb-4">✏️ Cập nhật thông tin user</h3>
+            
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">Họ tên *</label>
+                <input
+                  type="text"
+                  value={updateUserForm.full_name}
+                  onChange={(e) => setUpdateUserForm({...updateUserForm, full_name: e.target.value})}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  required
+                />
+              </div>
+              
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">Email</label>
+                <input
+                  type="email"
+                  value={updateUserForm.email}
+                  onChange={(e) => setUpdateUserForm({...updateUserForm, email: e.target.value})}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">Số điện thoại</label>
+                <input
+                  type="text"
+                  value={updateUserForm.phone}
+                  onChange={(e) => setUpdateUserForm({...updateUserForm, phone: e.target.value})}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">Vai trò</label>
+                <select
+                  value={updateUserForm.role}
+                  onChange={(e) => setUpdateUserForm({...updateUserForm, role: e.target.value})}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="nhan_vien_ban_hang">🛒 Nhân viên bán hàng</option>
+                  <option value="thu_ngan">💰 Thu ngân</option>
+                  <option value="admin">👑 Admin</option>
+                </select>
+              </div>
+              
+              {updateUserForm.role !== 'admin' && (
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">Chi nhánh</label>
+                  <select
+                    value={updateUserForm.branch_id}
+                    onChange={(e) => setUpdateUserForm({...updateUserForm, branch_id: e.target.value})}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="">Chọn chi nhánh</option>
+                    {branches.map((branch) => (
+                      <option key={branch._id} value={branch._id}>
+                        {branch.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+            </div>
+            
+            <div className="flex gap-3 mt-6">
+              <button
+                onClick={() => setUpdateUserModal({ open: false, user: null })}
+                className="flex-1 bg-gray-500 hover:bg-gray-600 text-white py-3 px-4 rounded-xl font-medium transition-colors"
+              >
+                ❌ Hủy
+              </button>
+              <button
+                onClick={handleUpdateUser}
+                className="flex-1 bg-green-600 hover:bg-green-700 text-white py-3 px-4 rounded-xl font-medium transition-colors"
+              >
+                ✏️ Cập nhật
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete User Modal */}
+      {deleteUserModal.open && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-2xl p-6 max-w-md w-full mx-4">
+            <h3 className="text-xl font-bold text-gray-900 mb-4">🗑️ Xóa user</h3>
+            
+            <div className="mb-6">
+              <p className="text-gray-600 mb-2">Bạn có chắc muốn xóa user này?</p>
+              <div className="bg-gray-50 p-4 rounded-lg">
+                <p><strong>Email:</strong> {deleteUserModal.user?.email}</p>
+                <p><strong>Họ tên:</strong> {deleteUserModal.user?.full_name || 'Chưa có'}</p>
+                <p><strong>Vai trò:</strong> {deleteUserModal.user?.role}</p>
+              </div>
+              <p className="text-red-600 text-sm mt-2">⚠️ Hành động này không thể hoàn tác!</p>
+            </div>
+            
+            <div className="flex gap-3">
+              <button
+                onClick={() => setDeleteUserModal({ open: false, user: null })}
+                className="flex-1 bg-gray-500 hover:bg-gray-600 text-white py-3 px-4 rounded-xl font-medium transition-colors"
+              >
+                ❌ Hủy
+              </button>
+              <button
+                onClick={handleDeleteUser}
+                className="flex-1 bg-red-600 hover:bg-red-700 text-white py-3 px-4 rounded-xl font-medium transition-colors"
+              >
+                🗑️ Xóa user
+              </button>
+            </div>
           </div>
         </div>
       )}

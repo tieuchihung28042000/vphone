@@ -220,8 +220,17 @@ router.post('/', authenticateToken, requireRole(['admin', 'thu_ngan']), async (r
         role: req.user?.role,
         action: 'create',
         module: 'return_import',
-        payload_snapshot: returnImport.toObject(),
-        ref_id: String(returnImport._id),
+        payload_snapshot: {
+          return_code: returnImport.return_code,
+          product_name: returnImport.product_name,
+          imei: returnImport.imei,
+          return_amount: returnImport.return_amount,
+          supplier: returnImport.supplier,
+          reason: returnImport.reason,
+          note: returnImport.note,
+          quantity: returnImport.quantity
+        },
+        ref_id: returnImport.return_code || String(returnImport._id),
         branch: returnImport.branch
       });
     } catch (e) { }
@@ -256,6 +265,28 @@ router.post('/', authenticateToken, requireRole(['admin', 'thu_ngan']), async (r
         });
         
         console.log(`✅ Updated da_thanh_toan_nhap: ${currentPaid} -> ${newPaid}`);
+
+        // ✅ Ghi nhật ký công nợ NCC (SupplierDebt) dạng "pay"
+        try {
+          await SupplierDebt.findOneAndUpdate(
+            { supplier_name: returnImport.supplier, branch: returnImport.branch },
+            {
+              $inc: { total_paid: return_amount, total_debt: -return_amount },
+              $push: {
+                debt_history: {
+                  type: 'pay',
+                  amount: return_amount,
+                  date: new Date(),
+                  note: `Trả đơn hàng ${returnImport.product_name}${returnImport.imei ? ` (IMEI: ${returnImport.imei})` : ''} - ${return_amount}đ`,
+                  related_id: returnImport._id.toString()
+                }
+              }
+            },
+            { upsert: true }
+          );
+        } catch (e) {
+          console.error('⚠️ Ghi lịch sử công nợ NCC (pay) lỗi:', e.message);
+        }
       } else {
         console.log(`⚠️ Original item not found: ${original_inventory_id}`);
       }
@@ -359,8 +390,16 @@ router.delete('/:id', authenticateToken, requireRole(['admin']), async (req, res
         role: req.user?.role,
         action: 'delete',
         module: 'return_import',
-        payload_snapshot: returnImport.toObject(),
-        ref_id: String(returnImport._id),
+        payload_snapshot: {
+          return_code: returnImport.return_code,
+          product_name: returnImport.product_name,
+          imei: returnImport.imei,
+          return_amount: returnImport.return_amount,
+          supplier: returnImport.supplier,
+          reason: returnImport.reason,
+          status: 'cancelled'
+        },
+        ref_id: returnImport.return_code || String(returnImport._id),
         branch: returnImport.branch
       });
     } catch (e) { }

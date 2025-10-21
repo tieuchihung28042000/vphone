@@ -1,5 +1,6 @@
 import express from 'express';
 import Inventory from '../models/Inventory.js';
+import ActivityLog from '../models/ActivityLog.js';
 import { authenticateToken, requireRole, filterByBranch } from '../middleware/auth.js';
 
 const router = express.Router();
@@ -61,6 +62,33 @@ router.post('/', authenticateToken, requireRole(['admin', 'thu_ngan']), async (r
     const inventory = new Inventory(req.body);
     await inventory.save();
     
+    // Ghi nhận hoạt động
+    try {
+      const activityData = {
+        user_id: req.user?._id,
+        username: req.user?.username || req.user?.email || '',
+        role: req.user?.role,
+        action: 'create',
+        module: 'inventory',
+        payload_snapshot: {
+          product_name: inventory.product_name,
+          imei: inventory.imei,
+          quantity: inventory.quantity,
+          price_import: inventory.price_import,
+          supplier: inventory.supplier,
+          category: inventory.category
+        },
+        ref_id: inventory.imei || String(inventory._id),
+        branch: inventory.branch
+      };
+      
+      // Tạo mô tả chi tiết
+      const roleLabel = req.user?.role === 'admin' ? 'Admin' : (req.user?.role === 'thu_ngan' ? 'Thu ngân' : 'User');
+      activityData.description = `Nhân viên ${activityData.username} (${roleLabel}) tạo sản phẩm mới - Tên: ${inventory.product_name || 'N/A'}${inventory.imei ? ` (IMEI: ${inventory.imei})` : ''} - Số lượng: ${inventory.quantity || 0} - Giá nhập: ${new Intl.NumberFormat('vi-VN').format(inventory.price_import || 0)}đ${inventory.supplier ? ` - Nhà cung cấp: ${inventory.supplier}` : ''}`;
+      
+      await ActivityLog.create(activityData);
+    } catch (e) { /* ignore log error */ }
+    
     res.status(201).json({
       success: true,
       data: inventory,
@@ -102,6 +130,33 @@ router.put('/:id', authenticateToken, requireRole(['admin', 'thu_ngan']), async 
       });
     }
     
+    // Ghi nhận hoạt động
+    try {
+      const activityData = {
+        user_id: req.user?._id,
+        username: req.user?.username || req.user?.email || '',
+        role: req.user?.role,
+        action: 'update',
+        module: 'inventory',
+        payload_snapshot: {
+          product_name: inventory.product_name,
+          imei: inventory.imei,
+          quantity: inventory.quantity,
+          price_import: inventory.price_import,
+          supplier: inventory.supplier,
+          status: inventory.status
+        },
+        ref_id: inventory.imei || String(inventory._id),
+        branch: inventory.branch
+      };
+      
+      // Tạo mô tả chi tiết
+      const roleLabel = req.user?.role === 'admin' ? 'Admin' : (req.user?.role === 'thu_ngan' ? 'Thu ngân' : 'User');
+      activityData.description = `Nhân viên ${activityData.username} (${roleLabel}) cập nhật sản phẩm - Tên: ${inventory.product_name || 'N/A'}${inventory.imei ? ` (IMEI: ${inventory.imei})` : ''} - Số lượng: ${inventory.quantity || 0} - Trạng thái: ${inventory.status === 'in_stock' ? 'Còn hàng' : 'Hết hàng'}`;
+      
+      await ActivityLog.create(activityData);
+    } catch (e) { /* ignore log error */ }
+    
     res.json({
       success: true,
       data: inventory,
@@ -120,7 +175,7 @@ router.put('/:id', authenticateToken, requireRole(['admin', 'thu_ngan']), async 
 // DELETE /api/inventory/:id - Xóa inventory
 router.delete('/:id', authenticateToken, requireRole(['admin', 'thu_ngan']), async (req, res) => {
   try {
-    const inventory = await Inventory.findByIdAndDelete(req.params.id);
+    const inventory = await Inventory.findById(req.params.id);
     
     if (!inventory) {
       return res.status(404).json({
@@ -128,6 +183,34 @@ router.delete('/:id', authenticateToken, requireRole(['admin', 'thu_ngan']), asy
         message: 'Không tìm thấy inventory'
       });
     }
+    
+    // Ghi nhận hoạt động trước khi xóa
+    try {
+      const activityData = {
+        user_id: req.user?._id,
+        username: req.user?.username || req.user?.email || '',
+        role: req.user?.role,
+        action: 'delete',
+        module: 'inventory',
+        payload_snapshot: {
+          product_name: inventory.product_name,
+          imei: inventory.imei,
+          quantity: inventory.quantity,
+          price_import: inventory.price_import,
+          supplier: inventory.supplier
+        },
+        ref_id: inventory.imei || String(inventory._id),
+        branch: inventory.branch
+      };
+      
+      // Tạo mô tả chi tiết
+      const roleLabel = req.user?.role === 'admin' ? 'Admin' : (req.user?.role === 'thu_ngan' ? 'Thu ngân' : 'User');
+      activityData.description = `Nhân viên ${activityData.username} (${roleLabel}) xóa sản phẩm - Tên: ${inventory.product_name || 'N/A'}${inventory.imei ? ` (IMEI: ${inventory.imei})` : ''} - Số lượng: ${inventory.quantity || 0}`;
+      
+      await ActivityLog.create(activityData);
+    } catch (e) { /* ignore log error */ }
+    
+    await Inventory.findByIdAndDelete(req.params.id);
     
     res.json({
       success: true,

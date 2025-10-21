@@ -48,6 +48,14 @@ function LichSuHoatDong() {
         // Backend trả về: { success, data, pagination }
         const data = Array.isArray(json.data) ? json.data : (json.items || []);
         const pagination = json.pagination || {};
+        
+        // Debug: Kiểm tra dữ liệu nhận được
+        console.log('🔍 Frontend received data:', data.slice(0, 2));
+        if (data.length > 0) {
+          console.log('🔍 First item description:', data[0].description);
+          console.log('🔍 First item keys:', Object.keys(data[0]));
+        }
+        
         setItems(data);
         setTotal(pagination.total || json.total || data.length || 0);
         setPage(pagination.page || json.page || 1);
@@ -67,7 +75,7 @@ function LichSuHoatDong() {
 
   useEffect(() => {
     fetchLogs(1);
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleFilterChange = (key, value) => {
     setFilters(prev => ({ ...prev, [key]: value }));
@@ -89,22 +97,30 @@ function LichSuHoatDong() {
 
   const totalPages = Math.max(1, Math.ceil(total / limit));
 
-  // Table columns
+  // Table columns - điều chỉnh độ rộng để mô tả chi tiết rộng hơn
   const columns = [
     {
       header: "Thời gian",
       key: "createdAt",
+      width: "w-32", // Thu nhỏ cột thời gian
       render: (item) => (
-        <div className="text-sm text-gray-900">
-          {item.createdAt ? new Date(item.createdAt).toLocaleString('vi-VN') : ''}
+        <div className="text-xs text-gray-900">
+          {item.createdAt ? new Date(item.createdAt).toLocaleString('vi-VN', {
+            day: '2-digit',
+            month: '2-digit',
+            year: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit'
+          }) : ''}
         </div>
       )
     },
     {
       header: "Người dùng",
       key: "username",
+      width: "w-40", // Thu nhỏ cột người dùng
       render: (item) => (
-        <div className="text-sm font-medium text-gray-900">
+        <div className="text-xs font-medium text-gray-900 truncate">
           {item.username || 'N/A'}
         </div>
       )
@@ -112,61 +128,50 @@ function LichSuHoatDong() {
     {
       header: "Vai trò",
       key: "role",
+      width: "w-24", // Thu nhỏ cột vai trò
       render: (item) => {
         const roleLabels = {
           admin: "👑 Admin",
           thu_ngan: "💰 Thu ngân",
-          nhan_vien_ban_hang: "🛒 Nhân viên bán hàng",
+          nhan_vien_ban_hang: "🛒 NV",
           user: "👤 User"
         };
         return (
-          <span className="text-sm text-gray-600">
+          <span className="text-xs text-gray-600">
             {roleLabels[item.role] || item.role}
           </span>
         );
       }
     },
     {
-      header: "Module",
-      key: "module",
-      render: (item) => (
-        <span className="text-sm text-blue-600 font-medium">
-          {item.module || 'N/A'}
-        </span>
-      )
-    },
-    {
-      header: "Hành động",
-      key: "action",
+      header: "Mô tả chi tiết",
+      key: "description",
+      width: "flex-1", // Mô tả chi tiết chiếm phần còn lại
       render: (item) => {
-        const actionColors = {
-          create: "green",
-          update: "blue", 
-          delete: "red"
-        };
-        const color = actionColors[item.action] || "gray";
+        // Debug: Log để kiểm tra
+        console.log('🔍 Rendering item:', { 
+          id: item._id, 
+          description: item.description, 
+          action: item.action, 
+          module: item.module 
+        });
+        
+        const description = item.description || `${item.action || 'Thao tác'} ${item.module || 'mục'}`;
+        
         return (
-          <span className={`badge-${color}`}>
-            {item.action || 'N/A'}
-          </span>
+          <div className="text-sm text-gray-800 leading-relaxed">
+            {description}
+          </div>
         );
       }
     },
     {
       header: "Chi nhánh",
       key: "branch",
+      width: "w-32", // Thu nhỏ cột chi nhánh
       render: (item) => (
-        <div className="text-sm text-gray-600">
+        <div className="text-xs text-gray-600 truncate">
           {item.branch || 'N/A'}
-        </div>
-      )
-    },
-    {
-      header: "ID tham chiếu",
-      key: "ref_id",
-      render: (item) => (
-        <div className="text-xs font-mono text-gray-500">
-          {item.ref_id ? item.ref_id.substring(0, 8) + '...' : 'N/A'}
         </div>
       )
     }
