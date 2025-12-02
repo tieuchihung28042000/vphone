@@ -20,23 +20,35 @@ router.get('/cong-no-list', async (req, res) => {
   try {
     const { search = "", show_all = "false" } = req.query;
     
-    let query = {
-      customer_name: { $ne: null, $ne: "" }
+    // Xây dựng query với tìm kiếm và loại trừ đơn đã hoàn trả
+    const exportQuery = {
+      customer_name: { $ne: null, $ne: "" },
+      $or: [ 
+        { is_returned: { $exists: false } }, 
+        { is_returned: false } 
+      ]
     };
 
     // Thêm tìm kiếm theo tên hoặc sđt
     if (search.trim()) {
-      query.$or = [
-        { customer_name: { $regex: search, $options: 'i' } },
-        { customer_phone: { $regex: search, $options: 'i' } }
+      exportQuery.$and = [
+        {
+          $or: [
+            { customer_name: { $regex: search.trim(), $options: 'i' } },
+            { customer_phone: { $regex: search.trim(), $options: 'i' } }
+          ]
+        },
+        {
+          $or: [ 
+            { is_returned: { $exists: false } }, 
+            { is_returned: false } 
+          ]
+        }
       ];
+      delete exportQuery.$or; // Xóa $or ở root vì đã có trong $and
     }
-
-    // Loại trừ các đơn đã hoàn trả
-    const exportItems = await ExportHistory.find({
-      ...query,
-      $or: [ { is_returned: { $exists: false } }, { is_returned: false } ]
-    });
+    
+    const exportItems = await ExportHistory.find(exportQuery);
     console.log(`🔍 Found ${exportItems.length} export items for customer debt calculation`);
 
     // Gom nhóm theo customer_name + customer_phone
@@ -357,8 +369,8 @@ router.get('/supplier-debt-list', async (req, res) => {
     // Thêm tìm kiếm theo tên hoặc sđt
     if (search.trim()) {
       query.$or = [
-        { supplier: { $regex: search, $options: 'i' } },
-        { supplier_phone: { $regex: search, $options: 'i' } }
+        { supplier: { $regex: search.trim(), $options: 'i' } },
+        { supplier_phone: { $regex: search.trim(), $options: 'i' } }
       ];
     }
 
@@ -444,14 +456,18 @@ router.get('/supplier-debt-list', async (req, res) => {
 // ✅ API trả nợ nhà cung cấp
 router.put('/supplier-debt-pay', async (req, res) => {
   try {
-  const { supplier_name, amount, note, branch, payments = [] } = req.body;
+    const { supplier_name, amount, note, branch, payments = [] } = req.body;
     
-    if (!supplier_name || !amount || isNaN(amount) || Number(amount) <= 0) {
-      return res.status(400).json({ message: "❌ Thông tin không hợp lệ" });
+    if (!supplier_name || typeof supplier_name !== 'string' || supplier_name.trim().length === 0) {
+      return res.status(400).json({ message: "❌ Thiếu thông tin tên nhà cung cấp" });
     }
   
-    const query = { supplier: supplier_name };
+    const query = { supplier: supplier_name.trim() };
     const orders = await Inventory.find(query).sort({ import_date: 1 });
+
+    if (orders.length === 0) {
+      return res.status(404).json({ message: "❌ Không tìm thấy đơn nhập của nhà cung cấp này" });
+    }
 
     const hasPayments = Array.isArray(payments) && payments.length > 0;
     const totalInput = hasPayments ? payments.reduce((s, p) => s + Number(p?.amount || 0), 0) : Number(amount);
@@ -461,32 +477,46 @@ router.put('/supplier-debt-pay', async (req, res) => {
 
     let remain = Number(totalInput);
     let totalPaid = 0;
+    const updatedOrders = [];
 
     for (const order of orders) {
       if (remain <= 0) break;
       
       const priceImport = parseFloat(order.price_import) || 0;
+      const quantity = parseInt(order.quantity) || 1;
+      const totalPrice = priceImport * quantity;
       const currentDaTT = parseFloat(order.da_thanh_toan_nhap) || 0;
-      const currentDebt = Math.max(priceImport - currentDaTT, 0);
+      const currentDebt = Math.max(totalPrice - currentDaTT, 0);
       
       if (currentDebt <= 0) continue;
       
       const toPay = Math.min(remain, currentDebt);
       const newDaTT = currentDaTT + toPay;
       
-      await Inventory.findByIdAndUpdate(order._id, {
-        da_thanh_toan_nhap: newDaTT
-      });
+      try {
+        await Inventory.findByIdAndUpdate(order._id, {
+          $set: { da_thanh_toan_nhap: newDaTT }
+        });
+        updatedOrders.push(order._id);
+      } catch (updateErr) {
+        console.error(`❌ Error updating order ${order._id}:`, updateErr);
+        continue; // Tiếp tục với đơn tiếp theo
+      }
       
       remain -= toPay;
       totalPaid += toPay;
+    }
+
+    if (totalPaid === 0) {
+      return res.status(400).json({ message: "❌ Không có công nợ nào để trả hoặc số tiền không đủ" });
     }
 
     // Ghi sổ quỹ: chi tiền trả NCC theo payments
     try {
       const payList = hasPayments ? payments : [{ source: 'tien_mat', amount: totalPaid }];
       for (const p of payList) {
-        if (!p || !p.amount) continue;
+        if (!p || !p.amount || Number(p.amount) <= 0) continue;
+        const validSource = getValidPaymentSource(p.source);
         await Cashbook.create({
           type: 'chi',
           amount: Number(p.amount),
@@ -494,8 +524,8 @@ router.put('/supplier-debt-pay', async (req, res) => {
           note: note || '',
           date: new Date(),
           branch: branch || 'Chi nhanh 1', // Fallback cho branch
-          source: p.source || 'tien_mat',
-          supplier: supplier_name,
+          source: validSource,
+          supplier: supplier_name.trim(),
           related_type: 'tra_no_ncc',
           is_auto: true,
           editable: false
@@ -503,12 +533,14 @@ router.put('/supplier-debt-pay', async (req, res) => {
       }
     } catch (e) {
       console.error('❌ Error creating cashbook entries:', e);
-      return res.status(500).json({ message: '❌ Lỗi ghi sổ quỹ', error: e.message });
+      // Không return error ở đây, vì đã cập nhật công nợ thành công
+      // Chỉ log lỗi và tiếp tục
     }
 
     res.json({
       message: `✅ Đã trả nợ ${totalPaid.toLocaleString()}đ cho NCC ${supplier_name}`,
-      paid_amount: totalPaid
+      paid_amount: totalPaid,
+      updated_orders: updatedOrders.length
     });
   } catch (err) {
     console.error('❌ Error in supplier-debt-pay:', err);

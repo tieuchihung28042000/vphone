@@ -45,6 +45,7 @@ function XuatHang() {
   const [inventoryItems, setInventoryItems] = useState([]); // Danh sách sản phẩm cho dropdown
   const [showInvoice, setShowInvoice] = useState(false); // Hiển thị hóa đơn inline
   const [currentInvoice, setCurrentInvoice] = useState(null); // Dữ liệu hóa đơn hiện tại
+  const [userRole, setUserRole] = useState(null); // Role của user hiện tại
   
   const getLocalBranch = () => localStorage.getItem('lastBranch') || "";
 
@@ -277,6 +278,19 @@ function XuatHang() {
     }
   };
 
+  // Lấy role từ token
+  useEffect(() => {
+    try {
+      const token = localStorage.getItem('token') || sessionStorage.getItem('token');
+      if (token) {
+        const payload = JSON.parse(atob(token.split('.')[1]));
+        setUserRole(payload.role || null);
+      }
+    } catch (e) {
+      console.error('Error decoding token:', e);
+    }
+  }, []);
+
   useEffect(() => {
     fetchSoldItems();
     fetchAvailableItems();
@@ -284,6 +298,13 @@ function XuatHang() {
     fetchBranches();
     fetchCategories();
   }, []);
+
+  // Reload khi userRole hoặc branch thay đổi (cho nhân viên)
+  useEffect(() => {
+    if (userRole === 'nhan_vien_ban_hang' && formData.branch) {
+      fetchSoldItems();
+    }
+  }, [userRole, formData.branch]);
 
   // ✅ Thêm effect để ẩn suggestions khi click ra ngoài
   useEffect(() => {
@@ -2019,7 +2040,7 @@ function XuatHang() {
                           ? ` SL còn: ${item.soLuong}` 
                           : ` IMEI có sẵn: ${item.imeis.length}`
                         }
-                        {item.price_import > 0 && ` • Giá nhập: ${formatCurrency(item.price_import)}`}
+                        {userRole === 'admin' && item.price_import > 0 && ` • Giá nhập: ${formatCurrency(item.price_import)}`}
                       </div>
                       {!item.isAccessory && item.imeis.length > 0 && (
                         <div className="text-xs text-gray-400 mt-1">
@@ -2287,12 +2308,16 @@ function XuatHang() {
               onChange={handleChange} 
               className="form-input"
               required
+              disabled={userRole === 'nhan_vien_ban_hang'}
             >
               <option value="">Chọn chi nhánh</option>
               {branches.map((b) => (
                 <option key={b._id} value={b.name}>{b.name}</option>
               ))}
             </select>
+            {userRole === 'nhan_vien_ban_hang' && (
+              <div className="text-xs text-gray-500 mt-1">Nhân viên chỉ xem xuất hàng của chi nhánh được phân công</div>
+            )}
           </div>
 
           {/* Dropdown nguồn tiền đơn lẻ đã thay bằng PaymentsInput */}
@@ -2346,6 +2371,7 @@ function XuatHang() {
               value={filterBranch}
               onChange={(e) => setFilterBranch(e.target.value)}
               className="form-input"
+              disabled={userRole === 'nhan_vien_ban_hang'}
             >
               <option value="">Tất cả chi nhánh</option>
               {branches.map((b) => (

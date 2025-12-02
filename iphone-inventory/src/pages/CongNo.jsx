@@ -95,6 +95,7 @@ function CongNo() {
   
   // Filter states
   const [searchText, setSearchText] = useState("");
+  const [debouncedSearchText, setDebouncedSearchText] = useState("");
   const [showAll, setShowAll] = useState(false);
   
   // Edit modal states - ĐƠN GIẢN HÓA: Chỉ có modal cập nhật
@@ -137,7 +138,7 @@ function CongNo() {
     try {
       setLoading(true);
       const params = new URLSearchParams();
-      if (searchText.trim()) params.append('search', searchText.trim());
+      if (debouncedSearchText.trim()) params.append('search', debouncedSearchText.trim());
       if (showAll) params.append('show_all', 'true');
       const res = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/cong-no/cong-no-list?${params}`, {
         headers: {
@@ -157,7 +158,7 @@ function CongNo() {
 
   const fetchSupplierDebts = async () => {
     const params = new URLSearchParams();
-    if (searchText.trim()) params.append('search', searchText.trim());
+    if (debouncedSearchText.trim()) params.append('search', debouncedSearchText.trim());
     if (showAll) params.append('show_all', 'true');
     
     try {
@@ -353,6 +354,24 @@ function CongNo() {
       }
     },
     {
+      header: "Ngày nợ",
+      key: "debt_date",
+      render: (customer) => {
+        if (!customer.latest_date) return <span className="text-gray-400">-</span>;
+        const debtDate = new Date(customer.latest_date);
+        const today = new Date();
+        const diffTime = today - debtDate;
+        const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+        
+        if (diffDays < 0) return <span className="text-gray-400">-</span>;
+        if (diffDays === 0) return <span className="text-orange-600 font-medium">Hôm nay</span>;
+        if (diffDays === 1) return <span className="text-orange-600 font-medium">1 ngày</span>;
+        if (diffDays < 30) return <span className="text-orange-600 font-medium">{diffDays} ngày</span>;
+        if (diffDays < 90) return <span className="text-red-600 font-medium">{diffDays} ngày</span>;
+        return <span className="text-red-700 font-bold">{diffDays} ngày</span>;
+      }
+    },
+    {
       header: "Trạng thái",
       key: "status",
       render: (customer) => {
@@ -444,6 +463,15 @@ function CongNo() {
     }
   ];
 
+  // Debounce search text
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearchText(searchText);
+    }, 500); // Delay 500ms
+
+    return () => clearTimeout(timer);
+  }, [searchText]);
+
   // useEffect để fetch data khi tab thay đổi
   useEffect(() => {
     if (activeTab === "khach_no") {
@@ -451,7 +479,7 @@ function CongNo() {
     } else {
       fetchSupplierDebts();
     }
-  }, [activeTab, searchText, showAll]);
+  }, [activeTab, debouncedSearchText, showAll]);
 
   // Show loading spinner khi đang fetch
   if ((activeTab === "khach_no" && loading) || (activeTab === "minh_no_ncc" && supplierLoading)) {
@@ -687,7 +715,7 @@ function CongNo() {
                     <th className="p-2 text-center w-32">Hành động</th>
                     <th className="p-2 text-left w-48">Sản phẩm</th>
                     <th className="p-2 text-left w-32">IMEI/SKU</th>
-                    <th className="p-2 text-left">Ghi chú</th>
+                    <th className="p-2 text-left">Mô tả/Ghi chú</th>
                   </tr>
                 </thead>
                 <tbody>

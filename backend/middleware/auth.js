@@ -55,19 +55,24 @@ const requireBranch = (req, res, next) => {
     return res.status(401).json({ message: 'Authentication required' });
   }
 
-  // Admin có thể truy cập tất cả chi nhánh
-  if (req.user.role === 'admin') {
+  // Admin tổng (không có branch_id) có thể truy cập tất cả chi nhánh
+  if (req.user.role === 'admin' && !req.user.branch_id) {
     return next();
   }
 
-  // Kiểm tra xem user có branch_id không
-  if (!req.user.branch_id) {
+  // Admin chi nhánh hoặc user khác chỉ truy cập chi nhánh của mình
+  if (!req.user.branch_id && !req.user.branch_name) {
     return res.status(403).json({ message: 'User not assigned to any branch' });
   }
 
   // Thêm branch filter vào query nếu có
-  if (req.query.branch && req.user.branch_name !== req.query.branch) {
+  if (req.query.branch && req.user.branch_name && req.user.branch_name !== req.query.branch) {
     return res.status(403).json({ message: 'Access denied to this branch' });
+  }
+
+  // Tự động set branch filter nếu user có branch_name
+  if (req.user.branch_name && !req.query.branch) {
+    req.query.branch = req.user.branch_name;
   }
 
   next();
@@ -79,13 +84,15 @@ const filterByBranch = (req, res, next) => {
     return res.status(401).json({ message: 'Authentication required' });
   }
 
-  // Admin có thể xem tất cả
-  if (req.user.role === 'admin') {
+  // Admin tổng (không có branch_id) có thể xem tất cả
+  if (req.user.role === 'admin' && !req.user.branch_id) {
     return next();
   }
 
-  // Thêm filter chi nhánh vào query
-  req.branchFilter = { branch: req.user.branch_name };
+  // Admin chi nhánh hoặc user khác chỉ xem chi nhánh của mình
+  if (req.user.branch_name) {
+    req.branchFilter = { branch: req.user.branch_name };
+  }
   
   next();
 };
@@ -96,9 +103,13 @@ const requireReportAccess = (req, res, next) => {
     return res.status(401).json({ message: 'Authentication required' });
   }
 
-  // Thu ngân không được xem báo cáo
-  if (req.user.role === 'thu_ngan') {
-    return res.status(403).json({ message: 'Cashiers cannot access reports' });
+  // Thu ngân có thể xem báo cáo nhưng chỉ của chi nhánh mình
+  // Admin tổng (không có branch_id) có thể xem tất cả
+  // Admin chi nhánh hoặc thu ngân chỉ xem chi nhánh của mình
+  if (req.user.branch_name && !req.query.branch) {
+    req.query.branch = req.user.branch_name;
+  } else if (req.user.branch_name && req.query.branch && req.query.branch !== 'all' && req.query.branch !== req.user.branch_name) {
+    return res.status(403).json({ message: 'Access denied to this branch' });
   }
 
   next();

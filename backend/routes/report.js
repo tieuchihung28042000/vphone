@@ -8,6 +8,7 @@ import { sendResetPasswordEmail } from '../utils/mail.js';
 import { authenticateToken, requireReportAccess } from '../middleware/auth.js';
 import ReturnExport from '../models/ReturnExport.js';
 import Cashbook from '../models/Cashbook.js';
+import XLSX from 'xlsx';
 
 // ==================== API: Báo cáo lợi nhuận có lọc ====================
 // Bảo vệ toàn bộ router báo cáo bằng auth + chặn thu_ngan
@@ -73,6 +74,9 @@ router.get('/financial-report/summary', async (req, res) => {
 
     const exports = await ExportHistory.find(exportQuery);
     const totalRevenue = exports.reduce((s, e) => s + (e.price_sell || 0) * (e.quantity || 1), 0);
+    
+    // Tính tổng giá vốn (giá nhập hàng)
+    const totalCost = exports.reduce((s, e) => s + (e.price_import || 0) * (e.quantity || 1), 0);
 
     const returnQuery = { return_date: { $gte: fromDate, $lt: toDate } };
     if (branch && branch !== 'all') returnQuery.branch = branch;
@@ -85,25 +89,30 @@ router.get('/financial-report/summary', async (req, res) => {
     if (branch && branch !== 'all') cbQuery.branch = branch;
     const cashItems = await Cashbook.find(cbQuery);
 
-    // ✅ Chi phí chỉ tính những phiếu được tạo thủ công (không tính phiếu tự động)
+    // ✅ Chi phí chỉ tính những phiếu được tạo thủ công (không tính phiếu tự động) và có include_in_profit = true
     const totalExpense = cashItems
-      .filter(i => i.type === 'chi' && i.is_auto === false)
+      .filter(i => i.type === 'chi' && i.is_auto === false && (i.include_in_profit !== false))
       .reduce((s, i) => s + (i.amount || 0), 0);
 
     const otherIncome = cashItems
-      // Chỉ tính thu nhập khác cho các phiếu thu tạo thủ công (manual)
+      // Chỉ tính thu nhập khác cho các phiếu thu tạo thủ công (manual) và có include_in_profit = true
       // Loại trừ điều chỉnh tổng quỹ (adjustment) và các phiếu tự động khác
-      .filter(i => i.type === 'thu' && i.related_type === 'manual')
+      .filter(i => i.type === 'thu' && i.related_type === 'manual' && (i.include_in_profit !== false))
       .reduce((s, i) => s + (i.amount || 0), 0);
 
     // ✅ Lợi nhuận thuần KHÔNG trừ chi phí (chỉ tính doanh thu thuần + thu nhập khác)
     const operatingProfit = netRevenue; // Không trừ chi phí
     const netProfit = operatingProfit + otherIncome;
 
+    // Tính lợi nhuận gộp
+    const grossProfit = totalRevenue - totalCost;
+
     res.json({
       totalRevenue,
       totalReturnRevenue,
       netRevenue,
+      totalCost, // Tổng giá vốn
+      grossProfit, // Lợi nhuận gộp = Giá bán - giá vốn
       totalExpense,
       operatingProfit,
       otherIncome,
@@ -762,6 +771,76 @@ router.post('/migrate-export-history', async (req, res) => {
   } catch (error) {
     console.error('❌ Migration error:', error);
     res.status(500).json({ message: '❌ Lỗi khi migration dữ liệu', error: error.message });
+  }
+});
+
+// ==================== API: Xuất Excel báo cáo tài chính ====================
+router.get('/export-excel', authenticateToken, requireReportAccess, async (req, res) => {
+  try {
+    const { from, to, branch } = req.query;
+    if (!from || !to) {
+      return res.status(400).json({ message: 'Thiếu khoảng thời gian' });
+    }
+    const fromDate = new Date(from);
+    const toDate = new Date(to);
+    toDate.setDate(toDate.getDate() + 1);
+
+    const exportQuery = { sold_date: { $gte: fromDate, $lt: toDate } };
+    if (branch && branch !== 'all') exportQuery.branch = branch;
+
+    const exports = await ExportHistory.find(exportQuery);
+    const totalRevenue = exports.reduce((s, e) => s + (e.price_sell || 0) * (e.quantity || 1), 0);
+    const totalCost = exports.reduce((s, e) => s + (e.price_import || 0) * (e.quantity || 1), 0);
+
+    const returnQuery = { return_date: { $gte: fromDate, $lt: toDate } };
+    if (branch && branch !== 'all') returnQuery.branch = branch;
+    const returns = await ReturnExport.find(returnQuery);
+    const totalReturnRevenue = returns.reduce((s, r) => s + (r.return_amount || 0), 0);
+
+    const netRevenue = totalRevenue - totalReturnRevenue;
+    const grossProfit = totalRevenue - totalCost;
+
+    const cbQuery = { date: { $gte: fromDate, $lt: toDate } };
+    if (branch && branch !== 'all') cbQuery.branch = branch;
+    const cashItems = await Cashbook.find(cbQuery);
+
+    const totalExpense = cashItems
+      .filter(i => i.type === 'chi' && i.is_auto === false && (i.include_in_profit !== false))
+      .reduce((s, i) => s + (i.amount || 0), 0);
+
+    const otherIncome = cashItems
+      .filter(i => i.type === 'thu' && i.related_type === 'manual' && (i.include_in_profit !== false))
+      .reduce((s, i) => s + (i.amount || 0), 0);
+
+    const operatingProfit = netRevenue;
+    const netProfit = operatingProfit + otherIncome;
+
+    // Tạo dữ liệu cho Excel
+    const reportData = [
+      { 'Chỉ tiêu': 'Tổng doanh thu bán hàng', 'Giá trị': totalRevenue },
+      { 'Chỉ tiêu': 'Tổng doanh thu trả hàng', 'Giá trị': totalReturnRevenue },
+      { 'Chỉ tiêu': 'Doanh thu thuần', 'Giá trị': netRevenue },
+      { 'Chỉ tiêu': 'Giá vốn', 'Giá trị': totalCost },
+      { 'Chỉ tiêu': 'Lợi nhuận gộp', 'Giá trị': grossProfit },
+      { 'Chỉ tiêu': 'Tổng chi phí', 'Giá trị': totalExpense },
+      { 'Chỉ tiêu': 'Thu nhập khác', 'Giá trị': otherIncome },
+      { 'Chỉ tiêu': 'Lợi nhuận thuần', 'Giá trị': netProfit }
+    ];
+
+    // Tạo workbook
+    const ws = XLSX.utils.json_to_sheet(reportData);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'BaoCaoTaiChinh');
+
+    // Xuất file
+    const buffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+    const fileName = `baocao_taichinh_${from}_${to}.xlsx`;
+    
+    res.set('Content-Disposition', `attachment; filename="${fileName}"`);
+    res.type('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.send(buffer);
+  } catch (err) {
+    res.status(500).json({ message: '❌ Lỗi xuất Excel báo cáo', error: err.message });
   }
 });
 

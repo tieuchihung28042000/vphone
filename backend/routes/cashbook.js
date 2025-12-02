@@ -1,6 +1,7 @@
 import express from 'express';
 const router = express.Router();
 import Cashbook from '../models/Cashbook.js';
+import ContentSuggestion from '../models/ContentSuggestion.js';
 import XLSX from 'xlsx';
 import ActivityLog from '../models/ActivityLog.js';
 import { authenticateToken } from '../middleware/auth.js';
@@ -291,14 +292,29 @@ router.get('/', async (req, res) => {
     // Lọc theo nhà cung cấp
     if (supplier) query.supplier = new RegExp(supplier, 'i');
     
-    // Tìm kiếm trong nội dung và ghi chú
-    if (search) {
+    // Lọc theo nội dung (mô tả) - ưu tiên filter content nếu có
+    const contentFilter = req.query.content;
+    if (contentFilter && contentFilter.trim()) {
+      query.content = new RegExp(contentFilter.trim(), 'i');
+    }
+    
+    // Tìm kiếm trong nội dung và ghi chú (chỉ khi không có filter content riêng)
+    if (search && !contentFilter) {
       query.$or = [
         { content: new RegExp(search, 'i') },
         { note: new RegExp(search, 'i') },
         { customer: new RegExp(search, 'i') },
         { supplier: new RegExp(search, 'i') }
       ];
+    } else if (search && contentFilter) {
+      // Nếu có cả search và content filter, kết hợp cả hai
+      query.$or = [
+        { content: new RegExp(search, 'i') },
+        { note: new RegExp(search, 'i') },
+        { customer: new RegExp(search, 'i') },
+        { supplier: new RegExp(search, 'i') }
+      ];
+      // Content filter sẽ được áp dụng riêng
     }
 
     // Lọc theo thời gian
@@ -843,6 +859,60 @@ router.get('/contents', authenticateToken, async (req, res) => {
     res.json(results.map(r => ({ content: r._id, count: r.count })));
   } catch (err) {
     res.status(400).json({ message: '❌ Lỗi lấy danh sách nội dung', error: err.message });
+  }
+});
+
+// 12. Quản lý danh sách mô tả giao dịch (thêm/xóa)
+// Lấy danh sách mô tả đã quản lý
+router.get('/content-suggestions', authenticateToken, async (req, res) => {
+  try {
+    const { type, branch } = req.query;
+    const query = {};
+    if (type && type !== 'all') query.type = type;
+    if (branch && branch !== 'all') query.branch = branch;
+
+    const suggestions = await ContentSuggestion.find(query).sort({ content: 1 });
+    res.json(suggestions);
+  } catch (err) {
+    res.status(400).json({ message: '❌ Lỗi lấy danh sách mô tả', error: err.message });
+  }
+});
+
+// Thêm mô tả mới
+router.post('/content-suggestions', authenticateToken, async (req, res) => {
+  try {
+    const { content, type = 'all', branch } = req.body;
+    
+    if (!content || !content.trim()) {
+      return res.status(400).json({ message: '❌ Mô tả không được để trống' });
+    }
+
+    const suggestion = new ContentSuggestion({
+      content: content.trim(),
+      type,
+      branch: branch || undefined
+    });
+
+    await suggestion.save();
+    res.json({ message: '✅ Đã thêm mô tả thành công', suggestion });
+  } catch (err) {
+    if (err.code === 11000) {
+      return res.status(400).json({ message: '❌ Mô tả này đã tồn tại' });
+    }
+    res.status(400).json({ message: '❌ Lỗi thêm mô tả', error: err.message });
+  }
+});
+
+// Xóa mô tả
+router.delete('/content-suggestions/:id', authenticateToken, async (req, res) => {
+  try {
+    const suggestion = await ContentSuggestion.findByIdAndDelete(req.params.id);
+    if (!suggestion) {
+      return res.status(404).json({ message: '❌ Không tìm thấy mô tả' });
+    }
+    res.json({ message: '✅ Đã xóa mô tả thành công' });
+  } catch (err) {
+    res.status(400).json({ message: '❌ Lỗi xóa mô tả', error: err.message });
   }
 });
 

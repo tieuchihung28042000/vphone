@@ -966,7 +966,7 @@ function NhapHang() {
           subtitle={`${stats.totalItemsAll.toLocaleString()} tổng (${filteredItems.length !== items.length ? 'đã lọc' : 'tất cả'})`}
         />
         <StatsCard
-          title="Giá trị nhập (còn lại)"
+          title="Giá Trị Kho"
           value={formatCurrency(stats.totalValue)}
           icon="💰"
           color="green"

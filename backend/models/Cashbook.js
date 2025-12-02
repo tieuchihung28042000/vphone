@@ -20,6 +20,7 @@ const CashbookSchema = new mongoose.Schema({
   receipt_code: { type: String },                                 // Mã phiếu thu/chi
   balance_before: { type: Number, default: 0 },                  // Số dư trước giao dịch
   balance_after: { type: Number, default: 0 },                   // Số dư sau giao dịch
+  include_in_profit: { type: Boolean, default: true },            // Tính vào hoạt động kinh doanh (lợi nhuận)
 });
 
 export default mongoose.model("Cashbook", CashbookSchema);

@@ -31,6 +31,8 @@ function BaoCao() {
   const [to, setTo] = useState("");
   const [filter, setFilter] = useState("Hôm nay"); // ✅ Mặc định hôm nay
   const [branch, setBranch] = useState("all");
+  const [userRole, setUserRole] = useState(null);
+  const [userBranch, setUserBranch] = useState(null);
 
   const [loading, setLoading] = useState(false);
   const [branches, setBranches] = useState([]);
@@ -80,8 +82,10 @@ function BaoCao() {
 
   // API call to fetch report data
   const fetchData = async (fromDate, toDate, branchParam) => {
-    // ✅ Cho phép lọc tất cả chi nhánh - bỏ điều kiện này vì nó ngăn load dữ liệu
-    if (!branchParam) {
+    // Thu ngân chỉ xem chi nhánh của mình
+    if (userRole === 'thu_ngan' && userBranch) {
+      branchParam = userBranch;
+    } else if (!branchParam) {
       console.log('⚠️ Branch not set, using "all":', branchParam);
       branchParam = "all"; // Đặt mặc định là "all"
     }
@@ -130,6 +134,25 @@ function BaoCao() {
   };
 
   // ✅ Load branches khi component mount
+  // Lấy role và branch từ token
+  useEffect(() => {
+    try {
+      const token = localStorage.getItem('token') || sessionStorage.getItem('token');
+      if (token) {
+        const payload = JSON.parse(atob(token.split('.')[1]));
+        setUserRole(payload.role || null);
+        setUserBranch(payload.branch_name || null);
+        
+        // Thu ngân tự động set branch của mình
+        if (payload.role === 'thu_ngan' && payload.branch_name) {
+          setBranch(payload.branch_name);
+        }
+      }
+    } catch (e) {
+      console.error('Error decoding token:', e);
+    }
+  }, []);
+
   useEffect(() => {
     loadBranches();
   }, []);
@@ -395,6 +418,7 @@ function BaoCao() {
           value={branch}
           onChange={(e) => setBranch(e.target.value)}
               className="form-input"
+          disabled={userRole === 'thu_ngan'}
         >
               <option value="all">🏢 Tất cả chi nhánh</option>
               {branches.map((branchName) => (
@@ -403,6 +427,9 @@ function BaoCao() {
                 </option>
               ))}
         </select>
+        {userRole === 'thu_ngan' && (
+          <div className="text-xs text-gray-500 mt-1">Thu ngân chỉ xem báo cáo của chi nhánh được phân công</div>
+        )}
           </div>
 
         {filter === "Tùy chọn" && (

@@ -89,7 +89,8 @@ export default function Cashbook() {
     toDate: '',
     type: 'all',
     source: 'all',
-    search: ''
+    search: '',
+    content: '' // Filter riêng cho nội dung (mô tả)
   });
 
   const [pagination, setPagination] = useState({
@@ -112,7 +113,8 @@ export default function Cashbook() {
     customer: '',
     supplier: '',
     note: '',
-    date: format(new Date(), 'yyyy-MM-dd')
+    date: format(new Date(), 'yyyy-MM-dd'),
+    include_in_profit: true // Tính vào hoạt động kinh doanh (mặc định: có)
   });
 
   // ======= GỢI Ý NỘI DUNG (STORY 03) =======
@@ -120,6 +122,11 @@ export default function Cashbook() {
   const [showSuggest, setShowSuggest] = useState(false);
   const [suggestLoading, setSuggestLoading] = useState(false);
   const [selectedSuggestFilter, setSelectedSuggestFilter] = useState('');
+  
+  // ======= QUẢN LÝ MÔ TẢ GIAO DỊCH =======
+  const [contentModal, setContentModal] = useState({ open: false, type: 'add', data: null });
+  const [contentForm, setContentForm] = useState({ content: '', type: 'all' });
+  const [contentSuggestions, setContentSuggestions] = useState([]);
 
   const fetchSuggestList = async (query) => {
     try {
@@ -159,6 +166,90 @@ export default function Cashbook() {
     if (!item) return;
     setFormData(prev => ({ ...prev, content: item.content || '' }));
     setShowSuggest(false);
+  };
+
+  // ======= QUẢN LÝ MÔ TẢ GIAO DỊCH =======
+  const loadContentSuggestions = async () => {
+    try {
+      const response = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/cashbook/content-suggestions`, {
+        headers: getAuthHeaders()
+      });
+      if (response.ok) {
+        const data = await response.json();
+        setContentSuggestions(Array.isArray(data) ? data : []);
+      }
+    } catch (err) {
+      console.error('Error loading content suggestions:', err);
+    }
+  };
+
+  const handleSaveContent = async (e) => {
+    e.preventDefault();
+    try {
+      const url = contentModal.type === 'edit' 
+        ? `${import.meta.env.VITE_API_URL || ''}/api/cashbook/content-suggestions/${contentModal.data._id}`
+        : `${import.meta.env.VITE_API_URL || ''}/api/cashbook/content-suggestions`;
+      
+      const method = contentModal.type === 'edit' ? 'PUT' : 'POST';
+      
+      const response = await fetch(url, {
+        method,
+        headers: getAuthHeaders(),
+        body: JSON.stringify({
+          ...contentForm,
+          branch: selectedBranch || undefined
+        })
+      });
+      
+      const result = await response.json();
+      
+      if (response.ok) {
+        alert('✅ ' + result.message);
+        setContentModal({ open: false, type: 'add', data: null });
+        setContentForm({ content: '', type: 'all' });
+        await loadContentSuggestions();
+      } else {
+        alert('❌ ' + result.message);
+      }
+    } catch (error) {
+      console.error('Error saving content:', error);
+      alert('❌ Lỗi kết nối server');
+    }
+  };
+
+  const handleDeleteContent = async (id) => {
+    if (!window.confirm('Bạn có chắc muốn xóa mô tả này?')) return;
+    
+    try {
+      const response = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/cashbook/content-suggestions/${id}`, {
+        method: 'DELETE',
+        headers: getAuthHeaders()
+      });
+      
+      const result = await response.json();
+      
+      if (response.ok) {
+        alert('✅ ' + result.message);
+        await loadContentSuggestions();
+      } else {
+        alert('❌ ' + result.message);
+      }
+    } catch (error) {
+      console.error('Error deleting content:', error);
+      alert('❌ Lỗi kết nối server');
+    }
+  };
+
+  const handleOpenContentModal = (type, data = null) => {
+    setContentModal({ open: true, type, data });
+    if (data) {
+      setContentForm({
+        content: data.content || '',
+        type: data.type || 'all'
+      });
+    } else {
+      setContentForm({ content: '', type: 'all' });
+    }
   };
 
   // Load danh sách chi nhánh từ database
@@ -231,6 +322,7 @@ export default function Cashbook() {
         if (filters[key] && filters[key] !== 'all' && filters[key] !== '') {
           if (key === 'fromDate') params.append('from', filters[key]);
           else if (key === 'toDate') params.append('to', filters[key]);
+          else if (key === 'content') params.append('content', filters[key]); // Gửi filter content riêng
           else params.append(key, filters[key]);
         }
       });
@@ -371,6 +463,7 @@ export default function Cashbook() {
   // Load chi nhánh khi component mount
   useEffect(() => {
     loadBranches();
+    loadContentSuggestions();
   }, []);
 
   // Load transactions khi có selectedBranch và các filter thay đổi
@@ -410,7 +503,8 @@ export default function Cashbook() {
       setFormData({
         ...data,
         date: data.date ? format(new Date(data.date), 'yyyy-MM-dd') : format(new Date(), 'yyyy-MM-dd'),
-        amount: data.amount?.toString() || ''
+        amount: data.amount?.toString() || '',
+        include_in_profit: data.include_in_profit !== false // Default true nếu không có
       });
     } else {
       setFormData({
@@ -422,7 +516,8 @@ export default function Cashbook() {
         customer: '',
         supplier: '',
         note: '',
-        date: format(new Date(), 'yyyy-MM-dd')
+        date: format(new Date(), 'yyyy-MM-dd'),
+        include_in_profit: true
       });
     }
   };
@@ -763,7 +858,7 @@ export default function Cashbook() {
       {/* Stats Dashboard */}
       {viewMode === 'branch' ? (
         selectedBranch && (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-6">
         <StatsCard
           title="Tổng số dư"
           value={`${formatMoney(totalBalance)}`}
@@ -795,7 +890,36 @@ export default function Cashbook() {
         />
         </div>
         )
-      ) : (
+      ) : null}
+      
+      {/* Tổng số tiền thu/chi theo filter */}
+      {(viewMode === 'branch' && selectedBranch) && summary && (
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+          <StatsCard
+            title="📊 Tổng thu (theo filter)"
+            value={`${formatMoney(summary.totalThu || 0)}`}
+            icon="📈"
+            color="green"
+            subtitle="Tổng số tiền thu trong kết quả lọc"
+          />
+          <StatsCard
+            title="📉 Tổng chi (theo filter)"
+            value={`${formatMoney(summary.totalChi || 0)}`}
+            icon="📉"
+            color="red"
+            subtitle="Tổng số tiền chi trong kết quả lọc"
+          />
+          <StatsCard
+            title="💰 Số dư (theo filter)"
+            value={`${formatMoney((summary.totalThu || 0) - (summary.totalChi || 0))}`}
+            icon="💰"
+            color="blue"
+            subtitle="Chênh lệch thu - chi"
+          />
+        </div>
+      )}
+      
+      {viewMode === 'total' && (
         // Sổ quỹ tổng - Hiển thị tổng hợp tất cả chi nhánh
         <div className="space-y-6">
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
@@ -906,7 +1030,8 @@ export default function Cashbook() {
               customer: '',
               supplier: '',
               note: '',
-              date: format(new Date(), 'yyyy-MM-dd')
+              date: format(new Date(), 'yyyy-MM-dd'),
+              include_in_profit: true
             });
           }}
           showReset={modal.type === 'edit'}
@@ -956,7 +1081,17 @@ export default function Cashbook() {
             </div>
 
             <div className="lg:col-span-2">
-              <label className="block text-sm font-semibold text-gray-700 mb-3">Mô tả giao dịch *</label>
+              <div className="flex items-center justify-between mb-3">
+                <label className="block text-sm font-semibold text-gray-700">Mô tả giao dịch *</label>
+                <button
+                  type="button"
+                  onClick={() => handleOpenContentModal('add')}
+                  className="text-xs bg-blue-100 hover:bg-blue-200 text-blue-700 px-3 py-1 rounded-lg font-medium transition-colors"
+                  title="Quản lý danh sách mô tả"
+                >
+                  📝 Quản lý mô tả
+                </button>
+              </div>
               <input
                 name="content"
                 placeholder="Mô tả chi tiết giao dịch"
@@ -1030,6 +1165,23 @@ export default function Cashbook() {
                 onChange={(e) => setFormData(prev => ({ ...prev, note: e.target.value }))}
                 className="form-input"
               />
+            </div>
+
+            <div className="md:col-span-2 lg:col-span-3">
+              <label className="flex items-center gap-3 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={formData.include_in_profit !== false}
+                  onChange={(e) => setFormData(prev => ({ ...prev, include_in_profit: e.target.checked }))}
+                  className="w-5 h-5 text-blue-600 rounded focus:ring-blue-500"
+                />
+                <span className="text-sm font-semibold text-gray-700">
+                  Tính vào hoạt động kinh doanh (lợi nhuận)
+                </span>
+                <span className="text-xs text-gray-500">
+                  (Nếu không tích, chỉ tăng số quỹ, không tính vào lợi nhuận)
+                </span>
+              </label>
             </div>
 
             <div className="md:col-span-2 lg:col-span-3">
@@ -1113,15 +1265,15 @@ export default function Cashbook() {
           <div className="lg:col-span-2">
             <div className="flex items-center gap-2">
               <select
-                value={selectedSuggestFilter}
+                value={filters.content || ''}
                 onChange={(e) => {
                   const val = e.target.value;
                   setSelectedSuggestFilter(val);
-                  handleFilterChange('search', val || '');
+                  handleFilterChange('content', val || '');
                 }}
                 className="form-input"
               >
-                <option value="">Lọc theo nội dung đã dùng (nếu có)</option>
+                <option value="">Lọc theo nội dung (mô tả)</option>
                 {suggestList.map((s, i) => (
                   <option key={i} value={s.content}>{s.content} ({s.count})</option>
                 ))}
@@ -1242,6 +1394,98 @@ export default function Cashbook() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Content Management Modal */}
+      {contentModal.open && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-2xl p-8 max-w-md w-full mx-4 max-h-[90vh] overflow-y-auto">
+            <h3 className="text-xl font-bold text-gray-900 mb-6">
+              {contentModal.type === 'edit' ? '✏️ Chỉnh sửa mô tả' : '➕ Thêm mô tả mới'}
+            </h3>
+            
+            <form onSubmit={handleSaveContent} className="space-y-4">
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">Mô tả giao dịch *</label>
+                <input
+                  type="text"
+                  name="content"
+                  value={contentForm.content}
+                  onChange={(e) => setContentForm(prev => ({ ...prev, content: e.target.value }))}
+                  className="form-input"
+                  placeholder="Nhập mô tả giao dịch"
+                  required
+                />
+              </div>
+              
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">Loại</label>
+                <select
+                  name="type"
+                  value={contentForm.type}
+                  onChange={(e) => setContentForm(prev => ({ ...prev, type: e.target.value }))}
+                  className="form-input"
+                >
+                  <option value="all">Tất cả</option>
+                  <option value="thu">Thu tiền</option>
+                  <option value="chi">Chi tiền</option>
+                </select>
+              </div>
+              
+              <div className="flex gap-3 pt-4">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setContentModal({ open: false, type: 'add', data: null });
+                    setContentForm({ content: '', type: 'all' });
+                  }}
+                  className="flex-1 bg-gray-500 hover:bg-gray-600 text-white py-3 px-4 rounded-xl font-medium transition-colors"
+                >
+                  Hủy
+                </button>
+                <button
+                  type="submit"
+                  className="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-3 px-4 rounded-xl font-medium transition-colors"
+                >
+                  {contentModal.type === 'edit' ? '💾 Cập nhật' : '➕ Thêm mới'}
+                </button>
+              </div>
+            </form>
+
+            {/* Content List for Management */}
+            {contentModal.type === 'add' && contentSuggestions.length > 0 && (
+              <div className="mt-6 pt-6 border-t border-gray-200">
+                <h4 className="text-lg font-semibold text-gray-900 mb-4">📝 Danh sách mô tả hiện tại</h4>
+                <div className="space-y-2 max-h-48 overflow-y-auto">
+                  {contentSuggestions.map((content) => (
+                    <div key={content._id} className="flex items-center justify-between bg-gray-50 p-3 rounded-lg">
+                      <div>
+                        <div className="font-medium text-gray-900">{content.content}</div>
+                        <div className="text-xs text-gray-500">
+                          {content.type === 'all' ? 'Tất cả' : content.type === 'thu' ? 'Thu tiền' : 'Chi tiền'}
+                        </div>
+                      </div>
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => handleOpenContentModal('edit', content)}
+                          className="text-blue-600 hover:text-blue-700 text-sm font-medium"
+                        >
+                          ✏️
+                        </button>
+                        <button
+                          onClick={() => handleDeleteContent(content._id)}
+                          className="text-red-600 hover:text-red-700 text-sm font-medium"
+                        >
+                          🗑️
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}
