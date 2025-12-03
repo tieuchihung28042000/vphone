@@ -892,8 +892,8 @@ export default function Cashbook() {
         )
       ) : null}
       
-      {/* Tổng số tiền thu/chi theo filter */}
-      {(viewMode === 'branch' && selectedBranch) && summary && (
+      {/* Tổng số tiền thu/chi theo filter - Hiển thị luôn khi có dữ liệu */}
+      {summary && (viewMode === 'branch' ? selectedBranch : true) && (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
           <StatsCard
             title="📊 Tổng thu (theo filter)"

@@ -4,7 +4,7 @@ import Cashbook from '../models/Cashbook.js';
 import ContentSuggestion from '../models/ContentSuggestion.js';
 import XLSX from 'xlsx';
 import ActivityLog from '../models/ActivityLog.js';
-import { authenticateToken } from '../middleware/auth.js';
+import { authenticateToken, filterByBranch } from '../middleware/auth.js';
 
 // Helper function: Tạo mã phiếu thu/chi
 function generateReceiptCode(type, date = new Date()) {
@@ -118,8 +118,9 @@ router.post('/', authenticateToken, async (req, res) => {
       
       await ActivityLog.create(activityData);
     } catch (e) { /* ignore log error */ }
-    res.json({ message: '✅ Thêm giao dịch thành công', cashbook });
+    res.status(201).json({ message: '✅ Thêm giao dịch thành công', cashbook });
   } catch (err) {
+    console.error('Error creating cashbook transaction:', err);
     res.status(400).json({ message: '❌ Lỗi thêm giao dịch', error: err.message });
   }
 });
@@ -200,6 +201,7 @@ router.put('/:id', authenticateToken, async (req, res) => {
     } catch (e) { /* ignore log error */ }
     res.json({ message: '✅ Đã cập nhật giao dịch', cashbook: updated });
   } catch (err) {
+    console.error('Error updating cashbook transaction:', err);
     res.status(400).json({ message: '❌ Lỗi cập nhật giao dịch', error: err.message });
   }
 });
@@ -257,12 +259,13 @@ router.delete('/:id', authenticateToken, async (req, res) => {
     } catch (e) { /* ignore reindex error */ }
     res.json({ message: '✅ Đã xoá giao dịch và cập nhật số dư' });
   } catch (err) {
+    console.error('Error deleting cashbook transaction:', err);
     res.status(400).json({ message: '❌ Lỗi xoá giao dịch', error: err.message });
   }
 });
 
 // 4. Lấy danh sách, lọc nâng cao (GET)
-router.get('/', async (req, res) => {
+router.get('/', authenticateToken, filterByBranch, async (req, res) => {
   try {
     const { 
       type, from, to, branch, source, category, 
@@ -271,10 +274,15 @@ router.get('/', async (req, res) => {
 
     let query = {};
     
+    // Áp dụng branch filter từ middleware (cho admin chi nhánh, nhân viên, thu ngân)
+    if (req.branchFilter) {
+      Object.assign(query, req.branchFilter);
+    }
+    
     // Lọc theo loại thu/chi
     if (type && type !== 'all') query.type = type;
     
-    // Lọc theo chi nhánh
+    // Lọc theo chi nhánh (nếu user chọn cụ thể, override filter từ middleware)
     if (branch && branch !== 'all') query.branch = branch;
     
     // Lọc theo nguồn tiền
@@ -356,7 +364,8 @@ router.get('/', async (req, res) => {
       summary 
     });
   } catch (err) {
-    res.status(400).json({ message: '❌ Lỗi lấy danh sách giao dịch', error: err.message });
+    console.error('Error fetching cashbook transactions:', err);
+    res.status(500).json({ message: '❌ Lỗi lấy danh sách giao dịch', error: err.message });
   }
 });
 
@@ -557,10 +566,16 @@ router.get('/export-excel', async (req, res) => {
 });
 
 // 9. Lấy thống kê số dư theo nguồn
-router.get('/balance', async (req, res) => {
+router.get('/balance', authenticateToken, filterByBranch, async (req, res) => {
   try {
     const { branch } = req.query;
     let query = {};
+    
+    // Áp dụng branch filter từ middleware
+    if (req.branchFilter) {
+      Object.assign(query, req.branchFilter);
+    }
+    
     if (branch && branch !== 'all') query.branch = branch;
 
     const balance = await Cashbook.aggregate([
@@ -583,7 +598,8 @@ router.get('/balance', async (req, res) => {
 
     res.json(balance);
   } catch (err) {
-    res.status(400).json({ message: '❌ Lỗi lấy số dư', error: err.message });
+    console.error('Error fetching balance:', err);
+    res.status(500).json({ message: '❌ Lỗi lấy số dư', error: err.message });
   }
 });
 
@@ -744,11 +760,16 @@ router.post('/adjust-balance', async (req, res) => {
 });
 
 // API: Tổng hợp sổ quỹ tất cả chi nhánh
-router.get('/total-summary', async (req, res) => {
+router.get('/total-summary', authenticateToken, filterByBranch, async (req, res) => {
   try {
     const { from, to, type, source, search } = req.query;
     
     let query = {};
+    
+    // Áp dụng branch filter từ middleware
+    if (req.branchFilter) {
+      Object.assign(query, req.branchFilter);
+    }
     
     // Filter theo thời gian
     if (from && to) {
@@ -858,7 +879,8 @@ router.get('/contents', authenticateToken, async (req, res) => {
 
     res.json(results.map(r => ({ content: r._id, count: r.count })));
   } catch (err) {
-    res.status(400).json({ message: '❌ Lỗi lấy danh sách nội dung', error: err.message });
+    console.error('Error fetching contents:', err);
+    res.status(500).json({ message: '❌ Lỗi lấy danh sách nội dung', error: err.message });
   }
 });
 
@@ -874,7 +896,8 @@ router.get('/content-suggestions', authenticateToken, async (req, res) => {
     const suggestions = await ContentSuggestion.find(query).sort({ content: 1 });
     res.json(suggestions);
   } catch (err) {
-    res.status(400).json({ message: '❌ Lỗi lấy danh sách mô tả', error: err.message });
+    console.error('Error fetching content suggestions:', err);
+    res.status(500).json({ message: '❌ Lỗi lấy danh sách mô tả', error: err.message });
   }
 });
 
@@ -894,11 +917,12 @@ router.post('/content-suggestions', authenticateToken, async (req, res) => {
     });
 
     await suggestion.save();
-    res.json({ message: '✅ Đã thêm mô tả thành công', suggestion });
+    res.status(201).json({ message: '✅ Đã thêm mô tả thành công', suggestion });
   } catch (err) {
     if (err.code === 11000) {
       return res.status(400).json({ message: '❌ Mô tả này đã tồn tại' });
     }
+    console.error('Error creating content suggestion:', err);
     res.status(400).json({ message: '❌ Lỗi thêm mô tả', error: err.message });
   }
 });
@@ -912,6 +936,7 @@ router.delete('/content-suggestions/:id', authenticateToken, async (req, res) =>
     }
     res.json({ message: '✅ Đã xóa mô tả thành công' });
   } catch (err) {
+    console.error('Error deleting content suggestion:', err);
     res.status(400).json({ message: '❌ Lỗi xóa mô tả', error: err.message });
   }
 });

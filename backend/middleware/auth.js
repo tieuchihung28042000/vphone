@@ -91,7 +91,7 @@ const filterByBranch = (req, res, next) => {
 
   // Admin chi nhánh hoặc user khác chỉ xem chi nhánh của mình
   if (req.user.branch_name) {
-    req.branchFilter = { branch: req.user.branch_name };
+  req.branchFilter = { branch: req.user.branch_name };
   }
   
   next();

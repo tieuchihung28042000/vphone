@@ -456,7 +456,7 @@ router.get('/supplier-debt-list', async (req, res) => {
 // ✅ API trả nợ nhà cung cấp
 router.put('/supplier-debt-pay', async (req, res) => {
   try {
-    const { supplier_name, amount, note, branch, payments = [] } = req.body;
+  const { supplier_name, amount, note, branch, payments = [] } = req.body;
     
     if (!supplier_name || typeof supplier_name !== 'string' || supplier_name.trim().length === 0) {
       return res.status(400).json({ message: "❌ Thiếu thông tin tên nhà cung cấp" });
@@ -494,9 +494,9 @@ router.put('/supplier-debt-pay', async (req, res) => {
       const newDaTT = currentDaTT + toPay;
       
       try {
-        await Inventory.findByIdAndUpdate(order._id, {
+      await Inventory.findByIdAndUpdate(order._id, {
           $set: { da_thanh_toan_nhap: newDaTT }
-        });
+      });
         updatedOrders.push(order._id);
       } catch (updateErr) {
         console.error(`❌ Error updating order ${order._id}:`, updateErr);

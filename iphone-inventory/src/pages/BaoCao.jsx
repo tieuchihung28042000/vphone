@@ -4,6 +4,10 @@ import { useNavigate } from 'react-router-dom';
 const BaoCao = () => {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
+  const [userRole, setUserRole] = useState(null);
+  const [userBranch, setUserBranch] = useState(null);
+  const [branches, setBranches] = useState([]);
+  const [selectedBranch, setSelectedBranch] = useState('all');
   const [reportData, setReportData] = useState({
     totalRevenue: 0,
     totalReturnRevenue: 0,
@@ -16,21 +20,59 @@ const BaoCao = () => {
   });
 
   const getAuthHeaders = () => {
-    const token = localStorage.getItem('token');
+    const token = localStorage.getItem('token') || sessionStorage.getItem('token');
     return {
       'Authorization': `Bearer ${token}`,
       'Content-Type': 'application/json'
     };
   };
 
+  // Lấy role và branch từ token
+  useEffect(() => {
+    try {
+      const token = localStorage.getItem('token') || sessionStorage.getItem('token');
+      if (token) {
+        const payload = JSON.parse(atob(token.split('.')[1]));
+        setUserRole(payload.role || null);
+        setUserBranch(payload.branch_name || null);
+        
+        // Nếu là thu ngân, tự động set branch
+        if (payload.role === 'thu_ngan' && payload.branch_name) {
+          setSelectedBranch(payload.branch_name);
+        }
+      }
+    } catch (e) {
+      console.error('Error decoding token:', e);
+    }
+  }, []);
+
+  // Load danh sách chi nhánh
+  useEffect(() => {
+    const loadBranches = async () => {
+      try {
+        const res = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/branches`, {
+          headers: getAuthHeaders()
+        });
+        if (res.ok) {
+          const data = await res.json();
+          setBranches(Array.isArray(data) ? data : []);
+        }
+      } catch (err) {
+        console.error('Error loading branches:', err);
+      }
+    };
+    loadBranches();
+  }, []);
+
   useEffect(() => {
     loadFinancialReport();
-  }, []);
+  }, [selectedBranch]);
 
   const loadFinancialReport = async () => {
     try {
       setLoading(true);
-      const url = `${import.meta.env.VITE_API_URL || ''}/api/report/financial-report/summary?from=2024-01-01&to=2024-12-31`;
+      const branchParam = selectedBranch && selectedBranch !== 'all' ? `&branch=${selectedBranch}` : '';
+      const url = `${import.meta.env.VITE_API_URL || ''}/api/report/financial-report/summary?from=2024-01-01&to=2024-12-31${branchParam}`;
       const res = await fetch(url, {
         headers: getAuthHeaders()
       });
@@ -73,6 +115,36 @@ const BaoCao = () => {
   return (
     <div style={{ padding: '20px' }}>
       <h2>Báo cáo tài chính tổng hợp</h2>
+      
+      {/* Filter branch */}
+      <div style={{ marginBottom: '20px', display: 'flex', gap: '10px', alignItems: 'center' }}>
+        <label style={{ fontWeight: 'bold' }}>Chi nhánh:</label>
+        <select
+          value={selectedBranch}
+          onChange={(e) => setSelectedBranch(e.target.value)}
+          disabled={userRole === 'thu_ngan'}
+          style={{
+            padding: '8px 12px',
+            borderRadius: '5px',
+            border: '1px solid #ccc',
+            fontSize: '14px',
+            minWidth: '200px',
+            cursor: userRole === 'thu_ngan' ? 'not-allowed' : 'pointer',
+            opacity: userRole === 'thu_ngan' ? 0.6 : 1
+          }}
+        >
+          <option value="all">Tất cả chi nhánh</option>
+          {branches.map((branch) => (
+            <option key={branch} value={branch}>{branch}</option>
+          ))}
+        </select>
+        {userRole === 'thu_ngan' && (
+          <span style={{ fontSize: '12px', color: '#666' }}>
+            (Chỉ xem báo cáo chi nhánh: {userBranch || selectedBranch})
+          </span>
+        )}
+      </div>
+
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px', marginTop: '20px' }}>
         <div style={{ background: '#f8f9fa', padding: '20px', borderRadius: '8px', border: '1px solid #dee2e6' }}>
           <h3 style={{ color: '#28a745', margin: '0 0 10px 0' }}>Tổng doanh thu bán hàng</h3>
@@ -111,7 +183,8 @@ const BaoCao = () => {
         <button 
           onClick={async () => {
             try {
-              const url = `${import.meta.env.VITE_API_URL || ''}/api/report/export-excel?from=2024-01-01&to=2024-12-31`;
+              const branchParam = selectedBranch && selectedBranch !== 'all' ? `&branch=${selectedBranch}` : '';
+              const url = `${import.meta.env.VITE_API_URL || ''}/api/report/export-excel?from=2024-01-01&to=2024-12-31${branchParam}`;
               const res = await fetch(url, {
                 headers: getAuthHeaders()
               });
