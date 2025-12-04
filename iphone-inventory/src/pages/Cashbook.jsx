@@ -116,6 +116,10 @@ export default function Cashbook() {
   const [branches, setBranches] = useState([]);
   const [loadingBranches, setLoadingBranches] = useState(true);
   
+  // State cho user role và branch
+  const [userRole, setUserRole] = useState(null);
+  const [userBranch, setUserBranch] = useState(null);
+  
   // State cho view tổng hợp tất cả chi nhánh
   const [viewMode, setViewMode] = useState('branch'); // 'branch' | 'total'
   const [totalSummary, setTotalSummary] = useState({
@@ -527,6 +531,26 @@ export default function Cashbook() {
     setEditBalanceModal(true);
   };
 
+  // Lấy role và branch từ token
+  useEffect(() => {
+    try {
+      const token = localStorage.getItem('token') || sessionStorage.getItem('token');
+      if (token) {
+        const payload = JSON.parse(atob(token.split('.')[1]));
+        setUserRole(payload.role || null);
+        setUserBranch(payload.branch_name || null);
+        
+        // Nếu là admin chi nhánh, nhân viên hoặc thu ngân, tự động set branch
+        if (payload.branch_name && (payload.role === 'admin' || payload.role === 'nhan_vien_ban_hang' || payload.role === 'thu_ngan')) {
+          setSelectedBranch(payload.branch_name);
+          localStorage.setItem('selectedBranch', payload.branch_name);
+        }
+      }
+    } catch (e) {
+      console.error('Error decoding token:', e);
+    }
+  }, []);
+
   // Load chi nhánh khi component mount
   useEffect(() => {
     loadBranches();
@@ -876,10 +900,21 @@ export default function Cashbook() {
                       }
                     }
                   }}
+                  disabled={
+                    // Disable nếu là admin chi nhánh, nhân viên hoặc thu ngân
+                    (userRole === 'admin' && userBranch) || 
+                    userRole === 'nhan_vien_ban_hang' || 
+                    userRole === 'thu_ngan'
+                  }
                   className="form-input text-lg font-semibold"
+                  style={{
+                    cursor: ((userRole === 'admin' && userBranch) || userRole === 'nhan_vien_ban_hang' || userRole === 'thu_ngan') ? 'not-allowed' : 'pointer',
+                    opacity: ((userRole === 'admin' && userBranch) || userRole === 'nhan_vien_ban_hang' || userRole === 'thu_ngan') ? 0.6 : 1
+                  }}
                 >
                   <option value="">-- Chọn chi nhánh --</option>
-                  {branches.map((branch) => (
+                  {/* Admin tổng thấy tất cả, admin chi nhánh chỉ thấy chi nhánh của mình */}
+                  {((userRole === 'admin' && !userBranch) ? branches : (userBranch ? [userBranch] : branches)).map((branch) => (
                     <option key={branch} value={branch}>
                       🏢 Chi nhánh {branch}
                     </option>
@@ -899,6 +934,16 @@ export default function Cashbook() {
                 <div>
                   <h4 className="text-lg font-bold text-blue-900">Chi nhánh {selectedBranch}</h4>
                   <p className="text-sm text-blue-700">Đang xem sổ quỹ của chi nhánh này</p>
+                  {/* Hiển thị thông báo phân quyền */}
+                  {(userRole === 'admin' && userBranch) && (
+                    <p className="text-xs text-orange-600 mt-1">(Admin chi nhánh: Chỉ xem được chi nhánh này)</p>
+                  )}
+                  {userRole === 'nhan_vien_ban_hang' && (
+                    <p className="text-xs text-orange-600 mt-1">(Nhân viên: Chỉ xem được xuất hàng của chi nhánh này)</p>
+                  )}
+                  {userRole === 'thu_ngan' && (
+                    <p className="text-xs text-orange-600 mt-1">(Thu ngân: Chỉ xem được báo cáo của chi nhánh này)</p>
+                  )}
                 </div>
               </div>
             </div>
@@ -957,29 +1002,29 @@ export default function Cashbook() {
         )
       ) : null}
       
-      {/* Tổng số tiền thu/chi theo filter - Hiển thị luôn khi có dữ liệu */}
-      {summary && (viewMode === 'branch' ? selectedBranch : true) && (
+      {/* Tổng số tiền thu/chi theo filter - Hiển thị luôn, kể cả khi không có filter */}
+      {(viewMode === 'branch' ? selectedBranch : true) && (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
           <StatsCard
             title="📊 Tổng thu (theo filter)"
-            value={`${formatMoney(summary.totalThu || 0)}`}
+            value={`${formatMoney(summary?.totalThu || 0)}`}
             icon="📈"
             color="green"
-            subtitle="Tổng số tiền thu trong kết quả lọc"
+            subtitle={summary ? "Tổng số tiền thu trong kết quả lọc" : "Đang tải..."}
           />
           <StatsCard
             title="📉 Tổng chi (theo filter)"
-            value={`${formatMoney(summary.totalChi || 0)}`}
+            value={`${formatMoney(summary?.totalChi || 0)}`}
             icon="📉"
             color="red"
-            subtitle="Tổng số tiền chi trong kết quả lọc"
+            subtitle={summary ? "Tổng số tiền chi trong kết quả lọc" : "Đang tải..."}
           />
           <StatsCard
             title="💰 Số dư (theo filter)"
-            value={`${formatMoney((summary.totalThu || 0) - (summary.totalChi || 0))}`}
+            value={`${formatMoney((summary?.totalThu || 0) - (summary?.totalChi || 0))}`}
             icon="💰"
             color="blue"
-            subtitle="Chênh lệch thu - chi"
+            subtitle={summary ? "Chênh lệch thu - chi" : "Đang tải..."}
           />
         </div>
       )}

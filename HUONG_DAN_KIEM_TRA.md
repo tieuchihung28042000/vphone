@@ -1,236 +1,235 @@
-# Hướng dẫn Kiểm tra Tính năng - Dành cho Khách hàng
+# Huong dan Kiem tra Tinh nang
 
-## 📋 Danh sách Kiểm tra
+## Danh sach Kiem tra
 
-### 1. Phiếu thu chi (Sổ quỹ)
+### 1. Phieu thu chi (So quy)
 
-#### ✅ Kiểm tra Checkbox "Tính vào hoạt động kinh doanh"
-1. Vào menu **💰 Sổ quỹ**
-2. Trong form thêm giao dịch, tìm checkbox có nhãn: **"Tính vào hoạt động kinh doanh (lợi nhuận)"**
-3. **Test**: 
-   - Tạo giao dịch thu với checkbox **ĐƯỢC TÍCH** → Kiểm tra trong Báo cáo có tính vào lợi nhuận
-   - Tạo giao dịch thu với checkbox **KHÔNG TÍCH** → Kiểm tra trong Báo cáo không tính vào lợi nhuận, nhưng số quỹ vẫn tăng
+#### Kiem tra Checkbox Tinh vao hoat dong kinh doanh
+1. Vao menu So quy
+2. Trong form them giao dich, tim checkbox co nhan: "Tinh vao hoat dong kinh doanh (loi nhuan)"
+3. Test:
+   - Tao giao dich thu voi checkbox DUOC TICH -> Kiem tra trong Bao cao co tinh vao loi nhuan
+   - Tao giao dich thu voi checkbox KHONG TICH -> Kiem tra trong Bao cao khong tinh vao loi nhuan, nhung so quy van tang
 
-#### ✅ Kiểm tra Quản lý Mô tả giao dịch
-1. Trong form thêm giao dịch, click nút **"📝 Quản lý mô tả"**
-2. Modal sẽ mở ra với form thêm mô tả
-3. **Test**:
-   - Nhập mô tả mới (ví dụ: "Chi phí điện nước")
-   - Chọn loại: Thu tiền / Chi tiền / Tất cả
-   - Click **"➕ Thêm mới"** → Mô tả sẽ xuất hiện trong dropdown
-   - Xóa mô tả bằng cách click nút xóa trong danh sách
+#### Kiem tra Quan ly Mo ta giao dich
+1. Trong form them giao dich, click nut "Quan ly mo ta"
+2. Modal se mo ra voi form them mo ta
+3. Test:
+   - Nhap mo ta moi (vi du: "Chi phi dien nuoc")
+   - Chon loai: Thu tien / Chi tien / Tat ca
+   - Click "Them moi" -> Mo ta se xuat hien trong dropdown
+   - Xoa mo ta bang cach click nut xoa trong danh sach
 
-#### ✅ Kiểm tra Lọc theo nội dung (mô tả)
-1. Trong phần **"🔍 Tìm kiếm & Lọc dữ liệu"**, tìm dropdown **"Lọc theo nội dung (mô tả)"**
-2. Click nút **"🔄 Nạp gợi ý"** để load danh sách mô tả
-3. **Test**:
-   - Chọn một mô tả từ dropdown (ví dụ: "Bán hàng")
-   - Bảng sẽ chỉ hiển thị các giao dịch có mô tả khớp
-   - Kiểm tra tổng thu/chi chỉ tính các giao dịch đã lọc
+#### Kiem tra Loc theo noi dung (mo ta)
+1. Trong phan "Tim kiem va Loc du lieu", tim dropdown "Loc theo noi dung (mo ta)"
+2. Click nut "Nap goi y" de load danh sach mo ta
+3. Test:
+   - Chon mot mo ta tu dropdown (vi du: "Ban hang")
+   - Bang se chi hien thi cac giao dich co mo ta khop
+   - Kiem tra tong thu/chi chi tinh cac giao dich da loc
 
-#### ✅ Kiểm tra Tổng số tiền thu/chi sau khi lọc
-1. Sau khi áp dụng bất kỳ filter nào (loại, nguồn, nội dung, thời gian)
-2. **Kiểm tra**: Phía trên bảng danh sách sẽ hiển thị 3 ô:
-   - **📊 Tổng thu (theo filter)** - Tổng số tiền thu trong kết quả lọc
-   - **📉 Tổng chi (theo filter)** - Tổng số tiền chi trong kết quả lọc
-   - **💰 Số dư (theo filter)** - Chênh lệch thu - chi
-3. **Test**:
-   - Lọc theo loại "Thu" → Chỉ thấy Tổng thu, Tổng chi = 0
-   - Lọc theo loại "Chi" → Chỉ thấy Tổng chi, Tổng thu = 0
-   - Lọc theo nội dung → Tổng thu/chi chỉ tính các giao dịch khớp
-
----
-
-### 2. Báo cáo
-
-#### ✅ Kiểm tra Giá vốn
-1. Vào menu **📊 Báo cáo**
-2. **Kiểm tra**: Có một card màu **vàng** hiển thị **"Giá vốn"**
-3. Giá trị này = Tổng (Giá nhập × Số lượng) của tất cả sản phẩm đã xuất
-
-#### ✅ Kiểm tra Lợi nhuận gộp
-1. Trong trang Báo cáo, tìm card màu **xanh dương** hiển thị **"Lợi nhuận gộp"**
-2. **Kiểm tra**: Lợi nhuận gộp = Doanh thu thuần - Giá vốn
-3. Công thức: Nếu Doanh thu thuần = 10 triệu, Giá vốn = 7 triệu → Lợi nhuận gộp = 3 triệu
-
-#### ✅ Kiểm tra Xuất Excel
-1. Trong trang Báo cáo, click nút **"📊 Xuất Excel"**
-2. File Excel sẽ được tải về với tên: `baocao_taichinh_{ngày_bắt_đầu}_{ngày_kết_thúc}.xlsx`
-3. **Kiểm tra file Excel**:
-   - Mở file Excel
-   - Kiểm tra có đầy đủ các cột:
-     - Tổng doanh thu bán hàng
-     - Tổng doanh thu trả hàng
-     - Doanh thu thuần
-     - **Giá vốn** ← Phải có
-     - **Lợi nhuận gộp** ← Phải có
-     - Tổng chi phí
-     - Thu nhập khác
-     - Lợi nhuận thuần
-
-#### ✅ Kiểm tra Thu ngân chỉ xem chi nhánh của mình
-1. Đăng nhập với tài khoản có role **"Thu ngân"**
-2. Vào menu **📊 Báo cáo**
-3. **Kiểm tra**:
-   - Dropdown "Chi nhánh" bị **disable** (không thể chọn)
-   - Tự động hiển thị chi nhánh của thu ngân
-   - Có thông báo: "(Chỉ xem báo cáo chi nhánh: {tên chi nhánh})"
-   - Báo cáo chỉ hiển thị dữ liệu của chi nhánh đó
+#### Kiem tra Tong so tien thu/chi sau khi loc
+1. Sau khi ap dung bat ky filter nao (loai, nguon, noi dung, thoi gian)
+2. Kiem tra: Phia tren bang danh sach se hien thi 3 o:
+   - Tong thu (theo filter) - Tong so tien thu trong ket qua loc
+   - Tong chi (theo filter) - Tong so tien chi trong ket qua loc
+   - So du (theo filter) - Chenh lech thu - chi
+3. Test:
+   - Loc theo loai "Thu" -> Chi thay Tong thu, Tong chi = 0
+   - Loc theo loai "Chi" -> Chi thay Tong chi, Tong thu = 0
+   - Loc theo noi dung -> Tong thu/chi chi tinh cac giao dich khop
 
 ---
 
-### 3. Nhập hàng
+### 2. Bao cao
 
-#### ✅ Kiểm tra Tên "Giá Trị Kho"
-1. Vào menu **📥 Nhập hàng**
-2. **Kiểm tra**: Tìm card thống kê có tên **"Giá Trị Kho"** (không phải "Giá trị nhập còn lại")
+#### Kiem tra Gia von
+1. Vao menu Bao cao
+2. Kiem tra: Co mot card mau vang hien thi "Gia von"
+3. Gia tri nay = Tong (Gia nhap x So luong) cua tat ca san pham da xuat
 
----
+#### Kiem tra Loi nhuan gop
+1. Trong trang Bao cao, tim card mau xanh duong hien thi "Loi nhuan gop"
+2. Kiem tra: Loi nhuan gop = Doanh thu thuan - Gia von
+3. Cong thuc: Neu Doanh thu thuan = 10 trieu, Gia von = 7 trieu -> Loi nhuan gop = 3 trieu
 
-### 4. Công nợ - Khách nợ mình
+#### Kiem tra Xuat Excel
+1. Trong trang Bao cao, click nut "Xuat Excel"
+2. File Excel se duoc tai ve voi ten: baocao_taichinh_{ngay_bat_dau}_{ngay_ket_thuc}.xlsx
+3. Kiem tra file Excel:
+   - Mo file Excel
+   - Kiem tra co day du cac cot:
+     - Tong doanh thu ban hang
+     - Tong doanh thu tra hang
+     - Doanh thu thuan
+     - Gia von (Phai co)
+     - Loi nhuan gop (Phai co)
+     - Tong chi phi
+     - Thu nhap khac
+     - Loi nhuan thuan
 
-#### ✅ Kiểm tra Hiển thị mô tả trong lịch sử
-1. Vào menu **💳 Công nợ** → Tab **"Khách nợ mình"**
-2. Click vào một khách hàng để xem **Lịch sử**
-3. **Kiểm tra**: Bảng lịch sử có cột **"Mô tả"** hiển thị ghi chú của từng giao dịch
-
-#### ✅ Kiểm tra Trường "Ngày nợ"
-1. Trong bảng danh sách công nợ khách hàng
-2. **Kiểm tra**: Có cột **"Ngày nợ"** hiển thị số ngày từ ngày nợ đến hiện tại
-3. Ví dụ: "15 ngày", "30 ngày"
-
-#### ✅ Kiểm tra Tìm kiếm (không xoay khi nhập 1 ký tự)
-1. Trong ô tìm kiếm, nhập **1 ký tự** (ví dụ: "N")
-2. **Kiểm tra**: 
-   - Không có icon loading xoay ngay lập tức
-   - Chờ khoảng 0.5-1 giây sau khi ngừng gõ mới tìm kiếm
-   - Có thể tiếp tục gõ mà không bị gián đoạn
-
-#### ✅ Kiểm tra Tìm theo SĐT hoặc Tên
-1. Trong ô tìm kiếm, nhập **số điện thoại** (ví dụ: "0123")
-2. **Kiểm tra**: Kết quả hiển thị khách hàng có SĐT chứa "0123"
-3. Xóa và nhập **tên khách hàng** (ví dụ: "Nguyễn")
-4. **Kiểm tra**: Kết quả hiển thị khách hàng có tên chứa "Nguyễn"
-
----
-
-### 5. Công nợ - Mình nợ nhà cung cấp
-
-#### ✅ Kiểm tra Trả nợ
-1. Vào menu **💳 Công nợ** → Tab **"Mình nợ nhà cung cấp"**
-2. Chọn một nhà cung cấp có công nợ
-3. Click nút **"Trả nợ"** hoặc **"Thanh toán"**
-4. Nhập số tiền và click xác nhận
-5. **Kiểm tra**: 
-   - Giao dịch trả nợ được tạo thành công
-   - Số công nợ của nhà cung cấp giảm đúng số tiền đã trả
-   - Trong Sổ quỹ có giao dịch chi tương ứng
-
-#### ✅ Kiểm tra Tìm kiếm (không xoay khi nhập 1 ký tự)
-1. Trong ô tìm kiếm nhà cung cấp, nhập **1 ký tự**
-2. **Kiểm tra**: Không có icon loading xoay ngay lập tức, chờ sau khi ngừng gõ
+#### Kiem tra Thu ngan chi xem chi nhanh cua minh
+1. Dang nhap voi tai khoan co role "Thu ngan"
+2. Vao menu Bao cao
+3. Kiem tra:
+   - Dropdown "Chi nhanh" bi disable (khong the chon)
+   - Tu dong hien thi chi nhanh cua thu ngan
+   - Co thong bao: "(Chi xem bao cao chi nhanh: {ten chi nhanh})"
+   - Bao cao chi hien thi du lieu cua chi nhanh do
 
 ---
 
-### 6. Chốt xuất hàng
+### 3. Nhap hang
 
-#### ✅ Kiểm tra Ẩn giá nhập cho nhân viên
-1. Đăng nhập với tài khoản có role **"Nhân viên bán hàng"**
-2. Vào menu **📤 Xuất hàng**
-3. **Kiểm tra**:
-   - Trong bảng danh sách xuất hàng: **KHÔNG có** cột "Giá nhập"
-   - Trong dropdown chọn sản phẩm: **KHÔNG hiển thị** giá nhập
-   - Trong suggestions: **KHÔNG hiển thị** giá nhập
-4. **Đăng nhập với Admin** để kiểm tra ngược lại:
-   - Admin sẽ thấy cột "Giá nhập" và giá nhập trong suggestions
+#### Kiem tra Ten "Gia Tri Kho"
+1. Vao menu Nhap hang
+2. Kiem tra: Tim card thong ke co ten "Gia Tri Kho" (khong phai "Gia tri nhap con lai")
 
 ---
 
-### 7. Phân quyền User
+### 4. Cong no - Khach no minh
 
-#### ✅ Kiểm tra Admin tổng thấy hết
-1. Đăng nhập với tài khoản **Admin tổng** (không có branch_id)
-2. **Kiểm tra**:
-   - Có thể chọn tất cả chi nhánh trong dropdown
-   - Xem được dữ liệu của tất cả chi nhánh
-   - Không bị giới hạn bởi chi nhánh nào
+#### Kiem tra Hien thi mo ta trong lich su
+1. Vao menu Cong no -> Tab "Khach no minh"
+2. Click vao mot khach hang de xem Lich su
+3. Kiem tra: Bang lich su co cot "Mo ta" hien thi ghi chu cua tung giao dich
 
-#### ✅ Kiểm tra Admin chi nhánh chỉ thấy chi nhánh đó
-1. Đăng nhập với tài khoản **Admin chi nhánh** (có branch_id)
-2. **Kiểm tra**:
-   - Dropdown chi nhánh chỉ hiển thị chi nhánh của admin
-   - Chỉ xem được dữ liệu của chi nhánh đó
-   - Không thể chọn chi nhánh khác
+#### Kiem tra Truong "Ngay no"
+1. Trong bang danh sach cong no khach hang
+2. Kiem tra: Co cot "Ngay no" hien thi so ngay tu ngay no den hien tai
+3. Vi du: "15 ngay", "30 ngay"
 
-#### ✅ Kiểm tra Nhân viên chỉ xem xuất hàng chi nhánh đó
-1. Đăng nhập với tài khoản **Nhân viên bán hàng**
-2. Vào menu **📤 Xuất hàng**
-3. **Kiểm tra**:
-   - Dropdown "Chi nhánh" bị **disable** (không thể chọn)
-   - Tự động set chi nhánh của nhân viên
-   - Chỉ thấy danh sách xuất hàng của chi nhánh đó
-   - Không thể chọn chi nhánh khác
+#### Kiem tra Tim kiem (khong xoay khi nhap 1 ky tu)
+1. Trong o tim kiem, nhap 1 ky tu (vi du: "N")
+2. Kiem tra:
+   - Khong co icon loading xoay ngay lap tuc
+   - Cho khoang 0.5-1 giay sau khi ngung go moi tim kiem
+   - Co the tiep tuc go ma khong bi gian doan
 
-#### ✅ Kiểm tra Thu ngân chỉ xem báo cáo chi nhánh đó
-1. Đăng nhập với tài khoản **Thu ngân**
-2. Vào menu **📊 Báo cáo**
-3. **Kiểm tra**:
-   - Dropdown "Chi nhánh" bị **disable**
-   - Tự động hiển thị chi nhánh của thu ngân
-   - Báo cáo chỉ hiển thị dữ liệu của chi nhánh đó
-   - Không thể chọn chi nhánh khác
+#### Kiem tra Tim theo SDT hoac Ten
+1. Trong o tim kiem, nhap so dien thoai (vi du: "0123")
+2. Kiem tra: Ket qua hien thi khach hang co SDT chua "0123"
+3. Xoa va nhap ten khach hang (vi du: "Nguyen")
+4. Kiem tra: Ket qua hien thi khach hang co ten chua "Nguyen"
 
 ---
 
-## 🎯 Checklist Tổng hợp
+### 5. Cong no - Minh no nha cung cap
 
-Đánh dấu ✅ sau khi kiểm tra từng mục:
+#### Kiem tra Tra no
+1. Vao menu Cong no -> Tab "Minh no nha cung cap"
+2. Chon mot nha cung cap co cong no
+3. Click nut "Tra no" hoac "Thanh toan"
+4. Nhap so tien va click xac nhan
+5. Kiem tra:
+   - Giao dich tra no duoc tao thanh cong
+   - So cong no cua nha cung cap giam dung so tien da tra
+   - Trong So quy co giao dich chi tuong ung
 
-### Phiếu thu chi
-- [ ] Checkbox "Tính vào hoạt động kinh doanh" hoạt động đúng
-- [ ] Quản lý mô tả: Thêm/xóa mô tả thành công
-- [ ] Lọc theo nội dung (mô tả) hoạt động đúng
-- [ ] Tổng thu/chi hiển thị đúng sau khi lọc
-
-### Báo cáo
-- [ ] Giá vốn hiển thị đúng
-- [ ] Lợi nhuận gộp = Doanh thu thuần - Giá vốn
-- [ ] Xuất Excel có đầy đủ: Giá vốn và Lợi nhuận gộp
-- [ ] Thu ngân chỉ xem được chi nhánh của mình
-
-### Nhập hàng
-- [ ] Tên "Giá Trị Kho" đã được đổi
-
-### Công nợ - Khách nợ mình
-- [ ] Lịch sử hiển thị mô tả
-- [ ] Có cột "Ngày nợ"
-- [ ] Tìm kiếm không xoay khi nhập 1 ký tự
-- [ ] Tìm được theo SĐT và tên
-
-### Công nợ - Mình nợ nhà cung cấp
-- [ ] Trả nợ thành công
-- [ ] Tìm kiếm không xoay khi nhập 1 ký tự
-
-### Chốt xuất hàng
-- [ ] Nhân viên không thấy giá nhập
-- [ ] Admin vẫn thấy giá nhập
-
-### Phân quyền
-- [ ] Admin tổng thấy hết
-- [ ] Admin chi nhánh chỉ thấy chi nhánh đó
-- [ ] Nhân viên chỉ xem xuất hàng chi nhánh đó
-- [ ] Thu ngân chỉ xem báo cáo chi nhánh đó
+#### Kiem tra Tim kiem (khong xoay khi nhap 1 ky tu)
+1. Trong o tim kiem nha cung cap, nhap 1 ky tu
+2. Kiem tra: Khong co icon loading xoay ngay lap tuc, cho sau khi ngung go
 
 ---
 
-## 📞 Hỗ trợ
+### 6. Chot xuat hang
 
-Nếu phát hiện bất kỳ vấn đề nào trong quá trình kiểm tra, vui lòng:
-1. Ghi lại màn hình (screenshot)
-2. Mô tả chi tiết các bước thực hiện
-3. Liên hệ đội kỹ thuật để được hỗ trợ
+#### Kiem tra An gia nhap cho nhan vien
+1. Dang nhap voi tai khoan co role "Nhan vien ban hang"
+2. Vao menu Xuat hang
+3. Kiem tra:
+   - Trong bang danh sach xuat hang: KHONG co cot "Gia nhap"
+   - Trong dropdown chon san pham: KHONG hien thi gia nhap
+   - Trong suggestions: KHONG hien thi gia nhap
+4. Dang nhap voi Admin de kiem tra nguoc lai:
+   - Admin se thay cot "Gia nhap" va gia nhap trong suggestions
 
 ---
 
-**Chúc bạn kiểm tra thành công!** ✅
+### 7. Phan quyen User
 
+#### Kiem tra Admin tong thay het
+1. Dang nhap voi tai khoan Admin tong (khong co branch_id)
+2. Kiem tra:
+   - Co the chon tat ca chi nhanh trong dropdown
+   - Xem duoc du lieu cua tat ca chi nhanh
+   - Khong bi gioi han boi chi nhanh nao
+
+#### Kiem tra Admin chi nhanh chi thay chi nhanh do
+1. Dang nhap voi tai khoan Admin chi nhanh (co branch_id)
+2. Kiem tra:
+   - Dropdown chi nhanh chi hien thi chi nhanh cua admin
+   - Chi xem duoc du lieu cua chi nhanh do
+   - Khong the chon chi nhanh khac
+
+#### Kiem tra Nhan vien chi xem xuat hang chi nhanh do
+1. Dang nhap voi tai khoan Nhan vien ban hang
+2. Vao menu Xuat hang
+3. Kiem tra:
+   - Dropdown "Chi nhanh" bi disable (khong the chon)
+   - Tu dong set chi nhanh cua nhan vien
+   - Chi thay danh sach xuat hang cua chi nhanh do
+   - Khong the chon chi nhanh khac
+
+#### Kiem tra Thu ngan chi xem bao cao chi nhanh do
+1. Dang nhap voi tai khoan Thu ngan
+2. Vao menu Bao cao
+3. Kiem tra:
+   - Dropdown "Chi nhanh" bi disable
+   - Tu dong hien thi chi nhanh cua thu ngan
+   - Bao cao chi hien thi du lieu cua chi nhanh do
+   - Khong the chon chi nhanh khac
+
+---
+
+## Checklist Tong hop
+
+Danh dau sau khi kiem tra tung muc:
+
+### Phieu thu chi
+- [ ] Checkbox "Tinh vao hoat dong kinh doanh" hoat dong dung
+- [ ] Quan ly mo ta: Them/xoa mo ta thanh cong
+- [ ] Loc theo noi dung (mo ta) hoat dong dung
+- [ ] Tong thu/chi hien thi dung sau khi loc
+
+### Bao cao
+- [ ] Gia von hien thi dung
+- [ ] Loi nhuan gop = Doanh thu thuan - Gia von
+- [ ] Xuat Excel co day du: Gia von va Loi nhuan gop
+- [ ] Thu ngan chi xem duoc chi nhanh cua minh
+
+### Nhap hang
+- [ ] Ten "Gia Tri Kho" da duoc doi
+
+### Cong no - Khach no minh
+- [ ] Lich su hien thi mo ta
+- [ ] Co cot "Ngay no"
+- [ ] Tim kiem khong xoay khi nhap 1 ky tu
+- [ ] Tim duoc theo SDT va ten
+
+### Cong no - Minh no nha cung cap
+- [ ] Tra no thanh cong
+- [ ] Tim kiem khong xoay khi nhap 1 ky tu
+
+### Chot xuat hang
+- [ ] Nhan vien khong thay gia nhap
+- [ ] Admin van thay gia nhap
+
+### Phan quyen
+- [ ] Admin tong thay het
+- [ ] Admin chi nhanh chi thay chi nhanh do
+- [ ] Nhan vien chi xem xuat hang chi nhanh do
+- [ ] Thu ngan chi xem bao cao chi nhanh do
+
+---
+
+## Ho tro
+
+Neu phat hien bat ky van de nao trong qua trinh kiem tra, vui long:
+1. Ghi lai man hinh (screenshot)
+2. Mo ta chi tiet cac buoc thuc hien
+3. Lien he doi ky thuat de duoc ho tro
+
+---
+
+Chuc ban kiem tra thanh cong

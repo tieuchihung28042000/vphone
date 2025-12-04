@@ -36,8 +36,12 @@ const BaoCao = () => {
         setUserRole(payload.role || null);
         setUserBranch(payload.branch_name || null);
         
-        // Nếu là thu ngân, tự động set branch
-        if (payload.role === 'thu_ngan' && payload.branch_name) {
+        // Nếu là admin chi nhánh, nhân viên hoặc thu ngân, tự động set branch
+        if (payload.branch_name && (
+          (payload.role === 'admin') || 
+          payload.role === 'nhan_vien_ban_hang' || 
+          payload.role === 'thu_ngan'
+        )) {
           setSelectedBranch(payload.branch_name);
         }
       }
@@ -122,25 +126,41 @@ const BaoCao = () => {
         <select
           value={selectedBranch}
           onChange={(e) => setSelectedBranch(e.target.value)}
-          disabled={userRole === 'thu_ngan'}
+          disabled={
+            // Disable nếu là admin chi nhánh, nhân viên hoặc thu ngân
+            (userRole === 'admin' && userBranch) || 
+            userRole === 'nhan_vien_ban_hang' || 
+            userRole === 'thu_ngan'
+          }
           style={{
             padding: '8px 12px',
             borderRadius: '5px',
             border: '1px solid #ccc',
             fontSize: '14px',
             minWidth: '200px',
-            cursor: userRole === 'thu_ngan' ? 'not-allowed' : 'pointer',
-            opacity: userRole === 'thu_ngan' ? 0.6 : 1
+            cursor: ((userRole === 'admin' && userBranch) || userRole === 'nhan_vien_ban_hang' || userRole === 'thu_ngan') ? 'not-allowed' : 'pointer',
+            opacity: ((userRole === 'admin' && userBranch) || userRole === 'nhan_vien_ban_hang' || userRole === 'thu_ngan') ? 0.6 : 1
           }}
         >
           <option value="all">Tất cả chi nhánh</option>
-          {branches.map((branch) => (
+          {/* Admin tổng thấy tất cả, admin chi nhánh chỉ thấy chi nhánh của mình */}
+          {((userRole === 'admin' && !userBranch) ? branches : (userBranch ? [userBranch] : branches)).map((branch) => (
             <option key={branch} value={branch}>{branch}</option>
           ))}
         </select>
+        {(userRole === 'admin' && userBranch) && (
+          <span style={{ fontSize: '12px', color: '#666' }}>
+            (Admin chi nhánh: Chỉ xem được chi nhánh {userBranch})
+          </span>
+        )}
         {userRole === 'thu_ngan' && (
           <span style={{ fontSize: '12px', color: '#666' }}>
-            (Chỉ xem báo cáo chi nhánh: {userBranch || selectedBranch})
+            (Thu ngân: Chỉ xem báo cáo chi nhánh {userBranch || selectedBranch})
+          </span>
+        )}
+        {userRole === 'nhan_vien_ban_hang' && (
+          <span style={{ fontSize: '12px', color: '#666' }}>
+            (Nhân viên: Chỉ xem được xuất hàng chi nhánh {userBranch || selectedBranch})
           </span>
         )}
       </div>

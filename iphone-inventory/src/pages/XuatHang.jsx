@@ -46,6 +46,7 @@ function XuatHang() {
   const [showInvoice, setShowInvoice] = useState(false); // Hiển thị hóa đơn inline
   const [currentInvoice, setCurrentInvoice] = useState(null); // Dữ liệu hóa đơn hiện tại
   const [userRole, setUserRole] = useState(null); // Role của user hiện tại
+  const [userBranch, setUserBranch] = useState(null); // Branch của user hiện tại
   
   const getLocalBranch = () => localStorage.getItem('lastBranch') || "";
 
@@ -278,13 +279,23 @@ function XuatHang() {
     }
   };
 
-  // Lấy role từ token
+  // Lấy role và branch từ token
   useEffect(() => {
     try {
       const token = localStorage.getItem('token') || sessionStorage.getItem('token');
       if (token) {
         const payload = JSON.parse(atob(token.split('.')[1]));
         setUserRole(payload.role || null);
+        setUserBranch(payload.branch_name || null);
+        
+        // Nếu là admin chi nhánh, nhân viên hoặc thu ngân, tự động set branch
+        if (payload.branch_name && (
+          (payload.role === 'admin') || 
+          payload.role === 'nhan_vien_ban_hang' || 
+          payload.role === 'thu_ngan'
+        )) {
+          setFormData(prev => ({ ...prev, branch: payload.branch_name }));
+        }
       }
     } catch (e) {
       console.error('Error decoding token:', e);
@@ -2308,15 +2319,31 @@ function XuatHang() {
               onChange={handleChange} 
               className="form-input"
               required
-              disabled={userRole === 'nhan_vien_ban_hang'}
+              disabled={
+                // Disable nếu là admin chi nhánh, nhân viên hoặc thu ngân
+                (userRole === 'admin' && userBranch) || 
+                userRole === 'nhan_vien_ban_hang' || 
+                userRole === 'thu_ngan'
+              }
+              style={{
+                cursor: ((userRole === 'admin' && userBranch) || userRole === 'nhan_vien_ban_hang' || userRole === 'thu_ngan') ? 'not-allowed' : 'pointer',
+                opacity: ((userRole === 'admin' && userBranch) || userRole === 'nhan_vien_ban_hang' || userRole === 'thu_ngan') ? 0.6 : 1
+              }}
             >
               <option value="">Chọn chi nhánh</option>
-              {branches.map((b) => (
-                <option key={b._id} value={b.name}>{b.name}</option>
+              {/* Admin tổng thấy tất cả, admin chi nhánh chỉ thấy chi nhánh của mình */}
+              {((userRole === 'admin' && !userBranch) ? branches : (userBranch ? branches.filter(b => b.name === userBranch) : branches)).map((b) => (
+                <option key={b._id || b.name} value={b.name}>{b.name}</option>
               ))}
             </select>
+            {(userRole === 'admin' && userBranch) && (
+              <div className="text-xs text-orange-600 mt-1">Admin chi nhánh: Chỉ xem được chi nhánh {userBranch}</div>
+            )}
             {userRole === 'nhan_vien_ban_hang' && (
-              <div className="text-xs text-gray-500 mt-1">Nhân viên chỉ xem xuất hàng của chi nhánh được phân công</div>
+              <div className="text-xs text-orange-600 mt-1">Nhân viên: Chỉ xem xuất hàng của chi nhánh được phân công ({userBranch || formData.branch})</div>
+            )}
+            {userRole === 'thu_ngan' && (
+              <div className="text-xs text-orange-600 mt-1">Thu ngân: Chỉ xem được báo cáo của chi nhánh {userBranch || formData.branch}</div>
             )}
           </div>
 
@@ -2371,11 +2398,21 @@ function XuatHang() {
               value={filterBranch}
               onChange={(e) => setFilterBranch(e.target.value)}
               className="form-input"
-              disabled={userRole === 'nhan_vien_ban_hang'}
+              disabled={
+                // Disable nếu là admin chi nhánh, nhân viên hoặc thu ngân
+                (userRole === 'admin' && userBranch) || 
+                userRole === 'nhan_vien_ban_hang' || 
+                userRole === 'thu_ngan'
+              }
+              style={{
+                cursor: ((userRole === 'admin' && userBranch) || userRole === 'nhan_vien_ban_hang' || userRole === 'thu_ngan') ? 'not-allowed' : 'pointer',
+                opacity: ((userRole === 'admin' && userBranch) || userRole === 'nhan_vien_ban_hang' || userRole === 'thu_ngan') ? 0.6 : 1
+              }}
             >
               <option value="">Tất cả chi nhánh</option>
-              {branches.map((b) => (
-                <option key={b._id} value={b.name}>{b.name}</option>
+              {/* Admin tổng thấy tất cả, admin chi nhánh chỉ thấy chi nhánh của mình */}
+              {((userRole === 'admin' && !userBranch) ? branches : (userBranch ? branches.filter(b => b.name === userBranch) : branches)).map((b) => (
+                <option key={b._id || b.name} value={b.name}>{b.name}</option>
               ))}
             </select>
           </div>

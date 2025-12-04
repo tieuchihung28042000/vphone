@@ -75,15 +75,43 @@ router.get('/financial-report/summary', async (req, res) => {
     const exports = await ExportHistory.find(exportQuery);
     const totalRevenue = exports.reduce((s, e) => s + (e.price_sell || 0) * (e.quantity || 1), 0);
     
-    // Tính tổng giá vốn (giá nhập hàng)
-    const totalCost = exports.reduce((s, e) => s + (e.price_import || 0) * (e.quantity || 1), 0);
+    // Tính tổng giá vốn (giá nhập hàng) cho TẤT CẢ đơn bán trong kỳ
+    const totalCostRaw = exports.reduce((s, e) => s + (e.price_import || 0) * (e.quantity || 1), 0);
 
+    // Doanh thu trả hàng trong kỳ
     const returnQuery = { return_date: { $gte: fromDate, $lt: toDate } };
     if (branch && branch !== 'all') returnQuery.branch = branch;
     const returns = await ReturnExport.find(returnQuery);
     const totalReturnRevenue = returns.reduce((s, r) => s + (r.return_amount || 0), 0);
 
+    // Doanh thu thuần = Doanh thu bán hàng - Doanh thu trả hàng
     const netRevenue = totalRevenue - totalReturnRevenue;
+
+    // Giá vốn chỉ tính những đơn hàng THÀNH CÔNG (không tính phần đã trả hàng)
+    let returnedCost = 0;
+    if (returns.length > 0) {
+      const exportIds = returns.map(r => r.original_export_id).filter(id => !!id);
+      if (exportIds.length > 0) {
+        const relatedExports = await ExportHistory.find({ _id: { $in: exportIds } });
+        const exportMap = new Map(relatedExports.map(e => [String(e._id), e]));
+
+        for (const r of returns) {
+          const ex = exportMap.get(String(r.original_export_id));
+          if (!ex) continue;
+          const soldDate = ex.sold_date || ex.createdAt;
+          if (!soldDate) continue;
+          // Chỉ trừ giá vốn nếu đơn bán gốc thuộc cùng kỳ báo cáo
+          if (soldDate >= fromDate && soldDate < toDate) {
+            const qty = ex.quantity || r.quantity || 1;
+            const importPrice = ex.price_import || 0;
+            returnedCost += importPrice * qty;
+          }
+        }
+      }
+    }
+
+    let totalCost = totalCostRaw - returnedCost;
+    if (totalCost < 0) totalCost = 0;
 
     const cbQuery = { date: { $gte: fromDate, $lt: toDate } };
     if (branch && branch !== 'all') cbQuery.branch = branch;
@@ -100,12 +128,14 @@ router.get('/financial-report/summary', async (req, res) => {
       .filter(i => i.type === 'thu' && i.related_type === 'manual' && (i.include_in_profit !== false))
       .reduce((s, i) => s + (i.amount || 0), 0);
 
-    // ✅ Lợi nhuận thuần KHÔNG trừ chi phí (chỉ tính doanh thu thuần + thu nhập khác)
-    const operatingProfit = netRevenue; // Không trừ chi phí
-    const netProfit = operatingProfit + otherIncome;
+    // Lợi nhuận gộp = Doanh thu thuần - Giá vốn
+    const grossProfit = netRevenue - totalCost;
 
-    // Tính lợi nhuận gộp
-    const grossProfit = totalRevenue - totalCost;
+    // Lợi nhuận thuần = Lợi nhuận gộp + Thu nhập khác - Chi phí
+    const netProfit = grossProfit + otherIncome - totalExpense;
+
+    // Giữ lại operatingProfit cho tương thích, gán bằng lợi nhuận gộp
+    const operatingProfit = grossProfit;
 
     res.json({
       totalRevenue,
@@ -790,7 +820,7 @@ router.get('/export-excel', authenticateToken, requireReportAccess, async (req, 
 
     const exports = await ExportHistory.find(exportQuery);
     const totalRevenue = exports.reduce((s, e) => s + (e.price_sell || 0) * (e.quantity || 1), 0);
-    const totalCost = exports.reduce((s, e) => s + (e.price_import || 0) * (e.quantity || 1), 0);
+    const totalCostRaw = exports.reduce((s, e) => s + (e.price_import || 0) * (e.quantity || 1), 0);
 
     const returnQuery = { return_date: { $gte: fromDate, $lt: toDate } };
     if (branch && branch !== 'all') returnQuery.branch = branch;
@@ -798,7 +828,33 @@ router.get('/export-excel', authenticateToken, requireReportAccess, async (req, 
     const totalReturnRevenue = returns.reduce((s, r) => s + (r.return_amount || 0), 0);
 
     const netRevenue = totalRevenue - totalReturnRevenue;
-    const grossProfit = totalRevenue - totalCost;
+
+    // Tính lại giá vốn chỉ cho các đơn hàng thành công (không tính phần đã trả hàng)
+    let returnedCost = 0;
+    if (returns.length > 0) {
+      const exportIds = returns.map(r => r.original_export_id).filter(id => !!id);
+      if (exportIds.length > 0) {
+        const relatedExports = await ExportHistory.find({ _id: { $in: exportIds } });
+        const exportMap = new Map(relatedExports.map(e => [String(e._id), e]));
+
+        for (const r of returns) {
+          const ex = exportMap.get(String(r.original_export_id));
+          if (!ex) continue;
+          const soldDate = ex.sold_date || ex.createdAt;
+          if (!soldDate) continue;
+          if (soldDate >= fromDate && soldDate < toDate) {
+            const qty = ex.quantity || r.quantity || 1;
+            const importPrice = ex.price_import || 0;
+            returnedCost += importPrice * qty;
+          }
+        }
+      }
+    }
+
+    let totalCost = totalCostRaw - returnedCost;
+    if (totalCost < 0) totalCost = 0;
+
+    const grossProfit = netRevenue - totalCost;
 
     const cbQuery = { date: { $gte: fromDate, $lt: toDate } };
     if (branch && branch !== 'all') cbQuery.branch = branch;
@@ -812,8 +868,7 @@ router.get('/export-excel', authenticateToken, requireReportAccess, async (req, 
       .filter(i => i.type === 'thu' && i.related_type === 'manual' && (i.include_in_profit !== false))
       .reduce((s, i) => s + (i.amount || 0), 0);
 
-    const operatingProfit = netRevenue;
-    const netProfit = operatingProfit + otherIncome;
+    const netProfit = grossProfit + otherIncome - totalExpense;
 
     // Tạo dữ liệu cho Excel
     const reportData = [

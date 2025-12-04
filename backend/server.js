@@ -54,6 +54,7 @@ import returnImportRoutes from './routes/returnImport.js';
 import returnExportRoutes from './routes/returnExport.js';
 import activityLogRoutes from './routes/activityLog.js';
 import inventoryRoutes from './routes/inventory.js';
+import { authenticateToken, filterByBranch } from './middleware/auth.js';
 
 const app = express();
 
@@ -1044,10 +1045,16 @@ app.get('/api/canh-bao-ton-kho', async (req, res) => {
 });
 
 // API danh sách xuất hàng  
-app.get('/api/xuat-hang-list', async (req, res) => {
+app.get('/api/xuat-hang-list', authenticateToken, filterByBranch, async (req, res) => {
   try {
+    // ✅ Filter theo branch từ middleware
+    let query = {};
+    if (req.branchFilter) {
+      query.branch = req.branchFilter.branch;
+    }
+    
     // ✅ Lấy từ ExportHistory thay vì Inventory (vì dữ liệu thực tế ở đây)
-    const rawItems = await ExportHistory.find({})
+    const rawItems = await ExportHistory.find(query)
       .sort({ 
         sold_date: -1,      // Ưu tiên theo ngày bán (mới nhất trước)
         export_date: -1,    // Hoặc export_date
