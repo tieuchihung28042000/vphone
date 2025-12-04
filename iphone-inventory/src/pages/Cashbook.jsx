@@ -55,6 +55,47 @@ export default function Cashbook() {
       'Authorization': `Bearer ${token}`
     };
   };
+
+  // ✅ Helper function để đảm bảo API URL luôn đi qua nginx proxy
+  // Khi VITE_API_URL rỗng, dùng relative path để nginx proxy đến backend
+  const getApiUrl = (endpoint) => {
+    const apiBase = import.meta.env.VITE_API_URL || '';
+    // Nếu có VITE_API_URL thì dùng, nếu không thì dùng relative path (đi qua nginx)
+    if (apiBase) {
+      return `${apiBase.replace(/\/+$/, '')}${endpoint.startsWith('/') ? endpoint : '/' + endpoint}`;
+    }
+    // Relative path sẽ được browser resolve thành current origin + endpoint
+    return endpoint.startsWith('/') ? endpoint : '/' + endpoint;
+  };
+
+  // Helper function để xử lý lỗi API một cách thống nhất
+  const handleApiError = (error, context = '') => {
+    console.error(`❌ Error ${context}:`, error);
+    console.error('❌ Error details:', {
+      message: error.message,
+      name: error.name,
+      stack: error.stack,
+      context: context
+    });
+    
+    let errorMsg = '❌ Lỗi không xác định';
+    
+    if (error.message?.includes('Failed to fetch') || error.message?.includes('NetworkError') || error.name === 'TypeError') {
+      errorMsg = '❌ Không thể kết nối đến server. Vui lòng kiểm tra:\n- Kết nối mạng\n- Server có đang chạy không\n- URL API có đúng không';
+    } else if (error.message?.includes('401') || error.message?.includes('Unauthorized')) {
+      errorMsg = '❌ Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.';
+    } else if (error.message?.includes('403') || error.message?.includes('Forbidden')) {
+      errorMsg = '❌ Bạn không có quyền thực hiện thao tác này.';
+    } else if (error.message?.includes('404') || error.message?.includes('Not Found')) {
+      errorMsg = '❌ Không tìm thấy tài nguyên.';
+    } else if (error.message?.includes('500') || error.message?.includes('Internal Server Error')) {
+      errorMsg = '❌ Lỗi server. Vui lòng thử lại sau hoặc liên hệ quản trị viên.';
+    } else if (error.message) {
+      errorMsg = `❌ ${error.message}`;
+    }
+    
+    return errorMsg;
+  };
   
   // State cho hiển thị số dư theo nguồn tiền và chỉnh sửa tổng quỹ
   const [balanceBySource, setBalanceBySource] = useState({
@@ -136,7 +177,7 @@ export default function Cashbook() {
         return;
       }
       setSuggestLoading(true);
-        const url = `${import.meta.env.VITE_API_URL || ''}/api/cashbook/contents?limit=50`;
+        const url = getApiUrl('/api/cashbook/contents?limit=50');
       const res = await fetch(url, {
         headers: getAuthHeaders()
       });
@@ -171,7 +212,7 @@ export default function Cashbook() {
   // ======= QUẢN LÝ MÔ TẢ GIAO DỊCH =======
   const loadContentSuggestions = async () => {
     try {
-      const response = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/cashbook/content-suggestions`, {
+      const response = await fetch(getApiUrl('/api/cashbook/content-suggestions'), {
         headers: getAuthHeaders()
       });
       if (response.ok) {
@@ -187,8 +228,8 @@ export default function Cashbook() {
     e.preventDefault();
     try {
       const url = contentModal.type === 'edit' 
-        ? `${import.meta.env.VITE_API_URL || ''}/api/cashbook/content-suggestions/${contentModal.data._id}`
-        : `${import.meta.env.VITE_API_URL || ''}/api/cashbook/content-suggestions`;
+        ? getApiUrl(`/api/cashbook/content-suggestions/${contentModal.data._id}`)
+        : getApiUrl('/api/cashbook/content-suggestions');
       
       const method = contentModal.type === 'edit' ? 'PUT' : 'POST';
       
@@ -212,8 +253,7 @@ export default function Cashbook() {
         alert('❌ ' + result.message);
       }
     } catch (error) {
-      console.error('Error saving content:', error);
-      alert('❌ Lỗi kết nối server');
+      alert(handleApiError(error, 'saving content'));
     }
   };
 
@@ -221,7 +261,7 @@ export default function Cashbook() {
     if (!window.confirm('Bạn có chắc muốn xóa mô tả này?')) return;
     
     try {
-      const response = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/cashbook/content-suggestions/${id}`, {
+      const response = await fetch(getApiUrl(`/api/cashbook/content-suggestions/${id}`), {
         method: 'DELETE',
         headers: getAuthHeaders()
       });
@@ -235,8 +275,7 @@ export default function Cashbook() {
         alert('❌ ' + result.message);
       }
     } catch (error) {
-      console.error('Error deleting content:', error);
-      alert('❌ Lỗi kết nối server');
+      alert(handleApiError(error, 'deleting content'));
     }
   };
 
@@ -258,7 +297,7 @@ export default function Cashbook() {
       setLoadingBranches(true);
       console.log('🏢 Loading branches...'); // Debug
       
-        const response = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/branches`);
+        const response = await fetch(getApiUrl('/api/branches'));
       const data = await response.json();
       
       console.log('🏢 Branches API response:', data); // Debug
@@ -327,9 +366,33 @@ export default function Cashbook() {
         }
       });
 
-          const response = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/cashbook?${params}`, {
+      // ✅ Đảm bảo luôn dùng relative path để đi qua nginx proxy
+      const apiUrl = getApiUrl(`/api/cashbook?${params}`);
+      console.log('🔍 Fetching transactions from:', apiUrl);
+      console.log('🔍 Using API URL helper - will go through nginx proxy');
+      
+      const response = await fetch(apiUrl, {
         headers: getAuthHeaders()
       });
+      
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ message: 'Unknown error' }));
+        console.error('❌ API Error Response:', {
+          status: response.status,
+          statusText: response.statusText,
+          data: errorData,
+          url: apiUrl
+        });
+        
+        if (response.status === 401 || response.status === 403) {
+          alert('❌ Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.');
+          // Có thể redirect đến trang login ở đây
+          return;
+        }
+        
+        throw new Error(`API Error: ${response.status} - ${errorData.message || response.statusText}`);
+      }
+      
       const data = await response.json();
       
       if (response.ok) {
@@ -339,11 +402,16 @@ export default function Cashbook() {
           ...prev,
           total: data.total || 0
         }));
-      } else {
-        console.error('Error response:', data);
       }
     } catch (error) {
-      console.error('Error loading transactions:', error);
+      console.error('❌ Error loading transactions:', error);
+      console.error('❌ Error details:', {
+        message: error.message,
+        name: error.name,
+        stack: error.stack,
+        params: params.toString()
+      });
+      // Không hiển thị alert cho lỗi load để tránh spam, chỉ log
     }
     setLoading(false);
   };
@@ -361,7 +429,7 @@ export default function Cashbook() {
         }
       });
 
-      const response = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/cashbook/total-summary?${params}`, {
+      const response = await fetch(getApiUrl(`/api/cashbook/total-summary?${params}`), {
         headers: getAuthHeaders()
       });
       const data = await response.json();
@@ -379,7 +447,7 @@ export default function Cashbook() {
     if (!selectedBranch) return;
     
     try {
-      const response = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/cashbook/balance?branch=${selectedBranch}`, {
+      const response = await fetch(getApiUrl(`/api/cashbook/balance?branch=${selectedBranch}`), {
         headers: getAuthHeaders()
       });
       const data = await response.json();
@@ -414,7 +482,7 @@ export default function Cashbook() {
     }
     
     try {
-      const response = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/cashbook/adjust-balance`, {
+      const response = await fetch(getApiUrl('/api/cashbook/adjust-balance'), {
         method: 'POST',
         headers: getAuthHeaders(),
         body: JSON.stringify({
@@ -443,8 +511,7 @@ export default function Cashbook() {
         alert('❌ ' + result.message);
       }
     } catch (error) {
-      console.error('Error adjusting balance:', error);
-      alert('❌ Lỗi kết nối server');
+      alert(handleApiError(error, 'adjusting balance'));
     }
   };
 
@@ -534,8 +601,8 @@ export default function Cashbook() {
       }
 
       const url = modal.type === 'edit' 
-        ? `${import.meta.env.VITE_API_URL || ''}/api/cashbook/${modal.data._id}`
-        : `${import.meta.env.VITE_API_URL || ''}/api/cashbook`;
+        ? getApiUrl(`/api/cashbook/${modal.data._id}`)
+        : getApiUrl('/api/cashbook');
       
       const method = modal.type === 'edit' ? 'PUT' : 'POST';
       
@@ -558,8 +625,7 @@ export default function Cashbook() {
         alert('❌ ' + result.message);
       }
     } catch (error) {
-      console.error('Error saving transaction:', error);
-      alert('❌ Lỗi kết nối server');
+      alert(handleApiError(error, `saving transaction (${method} ${url})`));
     }
   };
 
@@ -567,7 +633,7 @@ export default function Cashbook() {
     if (!window.confirm('Bạn có chắc muốn xóa giao dịch này?')) return;
     
     try {
-      const response = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/cashbook/${id}`, {
+      const response = await fetch(getApiUrl(`/api/cashbook/${id}`), {
         method: 'DELETE',
         headers: getAuthHeaders()
       });
@@ -581,8 +647,7 @@ export default function Cashbook() {
         alert('❌ ' + result.message);
       }
     } catch (error) {
-      console.error('Error deleting transaction:', error);
-      alert('❌ Lỗi kết nối server');
+      alert(handleApiError(error, `deleting transaction (id: ${id})`));
     }
   };
 
@@ -604,7 +669,7 @@ export default function Cashbook() {
         }
       });
 
-      const response = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/cashbook/export-excel?${params}`, {
+      const response = await fetch(getApiUrl(`/api/cashbook/export-excel?${params}`), {
         headers: getAuthHeaders()
       });
       

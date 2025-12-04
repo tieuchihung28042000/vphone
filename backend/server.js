@@ -1272,9 +1272,20 @@ app.post('/api/thu-no-khach', async (req, res) => {
 
 
 
-mongoose.connect(process.env.MONGODB_URI)
+// ✅ Cải thiện kết nối MongoDB với options để xử lý lỗi tốt hơn
+const mongooseOptions = {
+  maxPoolSize: 10, // Giới hạn số connection pool
+  serverSelectionTimeoutMS: 5000, // Timeout khi chọn server
+  socketTimeoutMS: 45000, // Timeout cho socket operations
+  family: 4, // Sử dụng IPv4
+  retryWrites: true,
+  retryReads: true,
+};
+
+mongoose.connect(process.env.MONGODB_URI, mongooseOptions)
 .then(async () => {
   console.log('✅ Kết nối MongoDB thành công');
+  console.log('🔧 MongoDB connection options:', mongooseOptions);
   console.log('🔧 [MONGODB] Checking models...');
   
   // Kiểm tra models có hoạt động không
@@ -1311,7 +1322,17 @@ mongoose.connect(process.env.MONGODB_URI)
   const { createDefaultAdmin } = initAdminModule;
   await createDefaultAdmin();
 })
-.catch(err => console.error('❌ Kết nối MongoDB lỗi:', err));
+.catch(err => {
+  console.error('❌ Kết nối MongoDB lỗi:', err);
+  console.error('❌ MongoDB Error Details:', {
+    message: err.message,
+    name: err.name,
+    code: err.code,
+    codeName: err.codeName,
+    connectionString: process.env.MONGODB_URI ? process.env.MONGODB_URI.replace(/\/\/.*@/, '//****:****@') : 'not set'
+  });
+  // Không exit process để có thể retry hoặc handle gracefully
+});
 
 app.get('/', (req, res) => {
   res.send('🎉 Backend đang chạy!');
