@@ -22,7 +22,7 @@ function formatNumber(val) {
 
 function formatCurrency(amount) {
   if (!amount || amount === 0) return "0đ";
-  
+
   if (amount >= 1000000000) {
     return `${(amount / 1000000000).toFixed(1)}Tỷ`;
   } else if (amount >= 1000000) {
@@ -47,7 +47,7 @@ function XuatHang() {
   const [currentInvoice, setCurrentInvoice] = useState(null); // Dữ liệu hóa đơn hiện tại
   const [userRole, setUserRole] = useState(null); // Role của user hiện tại
   const [userBranch, setUserBranch] = useState(null); // Branch của user hiện tại
-  
+
   const getLocalBranch = () => localStorage.getItem('lastBranch') || "";
 
   const [formData, setFormData] = useState({
@@ -80,7 +80,7 @@ function XuatHang() {
   // ✅ Thêm states cho autocomplete
   const [suggestList, setSuggestList] = useState([]);
   const [showSuggest, setShowSuggest] = useState(false);
-  
+
   // ✅ Thêm states cho IMEI autocomplete
   const [imeiSuggestList, setImeiSuggestList] = useState([]);
   const [showImeiSuggest, setShowImeiSuggest] = useState(false);
@@ -89,7 +89,7 @@ function XuatHang() {
   const [customerSuggestList, setCustomerSuggestList] = useState([]);
   const [showCustomerSuggest, setShowCustomerSuggest] = useState(false);
   const [customerSuggestType, setCustomerSuggestType] = useState('name'); // 'name' or 'phone'
-  
+
   // ✅ Thêm state để track phụ kiện
   const [isAccessory, setIsAccessory] = useState(false);
 
@@ -124,17 +124,17 @@ function XuatHang() {
 
   // ==== Payments for single sale (đa nguồn tiền) ====
   const [payments, setPayments] = useState([{ source: 'tien_mat', amount: '' }]);
-  const totalSinglePayments = () => (payments || []).reduce((s, p) => s + (parseFloat((p.amount||"").toString().replace(/\s/g, '')) || 0), 0);
+  const totalSinglePayments = () => (payments || []).reduce((s, p) => s + (parseFloat((p.amount || "").toString().replace(/\s/g, '')) || 0), 0);
 
   // ==== Unified Cart (giỏ hàng) for single sale ====
   const [cartItems, setCartItems] = useState([]); // {product_name, sku, imei, quantity, price_sell, warranty}
   const addItemToCart = () => {
     const quantity = parseInt(formData.quantity) || 1;
     const priceSell = parseFloat(parseNumber(formData.sale_price)) || 0;
-    if (!formData.product_name && !formData.item_id) { setMessage('❌ Vui lòng chọn sản phẩm'); setTimeout(()=>setMessage(''),3000); return; }
-    if (!isAccessory && formData.imei && String(formData.imei).trim().length < 3) { setMessage('❌ IMEI chưa hợp lệ'); setTimeout(()=>setMessage(''),3000); return; }
-    if (!isAccessory && !formData.imei) { setMessage('❌ Vui lòng nhập IMEI cho sản phẩm có IMEI'); setTimeout(()=>setMessage(''),3000); return; }
-    if (priceSell <= 0) { setMessage('❌ Giá bán phải lớn hơn 0'); setTimeout(()=>setMessage(''),3000); return; }
+    if (!formData.product_name && !formData.item_id) { setMessage('❌ Vui lòng chọn sản phẩm'); setTimeout(() => setMessage(''), 3000); return; }
+    if (!isAccessory && formData.imei && String(formData.imei).trim().length < 3) { setMessage('❌ IMEI chưa hợp lệ'); setTimeout(() => setMessage(''), 3000); return; }
+    if (!isAccessory && !formData.imei) { setMessage('❌ Vui lòng nhập IMEI cho sản phẩm có IMEI'); setTimeout(() => setMessage(''), 3000); return; }
+    if (priceSell <= 0) { setMessage('❌ Giá bán phải lớn hơn 0'); setTimeout(() => setMessage(''), 3000); return; }
 
     const newItem = {
       product_name: formData.product_name,
@@ -152,7 +152,7 @@ function XuatHang() {
       };
       const idx = prev.findIndex(it => isDuplicate(it, newItem));
       if (idx !== -1) {
-        return prev.map((it, i) => i === idx ? { ...it, quantity: String((parseInt(it.quantity)||1) + quantity) } : it);
+        return prev.map((it, i) => i === idx ? { ...it, quantity: String((parseInt(it.quantity) || 1) + quantity) } : it);
       }
       return [...prev, newItem];
     });
@@ -172,11 +172,11 @@ function XuatHang() {
   const updateCartItem = (idx, key, value) => {
     setCartItems(prev => prev.map((it, i) => i === idx ? {
       ...it,
-      [key]: key === 'quantity' ? String(Math.max(1, parseInt(value)||1)) : (key === 'price_sell' ? String(parseNumber(value)) : value)
+      [key]: key === 'quantity' ? String(Math.max(1, parseInt(value) || 1)) : (key === 'price_sell' ? String(parseNumber(value)) : value)
     } : it));
   };
   const removeCartItem = (idx) => setCartItems(prev => prev.filter((_, i) => i !== idx));
-  const cartSubtotal = (it) => (parseFloat(parseNumber(it.price_sell))||0) * (parseInt(it.quantity)||1);
+  const cartSubtotal = (it) => (parseFloat(parseNumber(it.price_sell)) || 0) * (parseInt(it.quantity) || 1);
   const cartTotal = () => cartItems.reduce((s, it) => s + cartSubtotal(it), 0);
 
   // Stats calculation
@@ -192,12 +192,12 @@ function XuatHang() {
     try {
       // ✅ Sửa: Gọi API tồn kho (sử dụng VITE_API_URL)
       const res = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/ton-kho`);
-      
+
       if (!res.ok) throw new Error(`API Error: ${res.status}`);
-      
+
       const data = await res.json();
       if (!data.items) return;
-      
+
       // ✅ Chỉ lấy những item có quantity > 0 (thực tế còn tồn kho)
       const available = data.items.filter(item => {
         if (item.imei) {
@@ -208,7 +208,7 @@ function XuatHang() {
           return (item.quantity || 0) > 0;
         }
       });
-      
+
       setAvailableItems(available);
       console.log('✅ Fetched available items from ton-kho API:', available.length);
     } catch (err) {
@@ -239,12 +239,12 @@ function XuatHang() {
   const fetchSoldItems = async () => {
     try {
       const res = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/xuat-hang-list`);
-      
+
       if (!res.ok) throw new Error(`API Error: ${res.status}`);
-      
+
       const data = await res.json();
       if (!data.items) return;
-      
+
       const sorted = data.items.sort((a, b) => {
         const dateA = a.sale_date || '';
         const dateB = b.sale_date || '';
@@ -252,7 +252,7 @@ function XuatHang() {
         if (dateA < dateB) return 1;
         return b._id.localeCompare(a._id);
       });
-      
+
       setSoldItems(sorted);
     } catch (err) {
       console.error("❌ Lỗi khi tải dữ liệu đã bán:", err);
@@ -287,11 +287,11 @@ function XuatHang() {
         const payload = JSON.parse(atob(token.split('.')[1]));
         setUserRole(payload.role || null);
         setUserBranch(payload.branch_name || null);
-        
+
         // Nếu là admin chi nhánh, nhân viên hoặc thu ngân, tự động set branch
         if (payload.branch_name && (
-          (payload.role === 'admin') || 
-          payload.role === 'nhan_vien_ban_hang' || 
+          (payload.role === 'admin') ||
+          payload.role === 'nhan_vien_ban_hang' ||
           payload.role === 'thu_ngan'
         )) {
           setFormData(prev => ({ ...prev, branch: payload.branch_name }));
@@ -344,16 +344,16 @@ function XuatHang() {
       setShowSuggest(false);
       return;
     }
-    
+
     try {
       // ✅ Thêm timestamp để tránh cache
       const timestamp = Date.now();
-        const res = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/ton-kho?t=${timestamp}`);
+      const res = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/ton-kho?t=${timestamp}`);
       const data = await res.json();
       const lowerQuery = query.trim().toLowerCase();
-      
+
       // API đã được đơn giản hóa
-      
+
       const filtered = (data.items || []).filter(
         item =>
           (item.product_name || item.tenSanPham || "")
@@ -361,7 +361,7 @@ function XuatHang() {
             .includes(lowerQuery) ||
           (item.sku || "").toLowerCase().includes(lowerQuery)
       );
-      
+
       // Gom nhóm sản phẩm
       const group = {};
       filtered.forEach(item => {
@@ -384,7 +384,7 @@ function XuatHang() {
           group[key].soLuong += Number(item.quantity || 0);
         }
       });
-      
+
       // ✅ Lọc bỏ những sản phẩm không có tồn kho
       const availableItems = Object.values(group).filter(item => {
         if (item.isAccessory) {
@@ -393,7 +393,7 @@ function XuatHang() {
           return item.imeis.length > 0; // Sản phẩm IMEI phải có ít nhất 1 IMEI chưa bán
         }
       });
-      
+
       setSuggestList(availableItems);
       setShowSuggest(true);
     } catch (err) {
@@ -410,13 +410,13 @@ function XuatHang() {
       setShowImeiSuggest(false);
       return;
     }
-    
+
     try {
       // Sử dụng dữ liệu từ availableItems thay vì gọi API riêng
-      const filteredItems = availableItems.filter(item => 
+      const filteredItems = availableItems.filter(item =>
         item.imei && item.imei.toLowerCase().includes(query.toLowerCase())
       );
-      
+
       // Chuyển đổi format để phù hợp với UI
       const suggestions = filteredItems.map(item => ({
         imei: item.imei,
@@ -428,7 +428,7 @@ function XuatHang() {
         isAccessory: item.isAccessory || false,
         _id: item._id || ""
       }));
-      
+
       setImeiSuggestList(suggestions);
       setShowImeiSuggest(suggestions.length > 0);
     } catch (error) {
@@ -445,7 +445,7 @@ function XuatHang() {
       setShowCustomerSuggest(false);
       return;
     }
-    
+
     try {
       const base = import.meta.env.VITE_API_URL || '';
       const token = localStorage.getItem('token') || sessionStorage.getItem('token');
@@ -455,7 +455,7 @@ function XuatHang() {
           'Content-Type': 'application/json'
         }
       });
-      
+
       if (res.ok) {
         const customers = await res.json();
         setCustomerSuggestList(customers);
@@ -507,11 +507,11 @@ function XuatHang() {
   // ✅ Thêm function để chọn suggestion
   const handleSelectSuggest = (item) => {
     // Tìm item đầy đủ từ availableItems để lấy thông tin chi tiết
-    const fullItem = availableItems.find(availItem => 
-      (availItem.product_name || availItem.tenSanPham) === item.name && 
+    const fullItem = availableItems.find(availItem =>
+      (availItem.product_name || availItem.tenSanPham) === item.name &&
       availItem.sku === item.sku
     );
-    
+
     setFormData(prev => ({
       ...prev,
       item_id: fullItem?._id || "",
@@ -521,17 +521,17 @@ function XuatHang() {
       sale_price: fullItem?.price_sell || fullItem?.price_import || "",
       warranty: fullItem?.warranty || "",
     }));
-    
+
     // Set trạng thái phụ kiện
     setIsAccessory(item.isAccessory);
-    
+
     setShowSuggest(false);
   };
 
   const handleChange = async (e) => {
     const { name, value } = e.target;
     if (name === "branch") localStorage.setItem('lastBranch', value);
-    
+
     if (name === "sale_price" || name === "da_thanh_toan") {
       // Giữ nguyên giá trị đã format để hiển thị, nhưng lưu số nguyên vào state
       const cleanNumber = parseNumber(value);
@@ -540,8 +540,8 @@ function XuatHang() {
       // Auto-fill product info when item is selected from dropdown
       const selectedItem = availableItems.find(item => item._id === value);
       if (selectedItem) {
-        setFormData((prev) => ({ 
-          ...prev, 
+        setFormData((prev) => ({
+          ...prev,
           item_id: value,
           imei: selectedItem.imei || "",
           product_name: selectedItem.product_name || selectedItem.tenSanPham || "",
@@ -560,7 +560,7 @@ function XuatHang() {
     } else if (name === "imei") {
       // Update IMEI value
       setFormData((prev) => ({ ...prev, [name]: value }));
-      
+
       // Fetch IMEI suggestions if value is long enough
       if (value.trim() && value.trim().length >= 2) {
         fetchImeiSuggestions(value.trim());
@@ -568,7 +568,7 @@ function XuatHang() {
         setImeiSuggestList([]);
         setShowImeiSuggest(false);
       }
-      
+
       // Auto-fill product info when IMEI is entered and long enough
       if (value.trim() && value.trim().length >= 8) {
         try {
@@ -578,8 +578,8 @@ function XuatHang() {
             const data = await res.json();
             const it = data?.item;
             if (it) {
-              setFormData((prev) => ({ 
-                ...prev, 
+              setFormData((prev) => ({
+                ...prev,
                 imei: value,
                 item_id: it._id || prev.item_id,
                 product_name: it.product_name || it.tenSanPham || prev.product_name || "",
@@ -596,7 +596,7 @@ function XuatHang() {
     } else if (name === "buyer_name" || name === "buyer_phone") {
       // Update customer field value
       setFormData((prev) => ({ ...prev, [name]: value }));
-      
+
       // Fetch customer suggestions if value is long enough
       if (value.trim() && value.trim().length >= 2) {
         fetchCustomerSuggestions(value.trim(), name);
@@ -628,7 +628,7 @@ function XuatHang() {
     setEditingItemId(null);
     setIsAccessory(false); // Reset trạng thái phụ kiện
     setPayments([{ source: 'tien_mat', amount: '' }]);
-    
+
     // ✅ Reset suggestion list khi reset form
     setSuggestList([]);
     setShowSuggest(false);
@@ -655,7 +655,7 @@ function XuatHang() {
         const paymentsArrForBatch = (payments || [])
           .map(p => ({ source: p.source, amount: parseFloat(parseNumber(p.amount)) || 0 }))
           .filter(p => p.amount > 0);
-        const daTT = paymentsArrForBatch.reduce((s,p)=> s + (p.amount||0), 0);
+        const daTT = paymentsArrForBatch.reduce((s, p) => s + (p.amount || 0), 0);
         const res = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/report/xuat-hang-batch/${editingBatchId}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json', ...(token ? { 'Authorization': `Bearer ${token}` } : {}) },
@@ -681,7 +681,7 @@ function XuatHang() {
         setMessage('✅ Cập nhật batch thành công');
         // Refresh danh sách nhưng không reset form/chế độ chỉnh sửa
         await Promise.all([fetchSoldItems(), fetchAvailableItems()]);
-        setTimeout(()=>setMessage(''), 3000);
+        setTimeout(() => setMessage(''), 3000);
         return;
       }
 
@@ -705,7 +705,7 @@ function XuatHang() {
           customer_phone: formData.buyer_phone,
           branch: formData.branch,
           note: formData.note,
-          da_thanh_toan: paymentsArrForEdit.reduce((s,p)=>s+(p.amount||0),0),
+          da_thanh_toan: paymentsArrForEdit.reduce((s, p) => s + (p.amount || 0), 0),
           source: formData.source || 'tien_mat',
           payments: paymentsArrForEdit
         };
@@ -725,7 +725,7 @@ function XuatHang() {
         await Promise.all([fetchSoldItems(), fetchAvailableItems()]);
         // ✅ Clear form để quay về chế độ bán hàng
         resetForm();
-        setTimeout(()=>setMessage(''), 3000);
+        setTimeout(() => setMessage(''), 3000);
         return;
       }
 
@@ -759,7 +759,7 @@ function XuatHang() {
         });
         const data = await res.json();
         if (!res.ok) throw new Error(data?.message || 'Tạo đơn batch thất bại');
-        
+
         // ✅ Tạo hóa đơn inline cho batch
         const invoiceData = {
           invoiceNumber: data.batch_id || `HD${Date.now()}`,
@@ -771,7 +771,7 @@ function XuatHang() {
           payments: paymentsArr,
           salesChannel: formData.salesChannel || ''
         };
-        
+
         // Hiển thị hóa đơn inline
         console.log('🖨️ Setting batch invoice data:', invoiceData);
         setCurrentInvoice(invoiceData);
@@ -780,7 +780,7 @@ function XuatHang() {
         setMessage('✅ Tạo đơn thành công!');
         setCartItems([]);
         await Promise.all([fetchSoldItems(), fetchAvailableItems()]);
-        setTimeout(()=>setMessage(''), 3000);
+        setTimeout(() => setMessage(''), 3000);
         return;
       }
 
@@ -793,10 +793,10 @@ function XuatHang() {
       const salePrice = parseFloat(parseNumber(formData.sale_price)) || 0;
       const quantity = parseInt(formData.quantity) || 1;
       const daTT = totalSinglePayments(); // tổng tiền đã thanh toán từ đa nguồn
-      
+
       // ✅ FIX: Không tự động tính da_thanh_toan, lưu đúng giá trị người dùng nhập (kể cả 0)
       const finalDaTT = daTT; // Bỏ logic tự động tính
-      
+
       const submitData = {
         ...formData,
         sale_price: salePrice,
@@ -830,11 +830,11 @@ function XuatHang() {
       if (res.ok) {
         console.log('✅ API Response success:', data);
         setMessage(`✅ ${data.message}`);
-        
+
         // Tạo hóa đơn inline
         const invoiceData = {
           invoiceNumber: `HD${Date.now()}`,
-          date: new Date().toISOString().slice(0,10),
+          date: new Date().toISOString().slice(0, 10),
           branch: formData.branch,
           customerName: formData.buyer_name,
           customerPhone: formData.buyer_phone,
@@ -851,29 +851,29 @@ function XuatHang() {
           salesperson: formData.salesperson || '',
           salesChannel: formData.salesChannel || ''
         };
-        
+
         // Hiển thị hóa đơn inline
         setCurrentInvoice(invoiceData);
         setShowInvoice(true);
         setMessage(`✅ ${data.message}!`);
-        
+
         resetForm();
-        
+
         // ✅ Force refresh data để đảm bảo UI cập nhật
         console.log('🔄 Refreshing data after successful operation...');
         await Promise.all([
           fetchSoldItems(),
           fetchAvailableItems()
         ]);
-        
+
         // ✅ Refresh suggestion list nếu đang hiển thị
         if (showSuggest && formData.product_name) {
           console.log('🔄 Refreshing suggestion list after successful operation...');
           await fetchSuggestList(formData.product_name);
         }
-        
+
         console.log('✅ Data refresh completed');
-        
+
         setTimeout(() => setMessage(""), 3000);
       } else {
         console.error('❌ API Response error:', data);
@@ -889,10 +889,10 @@ function XuatHang() {
 
   const handleEdit = async (item) => {
     console.log('✏️ EDIT clicked - Item data:', item); // Debug
-    
+
     // Cải thiện cách lấy dữ liệu để edit (thêm price_sell từ ExportHistory)
     const salePrice = item.sale_price || item.selling_price || item.price_sell || "";
-      const editFormData = {
+    const editFormData = {
       item_id: item.item_id || item.item?._id || "",
       imei: item.item?.imei || item.imei || "",
       product_name: item.item?.product_name || item.item?.tenSanPham || item.product_name || "",
@@ -907,12 +907,12 @@ function XuatHang() {
       note: item.note || "",
       source: item.source || "tien_mat"
     };
-    
+
     console.log('✏️ Setting form data for edit:', editFormData); // Debug
     console.log('✏️ Original sale_price:', item.sale_price, 'Formatted:', salePrice); // Debug
-    
+
     // ✅ Khi vào chế độ Sửa: KHÔNG đổ dữ liệu sản phẩm lên các trường form đầu – chỉ giữ thông tin khách hàng/meta
-      const clearedForm = {
+    const clearedForm = {
       item_id: "",
       imei: "",
       product_name: "",
@@ -944,10 +944,10 @@ function XuatHang() {
       _id: item._id,
       quantity: parseInt(item.quantity) || 1
     });
-    
+
     // Set trạng thái phụ kiện dựa trên IMEI (nếu không có IMEI thì có thể là phụ kiện)
     setIsAccessory(false);
-    
+
     // ✅ Nếu có batch_id: nạp toàn bộ items thuộc batch vào cart
     if (item.batch_id) {
       try {
@@ -1040,7 +1040,7 @@ function XuatHang() {
     }
 
     setMessage(""); // Clear any previous messages
-    
+
     // Scroll to form
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
@@ -1151,7 +1151,7 @@ function XuatHang() {
   // ✅ Xử lý submit trả hàng bán
   const handleReturnSubmit = async (e) => {
     e.preventDefault();
-    
+
     // Chặn nếu chưa thanh toán đủ (double check)
     if (!isReturnAllowed()) {
       setMessage("❌ Đơn chưa thanh toán đủ, không thể trả hàng");
@@ -1170,13 +1170,13 @@ function XuatHang() {
       setTimeout(() => setMessage(""), 3000);
       return;
     }
-    
+
     if (returnAmount <= 0) {
       setMessage("❌ Số tiền trả lại phải lớn hơn 0");
       setTimeout(() => setMessage(""), 3000);
       return;
     }
-    
+
     if (!returnForm.return_reason.trim()) {
       setMessage("❌ Vui lòng nhập lý do trả hàng");
       setTimeout(() => setMessage(""), 3000);
@@ -1185,13 +1185,13 @@ function XuatHang() {
 
     try {
       const token = localStorage.getItem("token") || sessionStorage.getItem("token");
-      
+
       // ✅ Chuẩn bị dữ liệu payments đa nguồn cho backend (tiền hoàn)
       const payments = refundArr;
-      
+
       const res = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/return-export`, {
         method: "POST",
-        headers: { 
+        headers: {
           "Content-Type": "application/json",
           "Authorization": `Bearer ${token}`
         },
@@ -1204,19 +1204,19 @@ function XuatHang() {
           note: returnForm.note
         })
       });
-      
+
       const data = await res.json();
-      
+
       if (res.ok) {
         setMessage("✅ Đã tạo phiếu trả hàng thành công");
         handleCloseReturnModal();
-        
+
         // Refresh data
         await Promise.all([
           fetchSoldItems(),
           fetchAvailableItems()
         ]);
-        
+
         setTimeout(() => setMessage(""), 3000);
       } else {
         setMessage(`❌ ${data.message}`);
@@ -1310,7 +1310,7 @@ function XuatHang() {
 
     try {
       const token = localStorage.getItem('token') || sessionStorage.getItem('token');
-        const res = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/report/xuat-hang-batch`, {
+      const res = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/report/xuat-hang-batch`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -1321,7 +1321,7 @@ function XuatHang() {
           customer_name: formData.buyer_name,
           customer_phone: formData.buyer_phone,
           branch: formData.branch,
-            // sold_date bỏ để backend tự set now()
+          // sold_date bỏ để backend tự set now()
           note: formData.note,
           payments,
           sales_channel: salesChannel,
@@ -1331,7 +1331,7 @@ function XuatHang() {
       const data = await res.json();
       if (res.ok) {
         setLastBatchResponse(data);
-        
+
         // Tạo hóa đơn inline cho batch
         const invoiceData = {
           invoiceNumber: data.batch_id || `HD${Date.now()}`,
@@ -1343,12 +1343,12 @@ function XuatHang() {
           payments: payments,
           salesChannel: salesChannel
         };
-        
+
         // Hiển thị hóa đơn inline
         setCurrentInvoice(invoiceData);
         setShowInvoice(true);
         setMessage('✅ Tạo đơn batch thành công!');
-        
+
         // reset
         setBatchItems([]);
         setBatchPayments([{ source: 'tien_mat', amount: '' }]);
@@ -1379,7 +1379,7 @@ function XuatHang() {
       <p>Chi nhánh: ${formData.branch || ''} - Ngày: ${new Date().toLocaleDateString('vi-VN')}</p>
       <p>Kênh bán: ${formData.salesChannel || ''} - Nhân viên: ${formData.salesperson || ''}</p>
       <table><thead><tr><th>Tên hàng</th><th>SKU/IMEI</th><th>SL</th><th>Đơn giá</th><th>Thành tiền</th></tr></thead><tbody>
-      ${items.map(it => `<tr><td>${it.product_name || ''}</td><td>${it.sku || it.imei || ''}</td><td>${it.quantity || 1}</td><td>${(it.price_sell||0).toLocaleString()}</td><td>${(((it.price_sell||0)*(it.quantity||1))||0).toLocaleString()}</td></tr>`).join('')}
+      ${items.map(it => `<tr><td>${it.product_name || ''}</td><td>${it.sku || it.imei || ''}</td><td>${it.quantity || 1}</td><td>${(it.price_sell || 0).toLocaleString()}</td><td>${(((it.price_sell || 0) * (it.quantity || 1)) || 0).toLocaleString()}</td></tr>`).join('')}
       </tbody></table>
       <h3 style="text-align:right">Tổng: ${total.toLocaleString()} đ</h3>
       <script>window.print();</script>
@@ -1402,26 +1402,37 @@ function XuatHang() {
     try {
       // Prepare data for export
       const exportData = filteredItems.map(item => ({
-        "IMEI": item.item?.imei || "",
-        "Tên sản phẩm": item.item?.product_name || item.item?.tenSanPham || "",
-        "SKU": item.item?.sku || "",
-        "Giá bán": item.sale_price || item.price_sell || 0,
-        "Đã thanh toán": item.da_thanh_toan || 0,
-        "Công nợ": Math.max((item.sale_price || item.price_sell || 0) - (item.da_thanh_toan || 0), 0),
+        // ✅ FIX: Lấy từ top level trước (grouped data), fallback sang nested item
+        "IMEI": item.imei || item.item?.imei || "",
+        "Tên sản phẩm": item.product_name || item.item?.product_name || item.item?.tenSanPham || "",
+        "SKU": item.sku || item.item?.sku || "",
+        // ✅ FIX: Handle both grouped (total_amount) and single items (price_sell)
+        "Giá bán": item.total_amount || item.sale_price || item.price_sell || 0,
+        // ✅ FIX: Handle both grouped (total_paid) and single items (da_thanh_toan)
+        "Đã thanh toán": item.total_paid || item.da_thanh_toan || 0,
+        "Công nợ": Math.max(
+          ((item.total_amount || item.sale_price || item.price_sell || 0) -
+            (item.total_paid || item.da_thanh_toan || 0)),
+          0
+        ),
         "Ngày bán": item.sale_date ? new Date(item.sale_date).toLocaleDateString('vi-VN') : "",
         "Khách hàng": item.buyer_name || item.customer_name || "",
         "SĐT khách": item.buyer_phone || item.customer_phone || "",
         "Chi nhánh": item.branch || "",
-        "Số lượng": item.quantity || 1,
+        // ✅ FIX: Use quantity_sum for grouped items, fallback to quantity
+        "Số lượng": item.quantity_sum || item.quantity || 1,
+        // ✅ FIX: WARRANTY từ top level (đã được preserve trong grouping)
         "Bảo hành": item.warranty || "",
         "Ghi chú": item.note || "",
-        "Nguồn tiền": item.source || ""
+        "Nguồn tiền": item.source || "",
+        // ✅ NEW: Thêm cột Loại để phân biệt iPhone và Phụ kiện
+        "Loại": (!item.imei && !item.item?.imei) ? "Phụ kiện" : "iPhone"
       }));
 
       // Create workbook and worksheet
       const wb = XLSX.utils.book_new();
       const ws = XLSX.utils.json_to_sheet(exportData);
-      
+
       // Set column widths
       const colWidths = [
         { wch: 15 }, // IMEI
@@ -1437,20 +1448,21 @@ function XuatHang() {
         { wch: 10 }, // Số lượng
         { wch: 15 }, // Bảo hành
         { wch: 25 }, // Ghi chú
-        { wch: 12 }  // Nguồn tiền
+        { wch: 12 }, // Nguồn tiền
+        { wch: 12 }  // Loại (NEW)
       ];
       ws['!cols'] = colWidths;
 
       XLSX.utils.book_append_sheet(wb, ws, "Danh sách xuất hàng");
-      
+
       // Generate filename with current date
       const now = new Date();
       const dateStr = now.toISOString().slice(0, 10);
       const filename = `DanhSachXuatHang_${dateStr}.xlsx`;
-      
+
       // Save file
       XLSX.writeFile(wb, filename);
-      
+
       setMessage("✅ Đã xuất file Excel thành công!");
       setTimeout(() => setMessage(""), 3000);
     } catch (err) {
@@ -1485,7 +1497,7 @@ function XuatHang() {
 
       for (let i = 0; i < jsonData.length; i++) {
         const row = jsonData[i];
-        
+
         // Map Excel columns to form data
         const importData = {
           imei: row['IMEI'] || row['imei'] || "",
@@ -1530,7 +1542,7 @@ function XuatHang() {
           const daTT = parseNumber(importData.da_thanh_toan) || 0;
           // ✅ FIX: Không tự động tính da_thanh_toan, lưu đúng giá trị người dùng nhập (kể cả 0)
           const finalDaTT = daTT; // Bỏ logic tự động tính: || (salePrice * quantity)
-          
+
           const submitData = {
             ...importData,
             sale_price: salePrice,
@@ -1543,7 +1555,7 @@ function XuatHang() {
             sold_date: importData.sale_date
           };
 
-              const res = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/xuat-hang`, {
+          const res = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/xuat-hang`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(submitData)
@@ -1568,7 +1580,7 @@ function XuatHang() {
         resultMessage += `, ${errorCount} lỗi`;
         console.log("Chi tiết lỗi:", errors);
       }
-      
+
       setMessage(resultMessage);
       fetchSoldItems(); // Reload data
       fetchAvailableItems();
@@ -1588,31 +1600,34 @@ function XuatHang() {
   const groupedSoldItems = (() => {
     if (!Array.isArray(soldItems) || soldItems.length === 0) return [];
     const map = new Map();
-    
+
     for (const it of soldItems) {
       // ✅ Tạo key duy nhất dựa trên batch_id + customer + date để tránh duplicate
       const customerKey = `${it.buyer_name || it.customer_name || ''}_${it.buyer_phone || it.customer_phone || ''}`;
       const dateKey = it.sale_date?.slice(0, 10) || '';
-      
+
       // ✅ CẢI THIỆN: Nếu có batch_id, gộp theo batch_id + customer + date
       // Nếu không có batch_id, gộp theo customer + date để tránh duplicate hoàn toàn
-      const key = it.batch_id ? 
-        `${it.batch_id}_${customerKey}_${dateKey}` : 
+      const key = it.batch_id ?
+        `${it.batch_id}_${customerKey}_${dateKey}` :
         `${customerKey}_${dateKey}`;
-      
+
       if (!map.has(key)) {
         map.set(key, {
           ...it,
           total_amount: ((parseFloat(it.price_sell || it.sale_price || 0) || 0) * (parseInt(it.quantity) || 1)),
           total_paid: parseFloat(it.da_thanh_toan) || 0,
           quantity_sum: parseInt(it.quantity) || 1,
+          // ✅ FIX: Preserve warranty từ first item
+          warranty: it.warranty || '',
           // ✅ Lưu toàn bộ danh sách sản phẩm trong đơn để hiển thị đầy đủ
           items_list: [
             {
               product_name: it.product_name || it.item?.product_name || it.item?.tenSanPham || '',
               sku: it.sku || it.item?.sku || '',
               imei: it.imei || it.item?.imei || '',
-              quantity: parseInt(it.quantity) || 1
+              quantity: parseInt(it.quantity) || 1,
+              warranty: it.warranty || ''  // ✅ FIX: Add warranty to items_list
             }
           ]
         });
@@ -1621,12 +1636,25 @@ function XuatHang() {
         g.total_amount += ((parseFloat(it.price_sell || it.sale_price || 0) || 0) * (parseInt(it.quantity) || 1));
         g.total_paid += (parseFloat(it.da_thanh_toan) || 0);
         g.quantity_sum += (parseInt(it.quantity) || 1);
+
+        // ✅ FIX: Merge warranty (nếu có nhiều warranty khác nhau, gộp lại)
+        if (it.warranty && !g.warranty) {
+          g.warranty = it.warranty;
+        } else if (it.warranty && g.warranty && it.warranty !== g.warranty) {
+          // Gộp nếu khác nhau (e.g. "6 tháng, 12 tháng")
+          const warranties = g.warranty.split(', ');
+          if (!warranties.includes(it.warranty)) {
+            g.warranty = g.warranty + ', ' + it.warranty;
+          }
+        }
+
         // ✅ Thêm sản phẩm vào danh sách để hiển thị đầy đủ trong cột Sản phẩm
         g.items_list.push({
           product_name: it.product_name || it.item?.product_name || it.item?.tenSanPham || '',
           sku: it.sku || it.item?.sku || '',
           imei: it.imei || it.item?.imei || '',
-          quantity: parseInt(it.quantity) || 1
+          quantity: parseInt(it.quantity) || 1,
+          warranty: it.warranty || ''  // ✅ FIX: Add warranty to items_list
         });
         map.set(key, g);
       }
@@ -1647,11 +1675,11 @@ function XuatHang() {
     const matchDate = filterDate ? item.sale_date?.slice(0, 10) === filterDate : true;
     const matchBranch = filterBranch ? item.branch === filterBranch : true;
     const matchCategory = filterCategory ? item.item?.category === filterCategory : true;
-    const matchBuyer = filterBuyer ? 
+    const matchBuyer = filterBuyer ?
       (item.buyer_name?.toLowerCase().includes(filterBuyer.toLowerCase()) ||
-       item.buyer_phone?.toLowerCase().includes(filterBuyer.toLowerCase()) ||
-       item.customer_name?.toLowerCase().includes(filterBuyer.toLowerCase()) ||
-       item.customer_phone?.toLowerCase().includes(filterBuyer.toLowerCase())) : true;
+        item.buyer_phone?.toLowerCase().includes(filterBuyer.toLowerCase()) ||
+        item.customer_name?.toLowerCase().includes(filterBuyer.toLowerCase()) ||
+        item.customer_phone?.toLowerCase().includes(filterBuyer.toLowerCase())) : true;
     return matchSearch && matchDate && matchBranch && matchCategory && matchBuyer;
   });
 
@@ -1741,7 +1769,7 @@ function XuatHang() {
             </div>
           );
         }
-        
+
         // Fallback cho dữ liệu cũ
         const daTT = (item.total_paid !== undefined)
           ? (parseFloat(item.total_paid) || 0)
@@ -1806,17 +1834,17 @@ function XuatHang() {
         // ✅ Cải thiện mapping để lấy đúng data từ nhiều nguồn field
         const buyerName = item.buyer_name || item.customer_name || '';
         const buyerPhone = item.buyer_phone || item.customer_phone || '';
-        
+
         return (
-        <div>
-          <div className="text-sm font-medium text-gray-900">
+          <div>
+            <div className="text-sm font-medium text-gray-900">
               {buyerName || <span className="text-gray-400 italic">Chưa có</span>}
-          </div>
-          <div className="text-sm text-gray-500">
+            </div>
+            <div className="text-sm text-gray-500">
               {buyerPhone || <span className="text-gray-400 italic">Chưa có SĐT</span>}
-          </div>
+            </div>
             {/* Debug info đã tắt để tránh hiển thị thông tin nhạy cảm */}
-        </div>
+          </div>
         );
       }
     },
@@ -1829,7 +1857,7 @@ function XuatHang() {
             <span className="text-sm text-gray-500">—</span>
           );
         }
-        
+
         // Hiển thị đa nguồn tiền nếu có
         if (item.payments && Array.isArray(item.payments) && item.payments.length > 1) {
           return (
@@ -1855,7 +1883,7 @@ function XuatHang() {
             </div>
           );
         }
-        
+
         // Hiển thị nguồn tiền đơn lẻ
         const sourceMap = {
           'tien_mat': { label: 'Tiền mặt', color: 'green', icon: '💵' },
@@ -1885,15 +1913,15 @@ function XuatHang() {
       key: "actions",
       render: (item) => (
         <div className="flex gap-2">
-          <button 
-            onClick={() => handleEdit(item)} 
+          <button
+            onClick={() => handleEdit(item)}
             className="btn-action-edit text-xs px-2 py-1 bg-blue-500 hover:bg-blue-600 text-white rounded transition-colors"
             title="Chỉnh sửa giao dịch"
           >
             ✏️ Sửa
           </button>
-          <button 
-            onClick={() => handleOpenReturnModal(item)} 
+          <button
+            onClick={() => handleOpenReturnModal(item)}
             className={`btn-action-return text-xs px-2 py-1 ${item.is_returned ? 'bg-gray-400 cursor-not-allowed' : 'bg-orange-500 hover:bg-orange-600'} text-white rounded transition-colors`}
             title={item.is_returned ? 'Đã hoàn trả' : 'Phiếu trả hàng'}
             disabled={!!item.is_returned}
@@ -1906,7 +1934,7 @@ function XuatHang() {
   ];
 
   return (
-    <Layout 
+    <Layout
       activeTab="xuat-hang"
       title="📤 Xuất Hàng"
       subtitle="Quản lý bán hàng và theo dõi doanh thu"
@@ -1989,7 +2017,7 @@ function XuatHang() {
                 required={!isAccessory && cartItems.length === 0}
                 disabled={isAccessory}
               />
-              
+
               {/* ✅ IMEI Suggestions Dropdown */}
               {showImeiSuggest && imeiSuggestList.length > 0 && !isAccessory && (
                 <div className="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg max-h-60 overflow-y-auto">
@@ -2034,7 +2062,7 @@ function XuatHang() {
                 required={cartItems.length === 0}
                 autoComplete="off"
               />
-              
+
               {/* ✅ Thêm dropdown gợi ý sản phẩm */}
               {showSuggest && suggestList.length > 0 && (
                 <div className="absolute z-50 left-0 right-0 bg-white border border-gray-300 rounded-lg shadow-lg max-h-60 overflow-y-auto mt-1">
@@ -2046,9 +2074,9 @@ function XuatHang() {
                     >
                       <div className="font-medium text-blue-600 text-sm">{item.name}</div>
                       <div className="text-xs text-gray-500 mt-1">
-                        SKU: {item.sku} • 
-                        {item.isAccessory 
-                          ? ` SL còn: ${item.soLuong}` 
+                        SKU: {item.sku} •
+                        {item.isAccessory
+                          ? ` SL còn: ${item.soLuong}`
                           : ` IMEI có sẵn: ${item.imeis.length}`
                         }
                         {userRole === 'admin' && item.price_import > 0 && ` • Giá nhập: ${formatCurrency(item.price_import)}`}
@@ -2127,8 +2155,8 @@ function XuatHang() {
                 <option value="">-- Hoặc chọn từ danh sách --</option>
                 {availableItems.map((item) => (
                   <option key={item._id} value={item._id}>
-                    {item.product_name || item.tenSanPham} - 
-                    {item.imei ? ` IMEI: ${item.imei}` : ` SL: ${item.quantity || 0}`} - 
+                    {item.product_name || item.tenSanPham} -
+                    {item.imei ? ` IMEI: ${item.imei}` : ` SL: ${item.quantity || 0}`} -
                     {formatNumber(item.price_import)}đ
                   </option>
                 ))}
@@ -2159,22 +2187,22 @@ function XuatHang() {
                     {cartItems.map((it, idx) => (
                       <tr key={idx} className="hover:bg-gray-50">
                         <td className="p-2 border">
-                          <input className="form-input" value={it.product_name} onChange={e=>updateCartItem(idx,'product_name',e.target.value)} />
+                          <input className="form-input" value={it.product_name} onChange={e => updateCartItem(idx, 'product_name', e.target.value)} />
                         </td>
                         <td className="p-2 border">
-                          <input className="form-input" value={it.sku} onChange={e=>updateCartItem(idx,'sku',e.target.value)} />
+                          <input className="form-input" value={it.sku} onChange={e => updateCartItem(idx, 'sku', e.target.value)} />
                         </td>
                         <td className="p-2 border">
-                          <input className="form-input" value={it.imei} onChange={e=>updateCartItem(idx,'imei',e.target.value)} />
+                          <input className="form-input" value={it.imei} onChange={e => updateCartItem(idx, 'imei', e.target.value)} />
                         </td>
                         <td className="p-2 border text-center">
-                          <input className="form-input text-center" type="number" value={it.quantity} onChange={e=>updateCartItem(idx,'quantity',e.target.value)} />
+                          <input className="form-input text-center" type="number" value={it.quantity} onChange={e => updateCartItem(idx, 'quantity', e.target.value)} />
                         </td>
                         <td className="p-2 border text-right">
-                          <input className="form-input text-right" value={formatNumber(it.price_sell)} onChange={e=>updateCartItem(idx,'price_sell',e.target.value)} />
+                          <input className="form-input text-right" value={formatNumber(it.price_sell)} onChange={e => updateCartItem(idx, 'price_sell', e.target.value)} />
                         </td>
                         <td className="p-2 border text-right">{formatCurrency(cartSubtotal(it))}</td>
-                        <td className="p-2 border text-right"><button type="button" className="text-red-600 hover:underline" onClick={()=>removeCartItem(idx)}>Xóa</button></td>
+                        <td className="p-2 border text-right"><button type="button" className="text-red-600 hover:underline" onClick={() => removeCartItem(idx)}>Xóa</button></td>
                       </tr>
                     ))}
                   </tbody>
@@ -2199,10 +2227,10 @@ function XuatHang() {
                 const paid = totalSinglePayments();
                 const totalFromCart = (cartItems && cartItems.length > 0)
                   ? cartItems.reduce((sum, it) => {
-                      const q = parseInt(it.quantity) || 1;
-                      const p = parseNumber(it.price_sell) || 0;
-                      return sum + q * p;
-                    }, 0)
+                    const q = parseInt(it.quantity) || 1;
+                    const p = parseNumber(it.price_sell) || 0;
+                    return sum + q * p;
+                  }, 0)
                   : (formSalePrice * formQuantity);
                 const congNo = Math.max(totalFromCart - paid, 0);
                 return (
@@ -2235,7 +2263,7 @@ function XuatHang() {
                 onChange={handleChange}
                 className="form-input"
               />
-              
+
               {/* Customer Name Suggestions Dropdown */}
               {showCustomerSuggest && customerSuggestList.length > 0 && customerSuggestType === 'buyer_name' && (
                 <div className="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg max-h-60 overflow-y-auto">
@@ -2278,7 +2306,7 @@ function XuatHang() {
                 onChange={handleChange}
                 className="form-input"
               />
-              
+
               {/* Customer Phone Suggestions Dropdown */}
               {showCustomerSuggest && customerSuggestList.length > 0 && customerSuggestType === 'buyer_phone' && (
                 <div className="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg max-h-60 overflow-y-auto">
@@ -2313,16 +2341,16 @@ function XuatHang() {
 
           <div>
             <label className="block text-sm font-semibold text-gray-700 mb-3">Chi nhánh *</label>
-            <select 
-              name="branch" 
-              value={formData.branch} 
-              onChange={handleChange} 
+            <select
+              name="branch"
+              value={formData.branch}
+              onChange={handleChange}
               className="form-input"
               required
               disabled={
                 // Disable nếu là admin chi nhánh, nhân viên hoặc thu ngân
-                (userRole === 'admin' && userBranch) || 
-                userRole === 'nhan_vien_ban_hang' || 
+                (userRole === 'admin' && userBranch) ||
+                userRole === 'nhan_vien_ban_hang' ||
                 userRole === 'thu_ngan'
               }
               style={{
@@ -2361,8 +2389,8 @@ function XuatHang() {
           </div>
 
           <div className="md:col-span-2 lg:col-span-3">
-            <button 
-              type="submit" 
+            <button
+              type="submit"
               className="w-full btn-gradient text-white py-4 px-8 rounded-2xl font-bold text-lg transition-all duration-300"
             >
               {editingItemId ? "🔄 Cập nhật giao dịch" : "💰 Thực hiện bán hàng"}
@@ -2400,8 +2428,8 @@ function XuatHang() {
               className="form-input"
               disabled={
                 // Disable nếu là admin chi nhánh, nhân viên hoặc thu ngân
-                (userRole === 'admin' && userBranch) || 
-                userRole === 'nhan_vien_ban_hang' || 
+                (userRole === 'admin' && userBranch) ||
+                userRole === 'nhan_vien_ban_hang' ||
                 userRole === 'thu_ngan'
               }
               style={{
@@ -2438,7 +2466,7 @@ function XuatHang() {
             />
           </div>
         </div>
-        
+
         {/* ✅ Excel Import/Export Buttons */}
         <div className="flex gap-4 mt-4 pt-4 border-t border-gray-200">
           <button
@@ -2485,7 +2513,7 @@ function XuatHang() {
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded-2xl p-8 w-full mx-4 max-h-[90vh] overflow-y-auto max-w-4xl">
             <h3 className="text-xl font-bold text-gray-900 mb-6">🔄 Phiếu trả hàng</h3>
-            
+
             {/* Thông tin giao dịch */}
             <div className="bg-gray-50 rounded-lg p-4 mb-6">
               <h4 className="font-semibold text-gray-900 mb-2">📋 Thông tin giao dịch</h4>
@@ -2532,41 +2560,41 @@ function XuatHang() {
                 <div><strong>Ngày bán:</strong> {returnModal.item?.sale_date?.slice(0, 10)}</div>
               </div>
             </div>
-            
-      {/* Hiển thị bảng đa nguồn tiền của đơn giao dịch */}
-      {Array.isArray(returnPayments) && returnPayments.length > 0 && (
-        <div className="bg-gray-50 rounded-lg p-4 mb-6">
-          <h4 className="font-semibold text-gray-900 mb-3">💳 Đa nguồn tiền của đơn</h4>
-          <div className="overflow-x-auto">
-            <table className="min-w-full text-sm">
-              <thead>
-                <tr className="bg-gray-100 text-gray-700">
-                  <th className="p-2 border text-left">Nguồn</th>
-                  <th className="p-2 border text-right">Số tiền</th>
-                </tr>
-              </thead>
-              <tbody>
-                {returnPayments.map((p, idx) => (
-                  <tr key={idx} className="hover:bg-gray-50">
-                    <td className="p-2 border">
-                      {p.source === 'tien_mat' ? '💵 Tiền mặt' : p.source === 'the' ? '💳 Thẻ' : '📱 Ví điện tử'}
-                    </td>
-                    <td className="p-2 border text-right">{formatCurrency(p.amount || 0)}</td>
-                  </tr>
-                ))}
-              </tbody>
-              <tfoot>
-                <tr className="bg-gray-100">
-                  <td className="p-2 border text-right font-semibold">Tổng đã thanh toán</td>
-                  <td className="p-2 border text-right font-bold text-blue-700">
-                    {formatCurrency(returnPayments.reduce((s,p)=> s + (Number(p.amount)||0), 0))}
-                  </td>
-                </tr>
-              </tfoot>
-            </table>
-          </div>
-        </div>
-      )}
+
+            {/* Hiển thị bảng đa nguồn tiền của đơn giao dịch */}
+            {Array.isArray(returnPayments) && returnPayments.length > 0 && (
+              <div className="bg-gray-50 rounded-lg p-4 mb-6">
+                <h4 className="font-semibold text-gray-900 mb-3">💳 Đa nguồn tiền của đơn</h4>
+                <div className="overflow-x-auto">
+                  <table className="min-w-full text-sm">
+                    <thead>
+                      <tr className="bg-gray-100 text-gray-700">
+                        <th className="p-2 border text-left">Nguồn</th>
+                        <th className="p-2 border text-right">Số tiền</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {returnPayments.map((p, idx) => (
+                        <tr key={idx} className="hover:bg-gray-50">
+                          <td className="p-2 border">
+                            {p.source === 'tien_mat' ? '💵 Tiền mặt' : p.source === 'the' ? '💳 Thẻ' : '📱 Ví điện tử'}
+                          </td>
+                          <td className="p-2 border text-right">{formatCurrency(p.amount || 0)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                    <tfoot>
+                      <tr className="bg-gray-100">
+                        <td className="p-2 border text-right font-semibold">Tổng đã thanh toán</td>
+                        <td className="p-2 border text-right font-bold text-blue-700">
+                          {formatCurrency(returnPayments.reduce((s, p) => s + (Number(p.amount) || 0), 0))}
+                        </td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+              </div>
+            )}
 
             <form onSubmit={handleReturnSubmit} className="space-y-4">
               {!isReturnAllowed() && (
@@ -2579,7 +2607,7 @@ function XuatHang() {
                 <label className="block text-sm font-semibold text-gray-700 mb-2">Số tiền trả lại khách (đa nguồn) *</label>
                 <PaymentsInput payments={refundPayments} onChange={setRefundPayments} disabled={false} />
                 <div className="text-right text-sm mt-2 text-gray-600">
-                  Tổng hoàn: <span className="font-semibold text-orange-600">{formatCurrency((refundPayments||[]).reduce((s,p)=> s + (parseFloat((p.amount||'').toString().replace(/\s/g,''))||0), 0))}</span>
+                  Tổng hoàn: <span className="font-semibold text-orange-600">{formatCurrency((refundPayments || []).reduce((s, p) => s + (parseFloat((p.amount || '').toString().replace(/\s/g, '')) || 0), 0))}</span>
                 </div>
               </div>
 
@@ -2617,8 +2645,8 @@ function XuatHang() {
               <div className="bg-blue-50 p-3 rounded-lg text-sm">
                 <div className="font-medium text-blue-900 mb-1">💡 Lưu ý:</div>
                 <div className="text-blue-700">
-                  • Sản phẩm sẽ được đưa trở lại tồn kho<br/>
-                  • Phiếu trả hàng sẽ được ghi vào sổ quỹ<br/>
+                  • Sản phẩm sẽ được đưa trở lại tồn kho<br />
+                  • Phiếu trả hàng sẽ được ghi vào sổ quỹ<br />
                   • Hành động này không thể hoàn tác
                 </div>
               </div>
@@ -2646,7 +2674,7 @@ function XuatHang() {
 
       {/* Hóa đơn inline */}
       {console.log('🖨️ InvoiceDisplay props:', { isVisible: showInvoice, hasData: !!currentInvoice })}
-      <InvoiceDisplay 
+      <InvoiceDisplay
         invoiceData={currentInvoice}
         isVisible={showInvoice}
         onClose={() => {
