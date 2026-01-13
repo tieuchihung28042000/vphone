@@ -5,14 +5,14 @@ import Inventory from '../models/Inventory.js';
 import ExportHistory from '../models/ExportHistory.js'; // Thêm dòng này
 import ActivityLog from '../models/ActivityLog.js';
 import { sendResetPasswordEmail } from '../utils/mail.js';
-import { authenticateToken, requireReportAccess } from '../middleware/auth.js';
+import { authenticateToken, requireReportAccess, filterByBranch } from '../middleware/auth.js';
 import ReturnExport from '../models/ReturnExport.js';
 import Cashbook from '../models/Cashbook.js';
 import XLSX from 'xlsx';
 
 // ==================== API: Báo cáo lợi nhuận có lọc ====================
 // Bảo vệ toàn bộ router báo cáo bằng auth + chặn thu_ngan
-router.use(authenticateToken, requireReportAccess);
+router.use(authenticateToken, requireReportAccess, filterByBranch);
 
 router.get('/bao-cao-loi-nhuan', async (req, res) => {
   try {
@@ -74,7 +74,7 @@ router.get('/financial-report/summary', async (req, res) => {
 
     const exports = await ExportHistory.find(exportQuery);
     const totalRevenue = exports.reduce((s, e) => s + (e.price_sell || 0) * (e.quantity || 1), 0);
-    
+
     // Tính tổng giá vốn (giá nhập hàng) cho TẤT CẢ đơn bán trong kỳ
     const totalCostRaw = exports.reduce((s, e) => s + (e.price_import || 0) * (e.quantity || 1), 0);
 
@@ -192,13 +192,20 @@ router.get('/nhap-hang', async (req, res) => {
     const { search = "", page = 1, limit = 1000000 } = req.query;
     const skip = (parseInt(page) - 1) * parseInt(limit);
 
-    const query = {
+    let query = {
       $or: [
         { imei: { $regex: search, $options: 'i' } },
         { tenSanPham: { $regex: search, $options: 'i' } },
         { sku: { $regex: search, $options: 'i' } }
       ]
     };
+
+    // Apply branch filter
+    if (req.branchFilter) {
+      query = { ...query, ...req.branchFilter };
+    } else if (req.query.branch && req.query.branch !== 'all') {
+      query.branch = req.query.branch;
+    }
 
     const total = await Inventory.countDocuments(query);
     const items = await Inventory.find(query)
@@ -223,8 +230,17 @@ router.get('/nhap-hang', async (req, res) => {
 // API: TỒN KHO – GỘP PHỤ KIỆN (KHÔNG IMEI)
 router.get('/ton-kho', async (req, res) => {
   try {
+    let mongoQuery = { status: 'in_stock' };
+
+    // Apply branch filter
+    if (req.branchFilter) {
+      mongoQuery = { ...mongoQuery, ...req.branchFilter };
+    } else if (req.query.branch && req.query.branch !== 'all') {
+      mongoQuery.branch = req.query.branch;
+    }
+
     // Lấy tất cả phụ kiện (IMEI null) và máy iPhone (có IMEI)
-    const inventories = await Inventory.find({ status: 'in_stock' });
+    const inventories = await Inventory.find(mongoQuery);
 
     // Lấy tổng xuất theo từng sku (chỉ cho phụ kiện)
     const exportAgg = await ExportHistory.aggregate([
@@ -379,11 +395,11 @@ router.post('/xuat-hang', async (req, res) => {
           ref_id: imei || String(createdExport._id),
           branch: branch
         };
-        
+
         // Tạo mô tả chi tiết
         const roleLabel = req.user?.role === 'admin' ? 'Admin' : (req.user?.role === 'thu_ngan' ? 'Thu ngân' : 'User');
         activityData.description = `Nhân viên ${activityData.username} (${roleLabel}) tạo đơn xuất hàng - Sản phẩm: ${item.product_name || item.tenSanPham}${imei ? ` (IMEI: ${imei})` : ''} - Giá bán: ${new Intl.NumberFormat('vi-VN').format(price_sell || item.price_sell || 0)}đ${customer_name ? ` - Khách hàng: ${customer_name}` : ''}${customer_phone ? ` (${customer_phone})` : ''} - Đã thanh toán: ${new Intl.NumberFormat('vi-VN').format(totalPaidFromPayments || 0)}đ`;
-        
+
         await ActivityLog.create(activityData);
       } catch (e) { /* ignore log error */ }
 
@@ -419,15 +435,15 @@ router.post('/xuat-hang', async (req, res) => {
         status: 'in_stock',
         $or: [{ imei: null }, { imei: "" }]
       });
-      
+
       if (!acc) {
         return res.status(400).json({ message: `❌ Không tìm thấy phụ kiện trong kho` });
       }
-      
-                    // ✅ Kiểm tra số lượng trực tiếp từ Inventory (logic đơn giản)
-       if (acc.quantity < quantity) {
-         return res.status(400).json({ message: `❌ Không đủ phụ kiện trong kho (còn ${acc.quantity}, cần ${quantity})` });
-       }
+
+      // ✅ Kiểm tra số lượng trực tiếp từ Inventory (logic đơn giản)
+      if (acc.quantity < quantity) {
+        return res.status(400).json({ message: `❌ Không đủ phụ kiện trong kho (còn ${acc.quantity}, cần ${quantity})` });
+      }
 
       // ✅ Cập nhật quantity trong Inventory (logic đơn giản)
       let updateObj = {};
@@ -448,7 +464,7 @@ router.post('/xuat-hang', async (req, res) => {
       } else {
         return res.status(400).json({ message: `❌ Số lượng không hợp lệ` });
       }
-      
+
       console.log('✅ Xuất phụ kiện - ĐÃ trừ quantity trong Inventory');
 
       // === GHI LỊCH SỬ XUẤT PHỤ KIỆN ===
@@ -493,11 +509,11 @@ router.post('/xuat-hang', async (req, res) => {
           ref_id: acc.sku || String(createdExport._id),
           branch: branch
         };
-        
+
         // Tạo mô tả chi tiết
         const roleLabel = req.user?.role === 'admin' ? 'Admin' : (req.user?.role === 'thu_ngan' ? 'Thu ngân' : 'User');
         activityData.description = `Nhân viên ${activityData.username} (${roleLabel}) tạo đơn xuất hàng phụ kiện - Sản phẩm: ${acc.product_name || acc.tenSanPham} (SKU: ${acc.sku}) - Số lượng: ${quantity} - Giá bán: ${new Intl.NumberFormat('vi-VN').format(price_sell || 0)}đ${customer_name ? ` - Khách hàng: ${customer_name}` : ''}${customer_phone ? ` (${customer_phone})` : ''} - Đã thanh toán: ${new Intl.NumberFormat('vi-VN').format(totalPaidFromPayments || 0)}đ`;
-        
+
         await ActivityLog.create(activityData);
       } catch (e) { /* ignore log error */ }
 
@@ -589,7 +605,7 @@ router.put('/xuat-hang/:id', async (req, res) => {
       price_sell: existingRecord.price_sell,
       customer_name: existingRecord.customer_name
     } : 'NOT FOUND');
-    
+
     if (!existingRecord) {
       console.log('❌ Record not found in ExportHistory for ID:', req.params.id);
       return res.status(404).json({ message: '❌ Không tìm thấy đơn xuất để cập nhật.' });
@@ -658,11 +674,11 @@ router.put('/xuat-hang/:id', async (req, res) => {
 
     // ✅ Cập nhật ExportHistory thay vì Inventory
     const updated = await ExportHistory.findByIdAndUpdate(
-      req.params.id, 
-      { $set: updateFields }, 
+      req.params.id,
+      { $set: updateFields },
       { new: true, runValidators: false }
     );
-    
+
     if (!updated) {
       console.log('❌ findByIdAndUpdate returned null for ID:', req.params.id);
       return res.status(404).json({ message: "❌ Không tìm thấy đơn xuất để cập nhật." });
@@ -734,18 +750,18 @@ router.get('/find-by-imei', async (req, res) => {
 router.post('/migrate-export-history', async (req, res) => {
   try {
     console.log(' Starting migration check from Inventory to ExportHistory...');
-    
+
     // ✅ Lấy tất cả records từ ExportHistory để so sánh
     const exportHistoryItems = await ExportHistory.find({});
     console.log(`📋 Found ${exportHistoryItems.length} records in ExportHistory`);
-    
+
     // Lấy tất cả records đã bán từ Inventory để so sánh
     const soldInventoryItems = await Inventory.find({ status: 'sold' });
     console.log(`📋 Found ${soldInventoryItems.length} sold items in Inventory`);
-    
+
     // ✅ Kiểm tra xem có record nào trong Inventory mà chưa có trong ExportHistory không
     let missingRecords = [];
-    
+
     for (const item of soldInventoryItems) {
       // Kiểm tra xem đã có trong ExportHistory chưa
       const existingExport = await ExportHistory.findOne({
@@ -754,17 +770,17 @@ router.post('/migrate-export-history', async (req, res) => {
         product_name: item.product_name || item.tenSanPham,
         sold_date: item.sold_date
       });
-      
+
       if (!existingExport) {
         missingRecords.push(item);
       }
     }
-    
+
     console.log(`📋 Found ${missingRecords.length} records in Inventory that are missing in ExportHistory`);
-    
+
     // ✅ Nếu có record thiếu thì migrate
     let migratedCount = 0;
-    
+
     for (const item of missingRecords) {
       // Tạo record mới trong ExportHistory
       await ExportHistory.create({
@@ -785,13 +801,13 @@ router.post('/migrate-export-history', async (req, res) => {
         export_type: item.imei ? 'normal' : 'accessory',
         is_accessory: !item.imei // Phụ kiện không có IMEI
       });
-      
+
       migratedCount++;
       console.log(`✅ Migrated: ${item.product_name || item.tenSanPham} (${item.imei || item.sku})`);
     }
-    
+
     console.log(`🎉 Migration check completed: ${migratedCount} records migrated`);
-    res.status(200).json({ 
+    res.status(200).json({
       message: `✅ Migration check hoàn tất! ${migratedCount > 0 ? `Đã chuyển ${migratedCount} records từ Inventory sang ExportHistory.` : 'Tất cả dữ liệu đã được đồng bộ.'}`,
       migratedCount,
       totalExportHistory: exportHistoryItems.length,
@@ -890,7 +906,7 @@ router.get('/export-excel', authenticateToken, requireReportAccess, async (req, 
     // Xuất file
     const buffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
     const fileName = `baocao_taichinh_${from}_${to}.xlsx`;
-    
+
     res.set('Content-Disposition', `attachment; filename="${fileName}"`);
     res.type('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     res.send(buffer);

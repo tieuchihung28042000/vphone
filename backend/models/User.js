@@ -26,19 +26,19 @@ const userSchema = new mongoose.Schema(
     },
     role: {
       type: String,
-      enum: ["user", "admin", "thu_ngan", "nhan_vien_ban_hang"],
+      enum: ["user", "admin", "quan_ly_chi_nhanh", "thu_ngan", "nhan_vien_ban_hang"],
       default: "user",
     },
     branch_id: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Branch',
-      required: function() {
+      required: function () {
         return this.role !== 'admin'; // Admin không cần branch_id
       }
     },
     branch_name: {
       type: String,
-      required: function() {
+      required: function () {
         return this.role !== 'admin'; // Admin không cần branch_name
       }
     },

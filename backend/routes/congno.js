@@ -4,6 +4,7 @@ import Inventory from '../models/Inventory.js';
 import ExportHistory from '../models/ExportHistory.js';
 import Cashbook from '../models/Cashbook.js';
 import ActivityLog from '../models/ActivityLog.js';
+import { authenticateToken, requireRole, filterByBranch } from '../middleware/auth.js';
 
 // Helper function để chuẩn hóa nguồn tiền
 function getValidPaymentSource(source) {
@@ -16,18 +17,25 @@ function getValidPaymentSource(source) {
 }
 
 // ✅ API lấy danh sách khách hàng còn công nợ (tính từ ExportHistory)
-router.get('/cong-no-list', async (req, res) => {
+router.get('/cong-no-list', authenticateToken, filterByBranch, async (req, res) => {
   try {
-    const { search = "", show_all = "false" } = req.query;
-    
+    const { search = "", show_all = "false", branch } = req.query;
+
     // Xây dựng query với tìm kiếm và loại trừ đơn đã hoàn trả
-    const exportQuery = {
+    let exportQuery = {
       customer_name: { $ne: null, $ne: "" },
-      $or: [ 
-        { is_returned: { $exists: false } }, 
-        { is_returned: false } 
+      $or: [
+        { is_returned: { $exists: false } },
+        { is_returned: false }
       ]
     };
+
+    // Apply branch filter (middleware filter or explicit query)
+    if (req.branchFilter) {
+      exportQuery = { ...exportQuery, ...req.branchFilter };
+    } else if (branch && branch !== 'all') {
+      exportQuery.branch = branch;
+    }
 
     // Thêm tìm kiếm theo tên hoặc sđt
     if (search.trim()) {
@@ -39,15 +47,15 @@ router.get('/cong-no-list', async (req, res) => {
           ]
         },
         {
-          $or: [ 
-            { is_returned: { $exists: false } }, 
-            { is_returned: false } 
+          $or: [
+            { is_returned: { $exists: false } },
+            { is_returned: false }
           ]
         }
       ];
       delete exportQuery.$or; // Xóa $or ở root vì đã có trong $and
     }
-    
+
     const exportItems = await ExportHistory.find(exportQuery);
     console.log(`🔍 Found ${exportItems.length} export items for customer debt calculation`);
 
@@ -67,19 +75,19 @@ router.get('/cong-no-list', async (req, res) => {
           latest_date: null
         };
       }
-      
+
       // Tính công nợ từ logic mới: (price_sell × quantity) - da_thanh_toan
       const priceSell = parseFloat(item.price_sell) || 0;
       const quantity = parseInt(item.quantity) || 1;
       const daTT = parseFloat(item.da_thanh_toan) || 0;
       const congNo = Math.max((priceSell * quantity) - daTT, 0);
-      
+
       // Tổng giá bán (TẤT CẢ đơn) = giá bán × số lượng
       grouped[key].total_sale_price += (priceSell * quantity);
-      
+
       // Tổng đã trả (TẤT CẢ đơn)  
       grouped[key].total_paid += daTT;
-      
+
       // Tổng công nợ (chỉ đơn còn nợ)
       grouped[key].total_debt += congNo;
 
@@ -103,7 +111,7 @@ router.get('/cong-no-list', async (req, res) => {
 
     // Hiển thị khách hàng có giao dịch (có tổng giá bán > 0)
     let result = Object.values(grouped).filter(customer => customer.total_sale_price > 0);
-    
+
     // Nếu không show_all, chỉ hiển thị khách còn nợ
     if (show_all !== "true") {
       result = result.filter(customer => customer.total_debt > 0);
@@ -124,19 +132,26 @@ router.get('/cong-no-list', async (req, res) => {
 });
 
 // ✅ API lấy danh sách đơn còn nợ của 1 khách hàng
-router.get('/cong-no-orders', async (req, res) => {
-  const { customer_name, customer_phone } = req.query;
+router.get('/cong-no-orders', authenticateToken, filterByBranch, async (req, res) => {
+  const { customer_name, customer_phone, branch } = req.query;
   if (!customer_name) return res.status(400).json({ message: "Thiếu tên khách hàng" });
-  
+
   try {
-    const query = {
+    let query = {
       customer_name,
-      $or: [ { is_returned: { $exists: false } }, { is_returned: false } ]
+      $or: [{ is_returned: { $exists: false } }, { is_returned: false }]
     };
+
+    // Apply branch filter
+    if (req.branchFilter) {
+      query = { ...query, ...req.branchFilter };
+    } else if (branch && branch !== 'all') {
+      query.branch = branch;
+    }
     if (customer_phone) query.customer_phone = customer_phone;
-    
+
     const orders = await ExportHistory.find(query).sort({ sold_date: -1 });
-    
+
     // Chỉ lấy đơn còn nợ ((price_sell × quantity) > da_thanh_toan)
     const ordersWithDebt = orders.filter(order => {
       const priceSell = parseFloat(order.price_sell) || 0;
@@ -144,7 +159,7 @@ router.get('/cong-no-orders', async (req, res) => {
       const daTT = parseFloat(order.da_thanh_toan) || 0;
       return (priceSell * quantity) > daTT;
     }).map(order => order.toObject());
-    
+
     res.json({ orders: ordersWithDebt });
   } catch (err) {
     console.error('❌ Error in cong-no-orders:', err);
@@ -153,16 +168,16 @@ router.get('/cong-no-orders', async (req, res) => {
 });
 
 // ✅ API trả nợ khách hàng (cập nhật da_thanh_toan trong ExportHistory)
-router.put('/cong-no-pay-customer', async (req, res) => {
+router.put('/cong-no-pay-customer', authenticateToken, requireRole(['admin', 'thu_ngan']), filterByBranch, async (req, res) => {
   try {
     console.log('💰 API cong-no-pay-customer received:', req.body);
-    
+
     const { customer_name, customer_phone, amount, note, branch, payments = [] } = req.body;
-    
+
     if (!customer_name || typeof customer_name !== 'string' || customer_name.trim().length === 0) {
       return res.status(400).json({ message: "❌ Thiếu thông tin tên khách hàng" });
     }
-    
+
     const hasPayments = Array.isArray(payments) && payments.length > 0;
     if (!hasPayments) {
       if (!amount || isNaN(amount) || Number(amount) <= 0) {
@@ -172,7 +187,9 @@ router.put('/cong-no-pay-customer', async (req, res) => {
 
     const query = { customer_name };
     if (customer_phone) query.customer_phone = customer_phone;
-    
+    if (req.branchFilter) Object.assign(query, req.branchFilter);
+    else if (branch && branch !== 'all') query.branch = branch;
+
     // Lấy các đơn còn nợ
     const orders = await ExportHistory.find(query).sort({ sold_date: 1 });
 
@@ -187,22 +204,22 @@ router.put('/cong-no-pay-customer', async (req, res) => {
 
     for (const order of orders) {
       if (remain <= 0) break;
-      
+
       const priceSell = parseFloat(order.price_sell) || 0;
       const quantity = parseInt(order.quantity) || 1;
       const currentDaTT = parseFloat(order.da_thanh_toan) || 0;
       const currentDebt = Math.max((priceSell * quantity) - currentDaTT, 0);
-      
+
       if (currentDebt <= 0) continue;
-      
+
       const toPay = Math.min(remain, currentDebt);
       const newDaTT = currentDaTT + toPay;
-      
+
       // Cập nhật da_thanh_toan
       await ExportHistory.findByIdAndUpdate(order._id, {
         da_thanh_toan: newDaTT
       });
-      
+
       remain -= toPay;
       totalPaid += toPay;
     }
@@ -234,11 +251,11 @@ router.put('/cong-no-pay-customer', async (req, res) => {
         ref_id: customer_name,
         branch: branch
       };
-      
+
       // Tạo mô tả chi tiết
       const roleLabel = req.user?.role === 'admin' ? 'Admin' : (req.user?.role === 'thu_ngan' ? 'Thu ngân' : 'User');
       activityData.description = `Nhân viên ${activityData.username} (${roleLabel}) thu nợ khách hàng - Khách hàng: ${customer_name}${customer_phone ? ` (${customer_phone})` : ''} - Số tiền thu: ${new Intl.NumberFormat('vi-VN').format(totalPaid)}đ - Nợ còn lại: ${new Intl.NumberFormat('vi-VN').format(totalDebt)}đ`;
-      
+
       await ActivityLog.create(activityData);
     } catch (e) { /* ignore log error */ }
 
@@ -276,7 +293,7 @@ router.put('/cong-no-pay-customer', async (req, res) => {
           editable: false
         });
       }
-    } catch (e) { 
+    } catch (e) {
       console.error('❌ Error saving to Cashbook:', e);
     }
   } catch (err) {
@@ -286,22 +303,24 @@ router.put('/cong-no-pay-customer', async (req, res) => {
 });
 
 // ✅ API cộng nợ khách hàng (giảm da_thanh_toan trong ExportHistory)
-router.put('/cong-no-add-customer', async (req, res) => {
+router.put('/cong-no-add-customer', authenticateToken, requireRole(['admin', 'thu_ngan']), filterByBranch, async (req, res) => {
   try {
     console.log('📈 API cong-no-add-customer received:', req.body);
-    
+
     const { customer_name, customer_phone, amount, note, branch } = req.body;
-    
+
     if (!customer_name || typeof customer_name !== 'string' || customer_name.trim().length === 0) {
       return res.status(400).json({ message: "❌ Thiếu thông tin tên khách hàng" });
     }
-    
+
     if (!amount || isNaN(amount) || Number(amount) <= 0) {
       return res.status(400).json({ message: "❌ Số tiền cộng nợ phải lớn hơn 0" });
     }
 
     const query = { customer_name };
     if (customer_phone) query.customer_phone = customer_phone;
+    if (req.branchFilter) Object.assign(query, req.branchFilter);
+    else if (branch && branch !== 'all') query.branch = branch;
 
     // Lấy đơn gần nhất để cộng nợ
     const latestOrder = await ExportHistory.findOne(query).sort({ sold_date: -1 });
@@ -309,15 +328,15 @@ router.put('/cong-no-add-customer', async (req, res) => {
     if (!latestOrder) {
       return res.status(404).json({ message: "❌ Không tìm thấy đơn hàng của khách hàng này" });
     }
-    
+
     const currentDaTT = parseFloat(latestOrder.da_thanh_toan) || 0;
     const amountToAdd = Number(amount);
     const newDaTT = Math.max(currentDaTT - amountToAdd, 0);
-    
+
     // Cập nhật da_thanh_toan (giảm đi để tăng công nợ)
     await ExportHistory.findByIdAndUpdate(latestOrder._id, {
       da_thanh_toan: newDaTT
-});
+    });
 
     // Tính lại tổng công nợ
     const allOrders = await ExportHistory.find(query);
@@ -329,7 +348,7 @@ router.put('/cong-no-add-customer', async (req, res) => {
       totalDebt += Math.max((priceSell * quantity) - daTT, 0);
     });
 
-    res.json({ 
+    res.json({
       message: `✅ Đã cộng nợ ${amountToAdd.toLocaleString()}đ cho khách hàng ${customer_name}`,
       added_amount: amountToAdd,
       total_debt: totalDebt
@@ -358,13 +377,20 @@ router.put('/cong-no-add-customer', async (req, res) => {
 });
 
 // ✅ API lấy danh sách nhà cung cấp còn công nợ (tính từ Inventory)
-router.get('/supplier-debt-list', async (req, res) => {
+router.get('/supplier-debt-list', authenticateToken, filterByBranch, async (req, res) => {
   try {
-    const { search = "", show_all = "false" } = req.query;
-    
+    const { search = "", show_all = "false", branch } = req.query;
+
     let query = {
       supplier: { $ne: null, $ne: "" }
     };
+
+    // Apply branch filter
+    if (req.branchFilter) {
+      query = { ...query, ...req.branchFilter };
+    } else if (branch && branch !== 'all') {
+      query.branch = branch;
+    }
 
     // Thêm tìm kiếm theo tên hoặc sđt
     if (search.trim()) {
@@ -393,19 +419,19 @@ router.get('/supplier-debt-list', async (req, res) => {
           latest_date: null
         };
       }
-      
+
       // Tính công nợ từ logic: (price_import × quantity) - da_thanh_toan_nhap
       const priceImport = parseFloat(item.price_import) || 0;
       const quantity = parseInt(item.quantity) || 1;
       const daTT = parseFloat(item.da_thanh_toan_nhap) || 0;
       const congNo = Math.max((priceImport * quantity) - daTT, 0);
-      
+
       // Tổng giá nhập (TẤT CẢ đơn) = giá nhập × số lượng
       grouped[key].total_import_price += (priceImport * quantity);
-      
+
       // Tổng đã trả (TẤT CẢ đơn)
       grouped[key].total_paid += daTT;
-      
+
       // CHỈ TÍNH CÔNG NỢ CHO CÁC ĐƠN CÒN NỢ
       if (congNo > 0) {
         grouped[key].total_debt += congNo;
@@ -433,7 +459,7 @@ router.get('/supplier-debt-list', async (req, res) => {
 
     // Hiển thị NCC có giao dịch (có tổng giá nhập > 0)
     let result = Object.values(grouped).filter(supplier => supplier.total_import_price > 0);
-    
+
     // Nếu không show_all, chỉ hiển thị NCC còn nợ
     if (show_all !== "true") {
       result = result.filter(supplier => supplier.total_debt > 0);
@@ -454,15 +480,18 @@ router.get('/supplier-debt-list', async (req, res) => {
 });
 
 // ✅ API trả nợ nhà cung cấp
-router.put('/supplier-debt-pay', async (req, res) => {
+router.put('/supplier-debt-pay', authenticateToken, requireRole(['admin', 'thu_ngan']), filterByBranch, async (req, res) => {
   try {
-  const { supplier_name, amount, note, branch, payments = [] } = req.body;
-    
+    const { supplier_name, amount, note, branch, payments = [] } = req.body;
+
     if (!supplier_name || typeof supplier_name !== 'string' || supplier_name.trim().length === 0) {
       return res.status(400).json({ message: "❌ Thiếu thông tin tên nhà cung cấp" });
     }
-  
+
     const query = { supplier: supplier_name.trim() };
+    if (req.branchFilter) Object.assign(query, req.branchFilter);
+    else if (branch && branch !== 'all') query.branch = branch;
+
     const orders = await Inventory.find(query).sort({ import_date: 1 });
 
     if (orders.length === 0) {
@@ -481,28 +510,28 @@ router.put('/supplier-debt-pay', async (req, res) => {
 
     for (const order of orders) {
       if (remain <= 0) break;
-      
+
       const priceImport = parseFloat(order.price_import) || 0;
       const quantity = parseInt(order.quantity) || 1;
       const totalPrice = priceImport * quantity;
       const currentDaTT = parseFloat(order.da_thanh_toan_nhap) || 0;
       const currentDebt = Math.max(totalPrice - currentDaTT, 0);
-      
+
       if (currentDebt <= 0) continue;
-      
+
       const toPay = Math.min(remain, currentDebt);
       const newDaTT = currentDaTT + toPay;
-      
+
       try {
-      await Inventory.findByIdAndUpdate(order._id, {
+        await Inventory.findByIdAndUpdate(order._id, {
           $set: { da_thanh_toan_nhap: newDaTT }
-      });
+        });
         updatedOrders.push(order._id);
       } catch (updateErr) {
         console.error(`❌ Error updating order ${order._id}:`, updateErr);
         continue; // Tiếp tục với đơn tiếp theo
       }
-      
+
       remain -= toPay;
       totalPaid += toPay;
     }
@@ -549,25 +578,28 @@ router.put('/supplier-debt-pay', async (req, res) => {
 });
 
 // ✅ API cộng nợ nhà cung cấp
-router.put('/supplier-debt-add', async (req, res) => {
+router.put('/supplier-debt-add', authenticateToken, requireRole(['admin', 'thu_ngan']), filterByBranch, async (req, res) => {
   try {
-  const { supplier_name, amount, note, branch } = req.body;
-    
+    const { supplier_name, amount, note, branch } = req.body;
+
     if (!supplier_name || !amount || isNaN(amount) || Number(amount) <= 0) {
       return res.status(400).json({ message: "❌ Thông tin không hợp lệ" });
     }
 
     const query = { supplier: supplier_name };
+    if (req.branchFilter) Object.assign(query, req.branchFilter);
+    else if (branch && branch !== 'all') query.branch = branch;
+
     const latestOrder = await Inventory.findOne(query).sort({ import_date: -1 });
 
     if (!latestOrder) {
       return res.status(404).json({ message: "❌ Không tìm thấy đơn nhập của NCC này" });
     }
-    
+
     const currentDaTT = parseFloat(latestOrder.da_thanh_toan_nhap) || 0;
     const amountToAdd = Number(amount);
     const newDaTT = Math.max(currentDaTT - amountToAdd, 0);
-    
+
     await Inventory.findByIdAndUpdate(latestOrder._id, {
       da_thanh_toan_nhap: newDaTT
     });
@@ -600,12 +632,22 @@ router.put('/supplier-debt-add', async (req, res) => {
 });
 
 // ✅ API lấy đơn nhập của nhà cung cấp
-router.get('/supplier-orders', async (req, res) => {
-    const { supplier_name } = req.query;
+router.get('/supplier-orders', authenticateToken, filterByBranch, async (req, res) => {
+  const { supplier_name, branch } = req.query;
   if (!supplier_name) return res.status(400).json({ message: "Thiếu tên nhà cung cấp" });
-  
+
   try {
-    const orders = await Inventory.find({ supplier: supplier_name }).sort({ import_date: -1 });
+    let query = {
+      supplier: supplier_name
+    };
+
+    // Apply branch filter
+    if (req.branchFilter) {
+      query = { ...query, ...req.branchFilter };
+    } else if (branch && branch !== 'all') {
+      query.branch = branch;
+    }
+    const orders = await Inventory.find(query).sort({ import_date: -1 });
 
     const ordersWithDebt = orders.map(order => order.toObject());
 
@@ -617,22 +659,23 @@ router.get('/supplier-orders', async (req, res) => {
 });
 
 // ✅ API cập nhật thông tin khách hàng và đã thanh toán
-router.put('/update-customer', async (req, res) => {
+router.put('/update-customer', authenticateToken, requireRole(['admin', 'thu_ngan']), filterByBranch, async (req, res) => {
   try {
-    const { 
-      old_customer_name, 
-      old_customer_phone, 
-      new_customer_name, 
-      new_customer_phone, 
-      da_thanh_toan 
+    const {
+      old_customer_name,
+      old_customer_phone,
+      new_customer_name,
+      new_customer_phone,
+      da_thanh_toan
     } = req.body;
-    
+
     if (!old_customer_name || !new_customer_name) {
       return res.status(400).json({ message: "❌ Thiếu thông tin tên khách hàng" });
     }
 
     const query = { customer_name: old_customer_name };
     if (old_customer_phone) query.customer_phone = old_customer_phone;
+    if (req.branchFilter) Object.assign(query, req.branchFilter);
 
     // Cập nhật thông tin khách hàng trong ExportHistory
     const updateData = {
@@ -643,10 +686,10 @@ router.put('/update-customer', async (req, res) => {
     // ✅ SỬA LỖI: Nếu có cập nhật da_thanh_toan, cần xử lý đúng logic
     if (da_thanh_toan !== undefined && da_thanh_toan !== null && da_thanh_toan !== '') {
       const daThanhToanValue = Number(da_thanh_toan) || 0;
-      
+
       // Lấy tất cả đơn hàng của khách hàng này
       const allOrders = await ExportHistory.find(query).sort({ sold_date: 1 });
-      
+
       if (allOrders.length > 0) {
         // Tính tổng giá bán của tất cả đơn hàng
         let totalSalePrice = 0;
@@ -655,33 +698,33 @@ router.put('/update-customer', async (req, res) => {
           const quantity = parseInt(order.quantity) || 1;
           totalSalePrice += (priceSell * quantity);
         });
-        
+
         // Kiểm tra logic: da_thanh_toan không được vượt quá total_sale_price
         if (daThanhToanValue > totalSalePrice) {
-          return res.status(400).json({ 
-            message: `❌ Số tiền đã trả (${daThanhToanValue.toLocaleString()}đ) không được vượt quá tổng giá bán (${totalSalePrice.toLocaleString()}đ)` 
+          return res.status(400).json({
+            message: `❌ Số tiền đã trả (${daThanhToanValue.toLocaleString()}đ) không được vượt quá tổng giá bán (${totalSalePrice.toLocaleString()}đ)`
           });
         }
-        
+
         // Phân bổ số tiền đã trả cho các đơn hàng theo thứ tự thời gian
         let remainingPayment = daThanhToanValue;
-        
+
         for (const order of allOrders) {
           if (remainingPayment <= 0) break;
-          
+
           const priceSell = parseFloat(order.price_sell) || 0;
           const quantity = parseInt(order.quantity) || 1;
           const orderTotal = priceSell * quantity;
-          
+
           // Số tiền trả cho đơn hàng này
           const paymentForThisOrder = Math.min(remainingPayment, orderTotal);
-          
+
           // Cập nhật da_thanh_toan cho đơn hàng này
           await ExportHistory.findByIdAndUpdate(order._id, {
             ...updateData,
             da_thanh_toan: paymentForThisOrder
           });
-          
+
           remainingPayment -= paymentForThisOrder;
         }
       }
@@ -702,21 +745,22 @@ router.put('/update-customer', async (req, res) => {
 });
 
 // ✅ API cập nhật thông tin nhà cung cấp và đã thanh toán
-router.put('/update-supplier', async (req, res) => {
+router.put('/update-supplier', authenticateToken, requireRole(['admin', 'thu_ngan']), filterByBranch, async (req, res) => {
   try {
-    const { 
-      old_supplier_name, 
-      old_supplier_phone, 
-      new_supplier_name, 
-      new_supplier_phone, 
-      da_thanh_toan 
+    const {
+      old_supplier_name,
+      old_supplier_phone,
+      new_supplier_name,
+      new_supplier_phone,
+      da_thanh_toan
     } = req.body;
-    
+
     if (!old_supplier_name || !new_supplier_name) {
       return res.status(400).json({ message: "❌ Thiếu thông tin tên nhà cung cấp" });
     }
 
     const query = { supplier: old_supplier_name };
+    if (req.branchFilter) Object.assign(query, req.branchFilter);
 
     // Cập nhật thông tin nhà cung cấp trong Inventory
     const updateData = {
@@ -727,10 +771,10 @@ router.put('/update-supplier', async (req, res) => {
     // ✅ SỬA LỖI: Nếu có cập nhật da_thanh_toan_nhap, cần xử lý đúng logic
     if (da_thanh_toan !== undefined && da_thanh_toan !== null && da_thanh_toan !== '') {
       const daThanhToanValue = Number(da_thanh_toan) || 0;
-      
+
       // Lấy tất cả đơn nhập của nhà cung cấp này
       const allOrders = await Inventory.find(query).sort({ import_date: 1 });
-      
+
       if (allOrders.length > 0) {
         // Tính tổng giá nhập của tất cả đơn hàng
         let totalImportPrice = 0;
@@ -739,33 +783,33 @@ router.put('/update-supplier', async (req, res) => {
           const quantity = parseInt(order.quantity) || 1;
           totalImportPrice += (priceImport * quantity);
         });
-        
+
         // Kiểm tra logic: da_thanh_toan_nhap không được vượt quá total_import_price
         if (daThanhToanValue > totalImportPrice) {
-          return res.status(400).json({ 
-            message: `❌ Số tiền đã trả (${daThanhToanValue.toLocaleString()}đ) không được vượt quá tổng giá nhập (${totalImportPrice.toLocaleString()}đ)` 
+          return res.status(400).json({
+            message: `❌ Số tiền đã trả (${daThanhToanValue.toLocaleString()}đ) không được vượt quá tổng giá nhập (${totalImportPrice.toLocaleString()}đ)`
           });
         }
-        
+
         // Phân bổ số tiền đã trả cho các đơn hàng theo thứ tự thời gian
         let remainingPayment = daThanhToanValue;
-        
+
         for (const order of allOrders) {
           if (remainingPayment <= 0) break;
-          
+
           const priceImport = parseFloat(order.price_import) || 0;
           const quantity = parseInt(order.quantity) || 1;
           const orderTotal = priceImport * quantity;
-          
+
           // Số tiền trả cho đơn hàng này
           const paymentForThisOrder = Math.min(remainingPayment, orderTotal);
-          
+
           // Cập nhật da_thanh_toan_nhap cho đơn hàng này
           await Inventory.findByIdAndUpdate(order._id, {
             ...updateData,
             da_thanh_toan_nhap: paymentForThisOrder
           });
-          
+
           remainingPayment -= paymentForThisOrder;
         }
       }
@@ -789,13 +833,14 @@ export default router;
 
 // ==================== LỊCH SỪ THANH TOÁN CÔNG NỢ (CUSTOMER & NCC) ====================
 // GET /api/cong-no/customer-history?customer_name=...&customer_phone=...
-router.get('/customer-history', async (req, res) => {
+router.get('/customer-history', authenticateToken, filterByBranch, async (req, res) => {
   try {
     const { customer_name, customer_phone } = req.query;
     if (!customer_name) return res.status(400).json({ message: 'Thiếu tên khách hàng' });
 
     // Tìm kiếm linh hoạt hơn - ưu tiên customer field, fallback theo content
     const query = {
+      ...(req.branchFilter || {}),
       $and: [
         {
           $or: [
@@ -806,7 +851,7 @@ router.get('/customer-history', async (req, res) => {
         { type: 'thu' }
       ]
     };
-    
+
     // Thêm filter related_type nếu có, nhưng không bắt buộc
     if (customer_phone) {
       query.$and[0].$or.push({ customer_phone });
@@ -829,16 +874,22 @@ router.get('/customer-history', async (req, res) => {
 });
 
 // GET /api/cong-no/supplier-history?supplier_name=...
-router.get('/supplier-history', async (req, res) => {
+router.get('/supplier-history', authenticateToken, filterByBranch, async (req, res) => {
   try {
-    const { supplier_name, branch } = req.query;
+    const { supplier_name, branch: queryBranch } = req.query;
     if (!supplier_name) return res.status(400).json({ message: 'Thiếu tên nhà cung cấp' });
+
+    // Lọc theo chi nhánh
+    const branch = queryBranch || (req.branchFilter ? req.branchFilter.branch : undefined);
 
     // Lịch sử công nợ NCC được lấy từ SupplierDebt.debt_history
     const SupplierDebt = (await import('../models/SupplierDebt.js')).default;
-    const record = await SupplierDebt.findOne({ supplier_name, ...(branch ? { branch } : {}) }).lean();
+    const findQuery = { supplier_name };
+    if (branch && branch !== 'all') findQuery.branch = branch;
+
+    const record = await SupplierDebt.findOne(findQuery).lean();
     const history = (record?.debt_history || [])
-      .sort((a,b) => new Date(b.date) - new Date(a.date))
+      .sort((a, b) => new Date(b.date) - new Date(a.date))
       .map(h => ({
         date: h.date,
         amount: h.amount,

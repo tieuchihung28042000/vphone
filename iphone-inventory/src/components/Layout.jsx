@@ -30,30 +30,30 @@ const Sidebar = ({ activeTab }) => {
       const info = getUserInfo();
       setUserInfo(info);
       setUserRole(info?.role);
-      
+
       // Debug log để kiểm tra role
       console.log('🔍 Layout - User role:', info?.role);
       console.log('🔍 Layout - User info:', info);
     };
-    
+
     checkToken();
-    
+
     // Kiểm tra lại mỗi giây để đảm bảo token được đọc
     const interval = setInterval(checkToken, 1000);
-    
+
     return () => clearInterval(interval);
   }, []);
 
   // Định nghĩa tất cả menu items theo yêu cầu phân quyền
   const allMenuItems = [
-    { id: 'nhap-hang', label: 'Nhập hàng', icon: '📥', path: '/nhap-hang', roles: ['admin', 'thu_ngan'] },
-    { id: 'xuat-hang', label: 'Xuất hàng', icon: '📤', path: '/xuat-hang', roles: ['admin', 'thu_ngan', 'nhan_vien_ban_hang'] },
-    { id: 'ton-kho', label: 'Tồn kho', icon: '📦', path: '/ton-kho-so-luong', roles: ['admin', 'thu_ngan'] },
-    { id: 'so-quy', label: 'Sổ quỹ', icon: '💰', path: '/so-quy', roles: ['admin', 'thu_ngan', 'nhan_vien_ban_hang'] }, // Thu ngân và nhân viên có thể xem sổ quỹ
-    { id: 'cong-no', label: 'Công nợ', icon: '💳', path: '/cong-no', roles: ['admin', 'thu_ngan'] },
-    { id: 'bao-cao', label: 'Báo cáo', icon: '📊', path: '/bao-cao', roles: ['admin', 'thu_ngan'] }, // Thu ngân được xem báo cáo
-    { id: 'lich-su-hoat-dong', label: 'Lịch sử hoạt động', icon: '📋', path: '/lich-su-hoat-dong', roles: ['admin', 'thu_ngan'] },
-    { id: 'quan-ly-user', label: 'Quản lý User', icon: '👥', path: '/quan-ly-user', roles: ['admin', 'thu_ngan'] },
+    { id: 'nhap-hang', label: 'Nhập hàng', icon: '📥', path: '/nhap-hang', roles: ['admin', 'quan_ly_chi_nhanh'] },
+    { id: 'xuat-hang', label: 'Xuất hàng', icon: '📤', path: '/xuat-hang', roles: ['admin', 'quan_ly_chi_nhanh', 'nhan_vien_ban_hang', 'thu_ngan'] },
+    { id: 'ton-kho', label: 'Tồn kho', icon: '📦', path: '/ton-kho-so-luong', roles: ['admin', 'quan_ly_chi_nhanh'] },
+    { id: 'so-quy', label: 'Sổ quỹ', icon: '💰', path: '/so-quy', roles: ['admin', 'quan_ly_chi_nhanh', 'thu_ngan'] },
+    { id: 'cong-no', label: 'Công nợ', icon: '💳', path: '/cong-no', roles: ['admin', 'quan_ly_chi_nhanh'] },
+    { id: 'bao-cao', label: 'Báo cáo', icon: '📊', path: '/bao-cao', roles: ['admin', 'quan_ly_chi_nhanh', 'thu_ngan'] },
+    { id: 'lich-su-hoat-dong', label: 'Lịch sử hoạt động', icon: '📋', path: '/lich-su-hoat-dong', roles: ['admin', 'quan_ly_chi_nhanh'] },
+    { id: 'quan-ly-user', label: 'Quản lý User', icon: '👥', path: '/quan-ly-user', roles: ['admin', 'quan_ly_chi_nhanh'] },
   ];
 
   // Lọc menu theo quyền
@@ -64,7 +64,8 @@ const Sidebar = ({ activeTab }) => {
 
   const getRoleLabel = (role) => {
     const roleLabels = {
-      admin: "👑 Admin",
+      admin: "👑 Admin tổng",
+      quan_ly_chi_nhanh: "🏢 Quản lý chi nhánh",
       thu_ngan: "💰 Thu ngân",
       nhan_vien_ban_hang: "🛒 Nhân viên bán hàng",
       user: "👤 User"
@@ -122,11 +123,11 @@ const Sidebar = ({ activeTab }) => {
               )}
             </div>
           ) : (
-          <div className="flex items-center">
-            <div className="w-12 h-12 bg-white/20 rounded-xl flex items-center justify-center">
-              <span className="text-xl">👤</span>
-            </div>
-            <div className="ml-3">
+            <div className="flex items-center">
+              <div className="w-12 h-12 bg-white/20 rounded-xl flex items-center justify-center">
+                <span className="text-xl">👤</span>
+              </div>
+              <div className="ml-3">
                 <p className="text-sm font-semibold">Guest User</p>
                 <p className="text-xs text-white/70">Chưa đăng nhập</p>
               </div>

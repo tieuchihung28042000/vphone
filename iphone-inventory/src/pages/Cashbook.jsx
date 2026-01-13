@@ -11,11 +11,11 @@ import { saveAs } from "file-saver";
 // ======= Format số tiền =======
 function formatMoney(amount) {
   if (!amount || amount === 0) return "0đ";
-  
+
   // Xử lý số âm
   const isNegative = amount < 0;
   const absAmount = Math.abs(amount);
-  
+
   let result;
   if (absAmount >= 1000000000) {
     result = `${(absAmount / 1000000000).toFixed(1)}Tỷ`;
@@ -26,7 +26,7 @@ function formatMoney(amount) {
   } else {
     result = absAmount.toString().replace(/\B(?=(\d{3})+(?!\d))/g, " ") + "đ";
   }
-  
+
   return isNegative ? `-${result}` : result;
 }
 
@@ -77,9 +77,9 @@ export default function Cashbook() {
       stack: error.stack,
       context: context
     });
-    
+
     let errorMsg = '❌ Lỗi không xác định';
-    
+
     if (error.message?.includes('Failed to fetch') || error.message?.includes('NetworkError') || error.name === 'TypeError') {
       errorMsg = '❌ Không thể kết nối đến server. Vui lòng kiểm tra:\n- Kết nối mạng\n- Server có đang chạy không\n- URL API có đúng không';
     } else if (error.message?.includes('401') || error.message?.includes('Unauthorized')) {
@@ -93,10 +93,10 @@ export default function Cashbook() {
     } else if (error.message) {
       errorMsg = `❌ ${error.message}`;
     }
-    
+
     return errorMsg;
   };
-  
+
   // State cho hiển thị số dư theo nguồn tiền và chỉnh sửa tổng quỹ
   const [balanceBySource, setBalanceBySource] = useState({
     tien_mat: 0,
@@ -110,16 +110,16 @@ export default function Cashbook() {
     vi_dien_tu: '',
     note: ''
   });
-  
+
   // State cho chi nhánh được chọn
   const [selectedBranch, setSelectedBranch] = useState('');
   const [branches, setBranches] = useState([]);
   const [loadingBranches, setLoadingBranches] = useState(true);
-  
+
   // State cho user role và branch
   const [userRole, setUserRole] = useState(null);
   const [userBranch, setUserBranch] = useState(null);
-  
+
   // State cho view tổng hợp tất cả chi nhánh
   const [viewMode, setViewMode] = useState('branch'); // 'branch' | 'total'
   const [totalSummary, setTotalSummary] = useState({
@@ -128,7 +128,7 @@ export default function Cashbook() {
     balance: 0,
     branchDetails: []
   });
-  
+
   const [filters, setFilters] = useState({
     fromDate: '',
     toDate: '',
@@ -143,7 +143,7 @@ export default function Cashbook() {
     limit: 50,
     total: 0
   });
-  
+
   const categories = {
     thu: ['Doanh thu bán hàng', 'Thu tiền trả nợ', 'Thu khác'],
     chi: ['Chi phí nhập hàng', 'Chi phí vận hành', 'Chi khác']
@@ -167,7 +167,7 @@ export default function Cashbook() {
   const [showSuggest, setShowSuggest] = useState(false);
   const [suggestLoading, setSuggestLoading] = useState(false);
   const [selectedSuggestFilter, setSelectedSuggestFilter] = useState('');
-  
+
   // ======= QUẢN LÝ MÔ TẢ GIAO DỊCH =======
   const [contentModal, setContentModal] = useState({ open: false, type: 'add', data: null });
   const [contentForm, setContentForm] = useState({ content: '', type: 'all' });
@@ -181,7 +181,7 @@ export default function Cashbook() {
         return;
       }
       setSuggestLoading(true);
-        const url = getApiUrl('/api/cashbook/contents?limit=50');
+      const url = getApiUrl('/api/cashbook/contents?limit=50');
       const res = await fetch(url, {
         headers: getAuthHeaders()
       });
@@ -231,12 +231,12 @@ export default function Cashbook() {
   const handleSaveContent = async (e) => {
     e.preventDefault();
     try {
-      const url = contentModal.type === 'edit' 
+      const url = contentModal.type === 'edit'
         ? getApiUrl(`/api/cashbook/content-suggestions/${contentModal.data._id}`)
         : getApiUrl('/api/cashbook/content-suggestions');
-      
+
       const method = contentModal.type === 'edit' ? 'PUT' : 'POST';
-      
+
       const response = await fetch(url, {
         method,
         headers: getAuthHeaders(),
@@ -245,9 +245,9 @@ export default function Cashbook() {
           branch: selectedBranch || undefined
         })
       });
-      
+
       const result = await response.json();
-      
+
       if (response.ok) {
         alert('✅ ' + result.message);
         setContentModal({ open: false, type: 'add', data: null });
@@ -263,15 +263,15 @@ export default function Cashbook() {
 
   const handleDeleteContent = async (id) => {
     if (!window.confirm('Bạn có chắc muốn xóa mô tả này?')) return;
-    
+
     try {
       const response = await fetch(getApiUrl(`/api/cashbook/content-suggestions/${id}`), {
         method: 'DELETE',
         headers: getAuthHeaders()
       });
-      
+
       const result = await response.json();
-      
+
       if (response.ok) {
         alert('✅ ' + result.message);
         await loadContentSuggestions();
@@ -300,12 +300,12 @@ export default function Cashbook() {
     try {
       setLoadingBranches(true);
       console.log('🏢 Loading branches...'); // Debug
-      
-        const response = await fetch(getApiUrl('/api/branches'));
+
+      const response = await fetch(getApiUrl('/api/branches'));
       const data = await response.json();
-      
+
       console.log('🏢 Branches API response:', data); // Debug
-      
+
       if (response.ok) {
         const branchNames = Array.isArray(data) ? data.map(branch => branch.name) : [];
         setBranches(branchNames);
@@ -346,7 +346,7 @@ export default function Cashbook() {
       console.log('⚠️ No selectedBranch, skipping loadTransactions'); // Debug
       return; // Không load nếu chưa có chi nhánh
     }
-    
+
     console.log('🔄 loadTransactions called with:', { viewMode, selectedBranch }); // Debug
     setLoading(true);
     try {
@@ -354,13 +354,13 @@ export default function Cashbook() {
         page: pagination.page,
         limit: pagination.limit
       });
-      
+
       // Chỉ filter theo chi nhánh nếu đang ở view chi nhánh
       if (viewMode === 'branch' && selectedBranch) {
         params.append('branch', selectedBranch);
         console.log('📋 Adding branch filter:', selectedBranch); // Debug
       }
-      
+
       Object.keys(filters).forEach(key => {
         if (filters[key] && filters[key] !== 'all' && filters[key] !== '') {
           if (key === 'fromDate') params.append('from', filters[key]);
@@ -374,11 +374,11 @@ export default function Cashbook() {
       const apiUrl = getApiUrl(`/api/cashbook?${params}`);
       console.log('🔍 Fetching transactions from:', apiUrl);
       console.log('🔍 Using API URL helper - will go through nginx proxy');
-      
+
       const response = await fetch(apiUrl, {
         headers: getAuthHeaders()
       });
-      
+
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({ message: 'Unknown error' }));
         console.error('❌ API Error Response:', {
@@ -387,18 +387,18 @@ export default function Cashbook() {
           data: errorData,
           url: apiUrl
         });
-        
+
         if (response.status === 401 || response.status === 403) {
           alert('❌ Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.');
           // Có thể redirect đến trang login ở đây
           return;
         }
-        
+
         throw new Error(`API Error: ${response.status} - ${errorData.message || response.statusText}`);
       }
-      
+
       const data = await response.json();
-      
+
       if (response.ok) {
         setTransactions(data.items || []);
         setSummary(data.summary || { totalThu: 0, totalChi: 0, balance: 0 });
@@ -424,7 +424,7 @@ export default function Cashbook() {
   const loadTotalSummary = async () => {
     try {
       const params = new URLSearchParams();
-      
+
       Object.keys(filters).forEach(key => {
         if (filters[key] && filters[key] !== 'all' && filters[key] !== '') {
           if (key === 'fromDate') params.append('from', filters[key]);
@@ -437,7 +437,7 @@ export default function Cashbook() {
         headers: getAuthHeaders()
       });
       const data = await response.json();
-      
+
       if (response.ok) {
         setTotalSummary(data);
       }
@@ -449,26 +449,26 @@ export default function Cashbook() {
   // Load số dư theo nguồn tiền
   const loadBalanceBySource = async () => {
     if (!selectedBranch) return;
-    
+
     try {
       const response = await fetch(getApiUrl(`/api/cashbook/balance?branch=${selectedBranch}`), {
         headers: getAuthHeaders()
       });
       const data = await response.json();
-      
+
       if (response.ok) {
         const balanceMap = {
           tien_mat: 0,
           the: 0,
           vi_dien_tu: 0
         };
-        
+
         data.forEach(item => {
           if (item._id && item._id.source) {
             balanceMap[item._id.source] = item.balance || 0;
           }
         });
-        
+
         setBalanceBySource(balanceMap);
       }
     } catch (error) {
@@ -479,12 +479,12 @@ export default function Cashbook() {
   // Chỉnh sửa tổng quỹ
   const handleAdjustBalance = async (e) => {
     e.preventDefault();
-    
+
     if (!balanceForm.branch) {
       alert('❌ Vui lòng chọn chi nhánh');
       return;
     }
-    
+
     try {
       const response = await fetch(getApiUrl('/api/cashbook/adjust-balance'), {
         method: 'POST',
@@ -498,14 +498,14 @@ export default function Cashbook() {
           user: 'Admin' // Có thể lấy từ user context nếu có
         })
       });
-      
+
       const result = await response.json();
-      
+
       if (response.ok) {
         alert(`✅ Đã cập nhật số dư cho chi nhánh ${balanceForm.branch}: ${result.message}`);
         setEditBalanceModal(false);
         setBalanceForm({ branch: '', tien_mat: '', the: '', vi_dien_tu: '', note: '' });
-        
+
         // Reload dữ liệu nếu đang xem chi nhánh vừa cập nhật
         if (selectedBranch === balanceForm.branch) {
           loadBalanceBySource();
@@ -539,9 +539,14 @@ export default function Cashbook() {
         const payload = JSON.parse(atob(token.split('.')[1]));
         setUserRole(payload.role || null);
         setUserBranch(payload.branch_name || null);
-        
+
         // Nếu là admin chi nhánh, nhân viên hoặc thu ngân, tự động set branch
-        if (payload.branch_name && (payload.role === 'admin' || payload.role === 'nhan_vien_ban_hang' || payload.role === 'thu_ngan')) {
+        if (payload.branch_name && (
+          payload.role === 'quan_ly_chi_nhanh' ||
+          payload.role === 'nhan_vien_ban_hang' ||
+          payload.role === 'thu_ngan' ||
+          (payload.role === 'admin' && payload.branch_name)
+        )) {
           setSelectedBranch(payload.branch_name);
           localStorage.setItem('selectedBranch', payload.branch_name);
         }
@@ -624,12 +629,12 @@ export default function Cashbook() {
         return;
       }
 
-      const url = modal.type === 'edit' 
+      const url = modal.type === 'edit'
         ? getApiUrl(`/api/cashbook/${modal.data._id}`)
         : getApiUrl('/api/cashbook');
-      
+
       const method = modal.type === 'edit' ? 'PUT' : 'POST';
-      
+
       const response = await fetch(url, {
         method,
         headers: getAuthHeaders(),
@@ -638,9 +643,9 @@ export default function Cashbook() {
           amount: Number(unformatNumberInput(formData.amount))
         })
       });
-      
+
       const result = await response.json();
-      
+
       if (response.ok) {
         alert('✅ ' + result.message);
         handleCloseModal();
@@ -655,15 +660,15 @@ export default function Cashbook() {
 
   const handleDeleteTransaction = async (id) => {
     if (!window.confirm('Bạn có chắc muốn xóa giao dịch này?')) return;
-    
+
     try {
       const response = await fetch(getApiUrl(`/api/cashbook/${id}`), {
         method: 'DELETE',
         headers: getAuthHeaders()
       });
-      
+
       const result = await response.json();
-      
+
       if (response.ok) {
         alert('✅ ' + result.message);
         loadTransactions();
@@ -680,11 +685,11 @@ export default function Cashbook() {
       alert('❌ Vui lòng chọn chi nhánh trước khi xuất Excel');
       return;
     }
-    
+
     try {
       const params = new URLSearchParams();
       params.append('branch', selectedBranch); // Luôn xuất cho chi nhánh đã chọn
-      
+
       Object.keys(filters).forEach(key => {
         if (filters[key] && filters[key] !== 'all' && filters[key] !== '') {
           if (key === 'fromDate') params.append('from', filters[key]);
@@ -696,7 +701,7 @@ export default function Cashbook() {
       const response = await fetch(getApiUrl(`/api/cashbook/export-excel?${params}`), {
         headers: getAuthHeaders()
       });
-      
+
       if (response.ok) {
         const blob = await response.blob();
         const url = window.URL.createObjectURL(blob);
@@ -813,7 +818,7 @@ export default function Cashbook() {
   ];
 
   return (
-    <Layout 
+    <Layout
       activeTab="so-quy"
       title="💰 Sổ Quỹ"
       subtitle="Quản lý thu chi và theo dõi tài chính"
@@ -826,11 +831,10 @@ export default function Cashbook() {
               setViewMode('branch');
               loadTransactions();
             }}
-            className={`flex-1 py-3 px-6 rounded-xl font-semibold transition-all duration-200 ${
-              viewMode === 'branch'
+            className={`flex-1 py-3 px-6 rounded-xl font-semibold transition-all duration-200 ${viewMode === 'branch'
                 ? "bg-blue-600 text-white shadow-md"
                 : "text-gray-600 hover:text-blue-600"
-            }`}
+              }`}
           >
             🏢 Theo chi nhánh
           </button>
@@ -839,11 +843,10 @@ export default function Cashbook() {
               setViewMode('total');
               loadTotalSummary();
             }}
-            className={`flex-1 py-3 px-6 rounded-xl font-semibold transition-all duration-200 ${
-              viewMode === 'total'
+            className={`flex-1 py-3 px-6 rounded-xl font-semibold transition-all duration-200 ${viewMode === 'total'
                 ? "bg-green-600 text-white shadow-md"
                 : "text-gray-600 hover:text-green-600"
-            }`}
+              }`}
           >
             📊 Sổ quỹ tổng
           </button>
@@ -870,21 +873,21 @@ export default function Cashbook() {
                   onChange={async (e) => {
                     const newBranch = e.target.value;
                     console.log('🏢 Branch changed to:', newBranch); // Debug
-                    
+
                     setSelectedBranch(newBranch);
-                    
+
                     // ✅ Lưu vào localStorage để nhớ lựa chọn
                     if (newBranch) {
                       localStorage.setItem('selectedBranch', newBranch);
                     } else {
                       localStorage.removeItem('selectedBranch');
                     }
-                    
+
                     // ✅ Reset data ngay lập tức để tránh hiển thị data cũ
                     setTransactions([]);
                     setBalanceBySource({ tien_mat: 0, the: 0, vi_dien_tu: 0 });
                     setSummary({ totalThu: 0, totalChi: 0, balance: 0 });
-                    
+
                     // ✅ Reload data ngay lập tức cho chi nhánh mới
                     if (newBranch) {
                       setLoading(true);
@@ -902,14 +905,15 @@ export default function Cashbook() {
                   }}
                   disabled={
                     // Disable nếu là admin chi nhánh, nhân viên hoặc thu ngân
-                    (userRole === 'admin' && userBranch) || 
-                    userRole === 'nhan_vien_ban_hang' || 
+                    (userRole === 'admin' && userBranch) ||
+                    userRole === 'quan_ly_chi_nhanh' ||
+                    userRole === 'nhan_vien_ban_hang' ||
                     userRole === 'thu_ngan'
                   }
                   className="form-input text-lg font-semibold"
                   style={{
-                    cursor: ((userRole === 'admin' && userBranch) || userRole === 'nhan_vien_ban_hang' || userRole === 'thu_ngan') ? 'not-allowed' : 'pointer',
-                    opacity: ((userRole === 'admin' && userBranch) || userRole === 'nhan_vien_ban_hang' || userRole === 'thu_ngan') ? 0.6 : 1
+                    cursor: ((userRole === 'admin' && userBranch) || userRole === 'quan_ly_chi_nhanh' || userRole === 'nhan_vien_ban_hang' || userRole === 'thu_ngan') ? 'not-allowed' : 'pointer',
+                    opacity: ((userRole === 'admin' && userBranch) || userRole === 'quan_ly_chi_nhanh' || userRole === 'nhan_vien_ban_hang' || userRole === 'thu_ngan') ? 0.6 : 1
                   }}
                 >
                   <option value="">-- Chọn chi nhánh --</option>
@@ -923,7 +927,7 @@ export default function Cashbook() {
               )}
             </div>
           </div>
-          
+
           {/* Hiển thị thông tin chi nhánh đang chọn */}
           {selectedBranch && (
             <div className="mt-4 p-4 bg-blue-50 rounded-xl border border-blue-200">
@@ -948,7 +952,7 @@ export default function Cashbook() {
               </div>
             </div>
           )}
-          
+
           {/* Cảnh báo nếu chưa chọn chi nhánh */}
           {!selectedBranch && (
             <div className="mt-4 p-4 bg-orange-50 rounded-xl border border-orange-200">
@@ -968,40 +972,40 @@ export default function Cashbook() {
       {/* Stats Dashboard */}
       {viewMode === 'branch' ? (
         selectedBranch && (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-6">
-        <StatsCard
-          title="Tổng số dư"
-          value={`${formatMoney(totalBalance)}`}
-          icon="💰"
-          color="blue"
-          subtitle="👆 Nhấn để chỉnh sửa số dư"
-          onClick={handleOpenEditBalance}
-        />
-        <StatsCard
-          title="Thu hôm nay"
-          value={`${formatMoney(todayIncome)}`}
-          icon="📈"
-          color="green"
-          subtitle={`${todayTransactions.filter(t => t.type === 'thu').length} giao dịch`}
-        />
-        <StatsCard
-          title="Chi hôm nay"
-          value={`${formatMoney(todayExpense)}`}
-          icon="📉"
-          color="red"
-          subtitle={`${todayTransactions.filter(t => t.type === 'chi').length} giao dịch`}
-        />
-        <StatsCard
-          title="Chênh lệch hôm nay"
-          value={`${formatMoney(todayIncome - todayExpense)}`}
-          icon={todayIncome - todayExpense >= 0 ? "📊" : "⚠️"}
-          color={todayIncome - todayExpense >= 0 ? "purple" : "orange"}
-          subtitle={todayIncome - todayExpense >= 0 ? "Tích cực" : "Tiêu cực"}
-        />
-        </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-6">
+            <StatsCard
+              title="Tổng số dư"
+              value={`${formatMoney(totalBalance)}`}
+              icon="💰"
+              color="blue"
+              subtitle="👆 Nhấn để chỉnh sửa số dư"
+              onClick={handleOpenEditBalance}
+            />
+            <StatsCard
+              title="Thu hôm nay"
+              value={`${formatMoney(todayIncome)}`}
+              icon="📈"
+              color="green"
+              subtitle={`${todayTransactions.filter(t => t.type === 'thu').length} giao dịch`}
+            />
+            <StatsCard
+              title="Chi hôm nay"
+              value={`${formatMoney(todayExpense)}`}
+              icon="📉"
+              color="red"
+              subtitle={`${todayTransactions.filter(t => t.type === 'chi').length} giao dịch`}
+            />
+            <StatsCard
+              title="Chênh lệch hôm nay"
+              value={`${formatMoney(todayIncome - todayExpense)}`}
+              icon={todayIncome - todayExpense >= 0 ? "📊" : "⚠️"}
+              color={todayIncome - todayExpense >= 0 ? "purple" : "orange"}
+              subtitle={todayIncome - todayExpense >= 0 ? "Tích cực" : "Tiêu cực"}
+            />
+          </div>
         )
       ) : null}
-      
+
       {/* Tổng số tiền thu/chi theo filter - Hiển thị luôn, kể cả khi không có filter */}
       {(viewMode === 'branch' ? selectedBranch : true) && (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
@@ -1028,7 +1032,7 @@ export default function Cashbook() {
           />
         </div>
       )}
-      
+
       {viewMode === 'total' && (
         // Sổ quỹ tổng - Hiển thị tổng hợp tất cả chi nhánh
         <div className="space-y-6">
@@ -1253,9 +1257,9 @@ export default function Cashbook() {
 
             <div>
               <label className="block text-sm font-semibold text-gray-700 mb-3">Chi nhánh</label>
-              <select 
-                name="branch" 
-                value={formData.branch} 
+              <select
+                name="branch"
+                value={formData.branch}
                 onChange={(e) => setFormData(prev => ({ ...prev, branch: e.target.value }))}
                 className="form-input"
               >
@@ -1295,8 +1299,8 @@ export default function Cashbook() {
             </div>
 
             <div className="md:col-span-2 lg:col-span-3">
-              <button 
-                type="submit" 
+              <button
+                type="submit"
                 className="w-full btn-gradient text-white py-4 px-8 rounded-2xl font-bold text-lg transition-all duration-300"
               >
                 {modal.type === 'edit' ? "🔄 Cập nhật giao dịch" : "💰 Thêm giao dịch"}
@@ -1351,8 +1355,8 @@ export default function Cashbook() {
               <option value="chi">📉 Chi</option>
             </select>
           </div>
-        <div>
-          <select
+          <div>
+            <select
               value={filters.source}
               onChange={(e) => handleFilterChange('source', e.target.value)}
               className="form-input"
@@ -1361,15 +1365,15 @@ export default function Cashbook() {
               <option value="tien_mat">💵 Tiền mặt</option>
               <option value="the">💳 Thẻ</option>
               <option value="vi_dien_tu">📱 Ví điện tử</option>
-          </select>
+            </select>
           </div>
           <div>
-          <button
+            <button
               onClick={handleExportExcel}
               className="w-full bg-green-600 hover:bg-green-700 text-white px-4 py-3 rounded-xl transition-all duration-200 font-medium"
             >
               📊 Xuất Excel
-          </button>
+            </button>
           </div>
           {/* Lọc nhanh theo nội dung đã dùng */}
           <div className="lg:col-span-2">
@@ -1448,7 +1452,7 @@ export default function Cashbook() {
                     <h4 className="font-semibold text-blue-900 mb-3">
                       💰 Chỉnh sửa số dư cho chi nhánh: {balanceForm.branch}
                     </h4>
-                    
+
                     <div className="space-y-4">
                       <div>
                         <label className="block text-sm font-semibold text-gray-700 mb-2">💵 Tiền mặt</label>
@@ -1460,7 +1464,7 @@ export default function Cashbook() {
                           placeholder="0"
                         />
                       </div>
-                      
+
                       <div>
                         <label className="block text-sm font-semibold text-gray-700 mb-2">💳 Thẻ</label>
                         <input
@@ -1471,7 +1475,7 @@ export default function Cashbook() {
                           placeholder="0"
                         />
                       </div>
-                      
+
                       <div>
                         <label className="block text-sm font-semibold text-gray-700 mb-2">📱 Ví điện tử</label>
                         <input
@@ -1486,7 +1490,7 @@ export default function Cashbook() {
                   </div>
                 </>
               )}
-              
+
               <div className="flex gap-3 pt-4">
                 <button
                   type="button"
@@ -1515,7 +1519,7 @@ export default function Cashbook() {
             <h3 className="text-xl font-bold text-gray-900 mb-6">
               {contentModal.type === 'edit' ? '✏️ Chỉnh sửa mô tả' : '➕ Thêm mô tả mới'}
             </h3>
-            
+
             <form onSubmit={handleSaveContent} className="space-y-4">
               <div>
                 <label className="block text-sm font-semibold text-gray-700 mb-2">Mô tả giao dịch *</label>
@@ -1529,7 +1533,7 @@ export default function Cashbook() {
                   required
                 />
               </div>
-              
+
               <div>
                 <label className="block text-sm font-semibold text-gray-700 mb-2">Loại</label>
                 <select
@@ -1543,7 +1547,7 @@ export default function Cashbook() {
                   <option value="chi">Chi tiền</option>
                 </select>
               </div>
-              
+
               <div className="flex gap-3 pt-4">
                 <button
                   type="button"

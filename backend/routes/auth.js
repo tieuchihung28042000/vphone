@@ -19,12 +19,12 @@ router.post('/register', authenticateToken, requireRole(['admin', 'thu_ngan']), 
     }
 
     // Kiểm tra vai trò hợp lệ
-    const validRoles = ['user', 'admin', 'thu_ngan', 'nhan_vien_ban_hang'];
+    const validRoles = ['user', 'admin', 'quan_ly_chi_nhanh', 'thu_ngan', 'nhan_vien_ban_hang'];
     if (role && !validRoles.includes(role)) {
       return res.status(400).json({ message: '❌ Vai trò không hợp lệ' });
     }
 
-    // Kiểm tra branch_id cho các vai trò không phải admin
+    // Kiểm tra branch_id cho các vai trò không phải admin (Admin tổng)
     if (role && role !== 'admin' && !branch_id) {
       return res.status(400).json({ message: '❌ Chi nhánh là bắt buộc cho vai trò này' });
     }
@@ -93,7 +93,7 @@ router.post('/login', async (req, res) => {
         { username: email } // Sử dụng field email để nhận cả username
       ]
     });
-    
+
     if (!user) {
       return res.status(401).json({ message: '❌ Email/Username không tồn tại' });
     }
@@ -120,8 +120,8 @@ router.post('/login', async (req, res) => {
       { expiresIn: '7d' }
     );
 
-    res.status(200).json({ 
-      message: '✅ Đăng nhập thành công', 
+    res.status(200).json({
+      message: '✅ Đăng nhập thành công',
       token,
       user: {
         id: user._id,

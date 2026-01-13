@@ -20,12 +20,12 @@ router.get('/pending-users', authenticateToken, requireRole(['admin', 'thu_ngan'
 router.get('/all-users', authenticateToken, requireRole(['admin', 'thu_ngan']), async (req, res) => {
   try {
     let query = {};
-    
+
     // Nếu không phải admin, chỉ xem user trong chi nhánh của mình
     if (req.user.role !== 'admin') {
       query.branch_id = req.user.branch_id;
     }
-    
+
     const allUsers = await User.find(query).populate('branch_id').select('-password');
     res.status(200).json(allUsers);
   } catch (error) {
@@ -89,7 +89,7 @@ router.put('/update-role/:id', authenticateToken, requireRole(['admin', 'thu_nga
     const userId = req.params.id;
     const { role } = req.body;
 
-    const validRoles = ['user', 'admin', 'thu_ngan', 'nhan_vien_ban_hang'];
+    const validRoles = ['user', 'admin', 'quan_ly_chi_nhanh', 'thu_ngan', 'nhan_vien_ban_hang'];
     if (!validRoles.includes(role)) {
       return res.status(400).json({ message: 'Vai trò không hợp lệ' });
     }
@@ -145,7 +145,7 @@ router.put('/update-role/:id', authenticateToken, requireRole(['admin', 'thu_nga
 router.delete('/delete-user/:id', authenticateToken, requireRole(['admin']), async (req, res) => {
   try {
     const userId = req.params.id;
-    
+
     if (userId === req.user.id) {
       return res.status(400).json({ message: 'Không thể xóa chính mình' });
     }

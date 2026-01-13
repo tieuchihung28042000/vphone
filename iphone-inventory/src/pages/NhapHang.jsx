@@ -20,7 +20,7 @@ function formatNumber(val) {
 
 function formatCurrency(amount) {
   if (!amount || amount === 0) return "0đ";
-  
+
   if (amount >= 1000000000) {
     return `${(amount / 1000000000).toFixed(1)}Tỷ`;
   } else if (amount >= 1000000) {
@@ -40,7 +40,9 @@ function NhapHang() {
   // State management
   const [branches, setBranches] = useState([]);
   const [categories, setCategories] = useState([]);
-  
+  const [userRole, setUserRole] = useState(null);
+  const [userBranch, setUserBranch] = useState(null);
+
   const getLocalBranch = () => localStorage.getItem('lastBranch') || "";
   const getLocalCategory = () => localStorage.getItem('lastCategory') || "";
 
@@ -64,7 +66,7 @@ function NhapHang() {
   const [items, setItems] = useState([]);
   const [search, setSearch] = useState("");
   const [filterDate, setFilterDate] = useState("");
-  const [filterBranch, setFilterBranch] = useState("");  
+  const [filterBranch, setFilterBranch] = useState("");
   const [filterCategory, setFilterCategory] = useState("");
   const [filterSupplier, setFilterSupplier] = useState("");
   const [page, setPage] = useState(1);
@@ -73,11 +75,11 @@ function NhapHang() {
   const [importing, setImporting] = useState(false);
   const [branchModal, setBranchModal] = useState({ open: false, type: 'add', data: null });
   const [branchForm, setBranchForm] = useState({ name: '', address: '', phone: '', note: '' });
-  
+
   // ✅ Thêm state cho quản lý danh mục
   const [categoryModal, setCategoryModal] = useState({ open: false, type: 'add', data: null });
   const [categoryForm, setCategoryForm] = useState({ name: '', description: '' });
-  
+
   // ✅ Thêm states cho autocomplete
   const [suggestList, setSuggestList] = useState([]);
   const [showSuggest, setShowSuggest] = useState(false);
@@ -99,27 +101,27 @@ function NhapHang() {
   const filteredItems = items.filter((item) => {
     // ✅ Cải thiện tìm kiếm - xử lý null/undefined
     const searchText = search.toLowerCase().trim();
-    const matchSearch = !searchText || 
+    const matchSearch = !searchText ||
       (item.imei && item.imei.toLowerCase().includes(searchText)) ||
       ((item.product_name || item.tenSanPham || '').toLowerCase().includes(searchText)) ||
       (item.sku && item.sku.toLowerCase().includes(searchText));
-    
+
     // ✅ Cải thiện filter ngày - xử lý format ngày
-    const matchDate = !filterDate || 
+    const matchDate = !filterDate ||
       (item.import_date && item.import_date.slice(0, 10) === filterDate);
-    
+
     // ✅ Cải thiện filter chi nhánh - xử lý empty string
-    const matchBranch = !filterBranch || 
+    const matchBranch = !filterBranch ||
       (item.branch && item.branch.trim() === filterBranch.trim());
-    
+
     // ✅ Cải thiện filter danh mục - xử lý empty string  
-    const matchCategory = !filterCategory || 
+    const matchCategory = !filterCategory ||
       (item.category && item.category.trim() === filterCategory.trim());
-    
+
     // ✅ Cải thiện filter nhà cung cấp - xử lý empty string
-    const matchSupplier = !filterSupplier || 
+    const matchSupplier = !filterSupplier ||
       (item.supplier && item.supplier.trim() === filterSupplier.trim());
-    
+
     return matchSearch && matchDate && matchBranch && matchCategory && matchSupplier;
   });
 
@@ -138,17 +140,27 @@ function NhapHang() {
     totalInStockAll: items.filter(item => item.status !== 'sold').length
   };
 
+  const getAuthHeaders = () => {
+    const token = localStorage.getItem('token') || sessionStorage.getItem('token');
+    return {
+      'Authorization': `Bearer ${token}`,
+      'Content-Type': 'application/json'
+    };
+  };
+
   // API functions
   const fetchItems = async () => {
     try {
-        const apiUrl = import.meta.env.VITE_API_URL || window.location.origin;
-      const res = await fetch(`${apiUrl}/api/nhap-hang`);
-      
+      const apiUrl = import.meta.env.VITE_API_URL || window.location.origin;
+      const res = await fetch(`${apiUrl}/api/nhap-hang`, {
+        headers: getAuthHeaders()
+      });
+
       if (!res.ok) throw new Error(`API Error: ${res.status}`);
-      
+
       const data = await res.json();
       if (!data.items) return;
-      
+
       const sorted = data.items.sort((a, b) => {
         const dateA = a.import_date || '';
         const dateB = b.import_date || '';
@@ -156,7 +168,7 @@ function NhapHang() {
         if (dateA < dateB) return 1;
         return b._id.localeCompare(a._id);
       });
-      
+
       setItems(sorted);
     } catch (err) {
       console.error("❌ Lỗi khi tải dữ liệu:", err);
@@ -165,8 +177,10 @@ function NhapHang() {
 
   const fetchBranches = async () => {
     try {
-        const apiUrl = import.meta.env.VITE_API_URL || window.location.origin;
-      const res = await fetch(`${apiUrl}/api/branches`);
+      const apiUrl = import.meta.env.VITE_API_URL || window.location.origin;
+      const res = await fetch(`${apiUrl}/api/branches`, {
+        headers: getAuthHeaders()
+      });
       const data = await res.json();
       setBranches(data);
     } catch (err) {
@@ -176,8 +190,10 @@ function NhapHang() {
 
   const fetchCategories = async () => {
     try {
-        const apiUrl = import.meta.env.VITE_API_URL || window.location.origin;
-      const res = await fetch(`${apiUrl}/api/categories`);
+      const apiUrl = import.meta.env.VITE_API_URL || window.location.origin;
+      const res = await fetch(`${apiUrl}/api/categories`, {
+        headers: getAuthHeaders()
+      });
       const data = await res.json();
       setCategories(data);
     } catch (err) {
@@ -191,6 +207,31 @@ function NhapHang() {
     fetchCategories();
   }, []);
 
+  // Lấy role và branch từ token
+  useEffect(() => {
+    try {
+      const token = localStorage.getItem('token') || sessionStorage.getItem('token');
+      if (token) {
+        const payload = JSON.parse(atob(token.split('.')[1]));
+        setUserRole(payload.role || null);
+        setUserBranch(payload.branch_name || null);
+
+        // Nếu là admin chi nhánh, nhân viên hoặc thu ngân, tự động set branch
+        if (payload.branch_name && (
+          payload.role === 'quan_ly_chi_nhanh' ||
+          payload.role === 'nhan_vien_ban_hang' ||
+          payload.role === 'thu_ngan' ||
+          (payload.role === 'admin' && payload.branch_name)
+        )) {
+          setFormData(prev => ({ ...prev, branch: payload.branch_name }));
+          setFilterBranch(payload.branch_name);
+        }
+      }
+    } catch (e) {
+      console.error('Error decoding token:', e);
+    }
+  }, []);
+
   // ✅ Thêm function để fetch gợi ý sản phẩm
   const fetchSuggestList = async (query) => {
     if (!query || query.length < 2) {
@@ -198,12 +239,14 @@ function NhapHang() {
       setShowSuggest(false);
       return;
     }
-    
+
     try {
-        const res = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/ton-kho`);
+      const res = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/ton-kho`, {
+        headers: getAuthHeaders()
+      });
       const data = await res.json();
       const lowerQuery = query.trim().toLowerCase();
-      
+
       const filtered = (data.items || []).filter(
         item =>
           (item.product_name || item.tenSanPham || "")
@@ -211,7 +254,7 @@ function NhapHang() {
             .includes(lowerQuery) ||
           (item.sku || "").toLowerCase().includes(lowerQuery)
       );
-      
+
       // Gom nhóm sản phẩm
       const group = {};
       filtered.forEach(item => {
@@ -226,7 +269,7 @@ function NhapHang() {
           };
         }
       });
-      
+
       setSuggestList(Object.values(group));
       setShowSuggest(true);
     } catch (err) {
@@ -313,10 +356,10 @@ function NhapHang() {
       // ✅ Chuẩn hóa số liệu: nếu để trống đã thanh toán -> 0
       const normalizedDaTT = parseFloat(parseNumber(formData.da_thanh_toan_nhap)) || 0;
 
-      const payload = { 
-        ...formData, 
+      const payload = {
+        ...formData,
         da_thanh_toan_nhap: normalizedDaTT,
-        tenSanPham: formData.product_name || formData.tenSanPham 
+        tenSanPham: formData.product_name || formData.tenSanPham
       };
 
       const res = await fetch(url, {
@@ -397,11 +440,11 @@ function NhapHang() {
   // ✅ Xử lý submit trả hàng
   const handleReturnSubmit = async (e) => {
     e.preventDefault();
-    
+
     const returnQuantity = parseInt(returnForm.return_quantity) || 1;
     const unitPrice = parseFloat(returnModal.item?.price_import) || 0;
     const returnAmount = returnQuantity * unitPrice; // ✅ Tính số tiền dựa trên số lượng
-    
+
     if (!returnForm.return_reason.trim()) {
       setMessage("❌ Vui lòng nhập lý do trả hàng");
       setTimeout(() => setMessage(""), 3000);
@@ -419,12 +462,12 @@ function NhapHang() {
       setTimeout(() => setMessage(""), 3000);
       return;
     }
-    
+
     try {
       const token = localStorage.getItem("token") || sessionStorage.getItem("token");
       const res = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/return-import`, {
         method: "POST",
-        headers: { 
+        headers: {
           "Content-Type": "application/json",
           "Authorization": `Bearer ${token}`
         },
@@ -442,9 +485,9 @@ function NhapHang() {
           }]
         })
       });
-      
+
       const data = await res.json();
-      
+
       if (res.ok) {
         setMessage("✅ Đã tạo phiếu trả hàng thành công");
         handleCloseReturnModal();
@@ -490,7 +533,7 @@ function NhapHang() {
       // Create workbook and worksheet
       const wb = XLSX.utils.book_new();
       const ws = XLSX.utils.json_to_sheet(exportData);
-      
+
       // Set column widths
       const colWidths = [
         { wch: 15 }, // IMEI
@@ -508,15 +551,15 @@ function NhapHang() {
       ws['!cols'] = colWidths;
 
       XLSX.utils.book_append_sheet(wb, ws, "Danh sách nhập hàng");
-      
+
       // Generate filename with current date
       const now = new Date();
       const dateStr = now.toISOString().slice(0, 10);
       const filename = `DanhSachNhapHang_${dateStr}.xlsx`;
-      
+
       // Save file
       XLSX.writeFile(wb, filename);
-      
+
       setMessage("✅ Đã xuất file Excel thành công!");
       setTimeout(() => setMessage(""), 3000);
     } catch (err) {
@@ -553,7 +596,7 @@ function NhapHang() {
 
       for (let i = 0; i < jsonData.length; i++) {
         const row = jsonData[i];
-        
+
         // Map Excel columns to form data
         const importData = {
           imei: row['IMEI'] || row['imei'] || "",
@@ -616,7 +659,7 @@ function NhapHang() {
         resultMessage += `, ${errorCount} lỗi`;
         console.log("Chi tiết lỗi:", errors);
       }
-      
+
       setMessage(resultMessage);
       fetchItems(); // Reload data
       setTimeout(() => setMessage(""), 5000);
@@ -666,10 +709,10 @@ function NhapHang() {
     }
 
     try {
-      const url = branchModal.type === 'edit' 
+      const url = branchModal.type === 'edit'
         ? `${import.meta.env.VITE_API_URL || ''}/api/branches/${branchModal.data._id}`
         : `${import.meta.env.VITE_API_URL || ''}/api/branches`;
-      
+
       const method = branchModal.type === 'edit' ? 'PUT' : 'POST';
 
       const res = await fetch(url, {
@@ -742,19 +785,19 @@ function NhapHang() {
 
   const handleSaveCategory = async (e) => {
     e.preventDefault();
-    
+
     try {
       const method = categoryModal.type === 'edit' ? 'PUT' : 'POST';
-      const url = categoryModal.type === 'edit' 
+      const url = categoryModal.type === 'edit'
         ? `${import.meta.env.VITE_API_URL || ''}/api/categories/${categoryModal.data._id}`
         : `${import.meta.env.VITE_API_URL || ''}/api/categories`;
-      
+
       const res = await fetch(url, {
         method,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(categoryForm),
       });
-      
+
       if (res.ok) {
         setMessage(`✅ ${categoryModal.type === 'edit' ? 'Cập nhật' : 'Thêm'} danh mục thành công`);
         await fetchCategories();
@@ -773,12 +816,12 @@ function NhapHang() {
 
   const handleDeleteCategory = async (categoryId) => {
     if (!window.confirm('Bạn có chắc chắn muốn xóa danh mục này?')) return;
-    
+
     try {
       const res = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/categories/${categoryId}`, {
         method: 'DELETE',
       });
-      
+
       if (res.ok) {
         setMessage('✅ Đã xóa danh mục thành công');
         await fetchCategories();
@@ -892,7 +935,7 @@ function NhapHang() {
       render: (item) => {
         const supplier = item.supplier || item.nha_cung_cap || '';
         const supplierDisplay = supplier.trim();
-        
+
         return (
           <div className="text-sm text-gray-700">
             {supplierDisplay ? (
@@ -935,13 +978,13 @@ function NhapHang() {
             ✏️ Sửa
           </button>
           {item.status !== 'sold' ? (
-            <button 
-              onClick={() => handleOpenReturnModal(item)} 
+            <button
+              onClick={() => handleOpenReturnModal(item)}
               className="btn-action-return text-xs px-2 py-1 bg-orange-500 hover:bg-orange-600 text-white rounded transition-colors"
               title="Trả hàng nhập"
             >
               🔄 Trả hàng
-          </button>
+            </button>
           ) : (
             <span className="text-xs text-gray-400 italic">Đã bán</span>
           )}
@@ -951,7 +994,7 @@ function NhapHang() {
   ];
 
   return (
-    <Layout 
+    <Layout
       activeTab="nhap-hang"
       title="📥 Nhập Hàng"
       subtitle="Quản lý nhập hàng và theo dõi tồn kho"
@@ -1008,7 +1051,7 @@ function NhapHang() {
               className="form-input"
             />
           </div>
-          
+
           <div className="relative">
             <label className="block text-sm font-semibold text-gray-700 mb-3">Tên sản phẩm *</label>
             <input
@@ -1082,7 +1125,7 @@ function NhapHang() {
                 const totalAmount = importPrice * quantity;
                 const finalDaTT = daTT; // ✅ Không tự động full, mặc định 0 nếu trống
                 const congNo = Math.max(totalAmount - finalDaTT, 0);
-                
+
                 return (
                   <div className="p-2 bg-blue-50 rounded border border-blue-200">
                     <div className="font-medium text-blue-900">💡 Tính toán:</div>
@@ -1141,16 +1184,29 @@ function NhapHang() {
           <div>
             <label className="block text-sm font-semibold text-gray-700 mb-3">Chi nhánh *</label>
             <div className="flex gap-2">
-              <select 
-                name="branch" 
-                value={formData.branch} 
-                onChange={handleChange} 
-                className="form-input flex-1"
+              <select
+                name="branch"
+                value={formData.branch}
+                onChange={handleChange}
+                className="form-input"
                 required
+                disabled={
+                  (userRole === 'admin' && userBranch) ||
+                  userRole === 'quan_ly_chi_nhanh' ||
+                  userRole === 'nhan_vien_ban_hang' ||
+                  userRole === 'thu_ngan'
+                }
+                style={{
+                  cursor: ((userRole === 'admin' && userBranch) || userRole === 'quan_ly_chi_nhanh' || userRole === 'nhan_vien_ban_hang' || userRole === 'thu_ngan') ? 'not-allowed' : 'pointer',
+                  opacity: ((userRole === 'admin' && userBranch) || userRole === 'quan_ly_chi_nhanh' || userRole === 'nhan_vien_ban_hang' || userRole === 'thu_ngan') ? 0.6 : 1
+                }}
               >
-                <option value="">Chọn chi nhánh</option>
-                {branches.map((b) => (
-                  <option key={b._id} value={b.name}>{b.name}</option>
+                <option value="">-- Chọn chi nhánh --</option>
+                {/* Admin tổng thấy tất cả, admin chi nhánh chỉ thấy chi nhánh của mình */}
+                {((userRole === 'admin' && !userBranch) ? branches : (userBranch ? branches.filter(b => b.name === userBranch) : branches)).map((branch) => (
+                  <option key={branch._id} value={branch.name}>
+                    {branch.name}
+                  </option>
                 ))}
               </select>
               <button
@@ -1167,10 +1223,10 @@ function NhapHang() {
           <div>
             <label className="block text-sm font-semibold text-gray-700 mb-3">Thư mục *</label>
             <div className="flex gap-2">
-              <select 
-                name="category" 
-                value={formData.category} 
-                onChange={handleChange} 
+              <select
+                name="category"
+                value={formData.category}
+                onChange={handleChange}
                 className="form-input flex-1"
                 required
               >
@@ -1205,10 +1261,10 @@ function NhapHang() {
 
           <div>
             <label className="block text-sm font-semibold text-gray-700 mb-3">Nguồn tiền *</label>
-            <select 
-              name="source" 
-              value={formData.source} 
-              onChange={handleChange} 
+            <select
+              name="source"
+              value={formData.source}
+              onChange={handleChange}
               className="form-input"
               required
             >
@@ -1230,8 +1286,8 @@ function NhapHang() {
           </div>
 
           <div className="md:col-span-2 lg:col-span-3">
-            <button 
-              type="submit" 
+            <button
+              type="submit"
               className="w-full btn-gradient text-white py-4 px-8 rounded-2xl font-bold text-lg transition-all duration-300"
             >
               {editingItemId ? "🔄 Cập nhật sản phẩm" : "➕ Thêm sản phẩm mới"}
@@ -1340,7 +1396,7 @@ function NhapHang() {
             <h3 className="text-xl font-bold text-gray-900 mb-6">
               {branchModal.type === 'edit' ? '✏️ Chỉnh sửa chi nhánh' : '➕ Thêm chi nhánh mới'}
             </h3>
-            
+
             <form onSubmit={handleSaveBranch} className="space-y-4">
               <div>
                 <label className="block text-sm font-semibold text-gray-700 mb-2">Tên chi nhánh *</label>
@@ -1354,7 +1410,7 @@ function NhapHang() {
                   required
                 />
               </div>
-              
+
               <div>
                 <label className="block text-sm font-semibold text-gray-700 mb-2">Địa chỉ</label>
                 <input
@@ -1366,7 +1422,7 @@ function NhapHang() {
                   placeholder="Nhập địa chỉ chi nhánh"
                 />
               </div>
-              
+
               <div>
                 <label className="block text-sm font-semibold text-gray-700 mb-2">Số điện thoại</label>
                 <input
@@ -1378,7 +1434,7 @@ function NhapHang() {
                   placeholder="Nhập số điện thoại"
                 />
               </div>
-              
+
               <div>
                 <label className="block text-sm font-semibold text-gray-700 mb-2">Ghi chú</label>
                 <textarea
@@ -1390,7 +1446,7 @@ function NhapHang() {
                   rows="3"
                 />
               </div>
-              
+
               <div className="flex gap-3 pt-4">
                 <button
                   type="button"
@@ -1453,7 +1509,7 @@ function NhapHang() {
             <h3 className="text-xl font-bold text-gray-900 mb-6">
               {categoryModal.type === 'edit' ? '✏️ Chỉnh sửa danh mục' : '➕ Thêm danh mục mới'}
             </h3>
-            
+
             <form onSubmit={handleSaveCategory} className="space-y-4">
               <div>
                 <label className="block text-sm font-semibold text-gray-700 mb-2">Tên danh mục *</label>
@@ -1467,7 +1523,7 @@ function NhapHang() {
                   required
                 />
               </div>
-              
+
               <div>
                 <label className="block text-sm font-semibold text-gray-700 mb-2">Mô tả</label>
                 <textarea
@@ -1479,7 +1535,7 @@ function NhapHang() {
                   rows="3"
                 />
               </div>
-              
+
               <div className="flex gap-3 pt-4">
                 <button
                   type="button"
@@ -1540,7 +1596,7 @@ function NhapHang() {
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded-2xl p-8 max-w-md w-full mx-4 max-h-[90vh] overflow-y-auto">
             <h3 className="text-xl font-bold text-gray-900 mb-6">🔄 Trả hàng nhập</h3>
-            
+
             {/* Thông tin sản phẩm */}
             <div className="bg-gray-50 rounded-lg p-4 mb-6">
               <h4 className="font-semibold text-gray-900 mb-2">📦 Thông tin sản phẩm</h4>
@@ -1553,7 +1609,7 @@ function NhapHang() {
                 <div><strong>Nhà cung cấp:</strong> {returnModal.item?.supplier}</div>
               </div>
             </div>
-            
+
             <form onSubmit={handleReturnSubmit} className="space-y-4">
               <div>
                 <label className="block text-sm font-semibold text-gray-700 mb-2">Số lượng trả *</label>
@@ -1601,7 +1657,7 @@ function NhapHang() {
                   <option value="vi_dien_tu">📱 Ví điện tử</option>
                 </select>
                 <div className="text-xs text-gray-600 mt-1">
-                  {returnForm.return_method === 'cong_no' 
+                  {returnForm.return_method === 'cong_no'
                     ? 'Số tiền sẽ được trừ vào công nợ nhà cung cấp'
                     : 'Số tiền sẽ được cộng vào sổ quỹ'
                   }

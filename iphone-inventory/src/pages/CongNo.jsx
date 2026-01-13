@@ -12,7 +12,7 @@ function formatNumber(val) {
 
 function formatCurrency(amount) {
   if (!amount || amount === 0) return "0đ";
-  
+
   if (amount >= 1000000000) {
     return `${(amount / 1000000000).toFixed(1)}Tỷ`;
   } else if (amount >= 1000000) {
@@ -31,9 +31,9 @@ function parseNumber(val) {
 // Hàm trích xuất thông tin sản phẩm từ ghi chú
 function extractProductInfo(note) {
   if (!note) return { productName: '', imei: '', sku: '', quantity: '' };
-  
+
   const result = { productName: '', imei: '', sku: '', quantity: '' };
-  
+
   // Trích xuất tên sản phẩm từ các pattern phổ biến
   const productPatterns = [
     /Trả hàng nhập:\s*([^(]+)/i,  // "Trả hàng nhập: Sản phẩm ABC"
@@ -43,7 +43,7 @@ function extractProductInfo(note) {
     /Trả nợ cho\s*([^:]+):/i,  // "Trả nợ cho NCC ABC:"
     /Nhà cung cấp:\s*([^(]+)/i,  // "Nhà cung cấp: ABC"
   ];
-  
+
   for (const pattern of productPatterns) {
     const match = note.match(pattern);
     if (match) {
@@ -51,25 +51,25 @@ function extractProductInfo(note) {
       break;
     }
   }
-  
+
   // Trích xuất SKU
   const skuMatch = note.match(/SKU:\s*([A-Za-z0-9\-_]+)/i);
   if (skuMatch) {
     result.sku = skuMatch[1].trim();
   }
-  
+
   // Trích xuất IMEI
   const imeiMatch = note.match(/IMEI:\s*([A-Za-z0-9\-_]+)/i);
   if (imeiMatch) {
     result.imei = imeiMatch[1].trim();
   }
-  
+
   // Trích xuất số lượng
   const quantityMatch = note.match(/(\d+)\s*sản phẩm/i);
   if (quantityMatch) {
     result.quantity = quantityMatch[1];
   }
-  
+
   return result;
 }
 
@@ -85,36 +85,43 @@ function getPaymentSourceName(source) {
 function CongNo() {
   // Tab state - có 2 tab: khach_no (khách nợ mình) và minh_no_ncc (mình nợ nhà cung cấp)
   const [activeTab, setActiveTab] = useState("khach_no");
-  
+
   const [debts, setDebts] = useState([]);
   const [supplierDebts, setSupplierDebts] = useState([]);
-  
+
   // Loading states
   const [loading, setLoading] = useState(false);
   const [supplierLoading, setSupplierLoading] = useState(false);
-  
+
   // Filter states
   const [searchText, setSearchText] = useState("");
   const [debouncedSearchText, setDebouncedSearchText] = useState("");
   const [showAll, setShowAll] = useState(false);
-  
+
   // Edit modal states - ĐƠN GIẢN HÓA: Chỉ có modal cập nhật
-  const [editModal, setEditModal] = useState({ 
-    open: false, 
+  const [editModal, setEditModal] = useState({
+    open: false,
     type: '', // 'customer' hoặc 'supplier'
-    data: null 
+    data: null
   });
   const [historyModal, setHistoryModal] = useState({ open: false, type: '', name: '' });
   const [historyItems, setHistoryItems] = useState([]);
-  const [editForm, setEditForm] = useState({ 
-    name: '', 
-    phone: '', 
-    da_thanh_toan: '' 
+  const [editForm, setEditForm] = useState({
+    name: '',
+    phone: '',
+    da_thanh_toan: ''
   });
   // Trả từng phần như ngân hàng
   const [paymentSource, setPaymentSource] = useState('tien_mat');
   const [paymentAmount, setPaymentAmount] = useState('');
   const [paymentNote, setPaymentNote] = useState('');
+
+  // Branch states
+  const [branches, setBranches] = useState([]);
+  const [selectedBranch, setSelectedBranch] = useState("");
+  const [userRole, setUserRole] = useState(null);
+  const [userBranch, setUserBranch] = useState(null);
+  const [loadingBranches, setLoadingBranches] = useState(false);
 
   // Stats calculation - tách riêng cho 2 tab
   const customerStats = {
@@ -134,12 +141,33 @@ function CongNo() {
   const stats = activeTab === "khach_no" ? customerStats : supplierStats;
 
   // API functions
+  const loadBranches = async () => {
+    try {
+      setLoadingBranches(true);
+      const res = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/branches`, {
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token') || sessionStorage.getItem('token') || ''}`
+        }
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setBranches(Array.isArray(data) ? data.map(b => b.name) : []);
+      }
+    } catch (err) {
+      console.error('❌ Error loading branches:', err);
+    } finally {
+      setLoadingBranches(false);
+    }
+  };
+
   const fetchDebts = async () => {
     try {
       setLoading(true);
       const params = new URLSearchParams();
       if (debouncedSearchText.trim()) params.append('search', debouncedSearchText.trim());
       if (showAll) params.append('show_all', 'true');
+      if (selectedBranch && selectedBranch !== 'all') params.append('branch', selectedBranch);
+
       const res = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/cong-no/cong-no-list?${params}`, {
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('token') || sessionStorage.getItem('token') || ''}`
@@ -160,7 +188,8 @@ function CongNo() {
     const params = new URLSearchParams();
     if (debouncedSearchText.trim()) params.append('search', debouncedSearchText.trim());
     if (showAll) params.append('show_all', 'true');
-    
+    if (selectedBranch && selectedBranch !== 'all') params.append('branch', selectedBranch);
+
     try {
       setSupplierLoading(true);
       const res = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/cong-no/supplier-debt-list?${params}`, {
@@ -168,11 +197,11 @@ function CongNo() {
           'Authorization': `Bearer ${localStorage.getItem('token') || sessionStorage.getItem('token') || ''}`
         }
       });
-      
+
       if (!res.ok) {
         throw new Error(`HTTP ${res.status}: ${res.statusText}`);
       }
-      
+
       const data = await res.json();
       setSupplierDebts(Array.isArray(data) ? data : (data.suppliers || data.items || []));
     } catch (err) {
@@ -187,7 +216,7 @@ function CongNo() {
   // ✅ ĐƠN GIẢN HÓA: Chỉ có thao tác cập nhật
   const handleEdit = (item, type) => {
     setEditModal({ open: true, type, data: item });
-    
+
     if (type === 'customer') {
       setEditForm({
         name: item.customer_name || "",
@@ -208,11 +237,11 @@ function CongNo() {
       alert("❌ Vui lòng nhập tên");
       return;
     }
-    
+
     try {
       const { type, data } = editModal;
       let ok = true;
-      
+
       // Nếu có nhập số tiền trả thì gọi API trả nợ
       const paymentAmountValue = parseFloat(paymentAmount) || 0;
       if (paymentAmountValue > 0) {
@@ -220,10 +249,10 @@ function CongNo() {
         if (type === 'customer') {
           const res = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/cong-no/cong-no-pay-customer`, {
             method: 'PUT',
-            headers: { 'Content-Type':'application/json' },
-            body: JSON.stringify({ 
-              customer_name: data.customer_name, 
-              customer_phone: data.customer_phone, 
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              customer_name: data.customer_name,
+              customer_phone: data.customer_phone,
               payments: payList,
               note: paymentNote.trim() || ''
             })
@@ -232,9 +261,9 @@ function CongNo() {
         } else {
           const res = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/cong-no/supplier-debt-pay`, {
             method: 'PUT',
-            headers: { 'Content-Type':'application/json' },
-            body: JSON.stringify({ 
-              supplier_name: data.supplier_name || data.supplier, 
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              supplier_name: data.supplier_name || data.supplier,
               payments: payList,
               note: paymentNote.trim() || ''
             })
@@ -242,10 +271,10 @@ function CongNo() {
           ok = res.ok;
         }
       }
-      
+
       // Cập nhật thông tin tên/điện thoại nếu có thay đổi
-      if (editForm.name.trim() !== (data.customer_name || data.supplier_name || data.supplier) || 
-          editForm.phone.trim() !== (data.customer_phone || data.supplier_phone || '')) {
+      if (editForm.name.trim() !== (data.customer_name || data.supplier_name || data.supplier) ||
+        editForm.phone.trim() !== (data.customer_phone || data.supplier_phone || '')) {
         const apiEndpoint = type === 'customer' ? 'update-customer' : 'update-supplier';
         const payload = type === 'customer' ? {
           old_customer_name: data.customer_name,
@@ -259,11 +288,11 @@ function CongNo() {
           new_supplier_phone: editForm.phone.trim()
         };
         const res2 = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/cong-no/${apiEndpoint}`, {
-          method: 'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)
+          method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
         });
         ok = ok && res2.ok;
       }
-       
+
       if (ok) {
         if (paymentAmountValue > 0) {
           alert(`✅ Đã ghi nhận thanh toán ${formatCurrency(paymentAmountValue)} cho ${type === 'customer' ? 'khách hàng' : 'nhà cung cấp'}!`);
@@ -274,7 +303,7 @@ function CongNo() {
       } else {
         alert("❌ Cập nhật thất bại!");
       }
-      
+
       setEditModal({ open: false, type: '', data: null });
       setEditForm({ name: "", phone: "", da_thanh_toan: "" });
       setPaymentSource('tien_mat');
@@ -294,7 +323,7 @@ function CongNo() {
   // Fetch histories
   const openHistory = async (type, entity) => {
     try {
-      setHistoryModal({ open: true, type, name: type==='customer' ? entity.customer_name : (entity.supplier_name || entity.supplier) });
+      setHistoryModal({ open: true, type, name: type === 'customer' ? entity.customer_name : (entity.supplier_name || entity.supplier) });
       let url = '';
       if (type === 'customer') {
         const params = new URLSearchParams({ customer_name: entity.customer_name });
@@ -346,10 +375,10 @@ function CongNo() {
       key: "remaining",
       render: (customer) => {
         const remaining = customer.total_debt;
-  return (
+        return (
           <div className={`text-sm font-bold ${remaining > 0 ? 'text-orange-600' : 'text-green-600'}`}>
             {formatCurrency(remaining)}
-      </div>
+          </div>
         );
       }
     },
@@ -362,7 +391,7 @@ function CongNo() {
         const today = new Date();
         const diffTime = today - debtDate;
         const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
-        
+
         if (diffDays < 0) return <span className="text-gray-400">-</span>;
         if (diffDays === 0) return <span className="text-orange-600 font-medium">Hôm nay</span>;
         if (diffDays === 1) return <span className="text-orange-600 font-medium">1 ngày</span>;
@@ -455,10 +484,10 @@ function CongNo() {
       header: "Thao tác",
       key: "actions",
       render: (supplier) => (
-          <div className="flex gap-2">
-            <button onClick={() => handleEdit(supplier, 'supplier')} className="btn-action-edit text-xs">✏️ Cập nhật</button>
-            <button onClick={() => openHistory('supplier', supplier)} className="text-xs px-2 py-1 bg-gray-100 rounded hover:bg-gray-200">🕑 Lịch sử</button>
-          </div>
+        <div className="flex gap-2">
+          <button onClick={() => handleEdit(supplier, 'supplier')} className="btn-action-edit text-xs">✏️ Cập nhật</button>
+          <button onClick={() => openHistory('supplier', supplier)} className="text-xs px-2 py-1 bg-gray-100 rounded hover:bg-gray-200">🕑 Lịch sử</button>
+        </div>
       )
     }
   ];
@@ -479,12 +508,38 @@ function CongNo() {
     } else {
       fetchSupplierDebts();
     }
-  }, [activeTab, debouncedSearchText, showAll]);
+  }, [activeTab, debouncedSearchText, showAll, selectedBranch]);
+
+  // Initial load
+  useEffect(() => {
+    loadBranches();
+
+    // Get user info from token
+    try {
+      const token = localStorage.getItem('token') || sessionStorage.getItem('token');
+      if (token) {
+        const payload = JSON.parse(atob(token.split('.')[1]));
+        setUserRole(payload.role || null);
+        setUserBranch(payload.branch_name || null);
+
+        if (payload.branch_name && (
+          payload.role === 'quan_ly_chi_nhanh' ||
+          payload.role === 'nhan_vien_ban_hang' ||
+          payload.role === 'thu_ngan' ||
+          (payload.role === 'admin' && payload.branch_name)
+        )) {
+          setSelectedBranch(payload.branch_name);
+        }
+      }
+    } catch (e) {
+      console.error('Error decoding token:', e);
+    }
+  }, []);
 
   // Show loading spinner khi đang fetch
   if ((activeTab === "khach_no" && loading) || (activeTab === "minh_no_ncc" && supplierLoading)) {
     return (
-      <Layout 
+      <Layout
         activeTab="cong-no"
         title="💳 Công Nợ"
         subtitle="Đang tải dữ liệu..."
@@ -500,33 +555,31 @@ function CongNo() {
   }
 
   return (
-    <Layout 
+    <Layout
       activeTab="cong-no"
       title="💳 Công Nợ"
       subtitle="Quản lý công nợ khách hàng và nhà cung cấp"
     >
       {/* Tab Navigation */}
       <div className="flex space-x-1 mb-6">
-          <button
+        <button
           onClick={() => setActiveTab("khach_no")}
-          className={`px-6 py-3 rounded-lg font-medium transition-all duration-200 ${
-              activeTab === "khach_no"
+          className={`px-6 py-3 rounded-lg font-medium transition-all duration-200 ${activeTab === "khach_no"
               ? "bg-purple-600 text-white shadow-lg"
               : "bg-gray-100 text-gray-600 hover:bg-gray-200"
             }`}
-          >
+        >
           👥 Khách nợ mình ({debts.length})
-          </button>
-          <button
+        </button>
+        <button
           onClick={() => setActiveTab("minh_no_ncc")}
-          className={`px-6 py-3 rounded-lg font-medium transition-all duration-200 ${
-              activeTab === "minh_no_ncc"
+          className={`px-6 py-3 rounded-lg font-medium transition-all duration-200 ${activeTab === "minh_no_ncc"
               ? "bg-purple-600 text-white shadow-lg"
               : "bg-gray-100 text-gray-600 hover:bg-gray-200"
             }`}
-          >
+        >
           🏪 Mình nợ NCC ({supplierDebts.length})
-          </button>
+        </button>
       </div>
 
       {/* Stats Cards */}
@@ -536,7 +589,7 @@ function CongNo() {
           value={formatCurrency(stats.totalDebt)}
           icon="💰"
           color="red"
-            />
+        />
         <StatsCard
           title={activeTab === "khach_no" ? "Tổng khách hàng" : "Tổng nhà cung cấp"}
           value={stats.totalCustomers.toString()}
@@ -548,7 +601,7 @@ function CongNo() {
           value={formatCurrency(stats.largestDebt)}
           icon="📈"
           color="orange"
-            />
+        />
         <StatsCard
           title="Nợ trung bình"
           value={formatCurrency(stats.averageDebt)}
@@ -559,8 +612,32 @@ function CongNo() {
 
       {/* Filters */}
       <FilterCard onClearFilters={clearFilters}>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Chi nhánh</label>
+            <select
+              value={selectedBranch}
+              onChange={(e) => setSelectedBranch(e.target.value)}
+              disabled={
+                (userRole === 'admin' && userBranch) ||
+                userRole === 'quan_ly_chi_nhanh' ||
+                userRole === 'nhan_vien_ban_hang' ||
+                userRole === 'thu_ngan'
+              }
+              className="form-input"
+              style={{
+                cursor: ((userRole === 'admin' && userBranch) || userRole === 'quan_ly_chi_nhanh' || userRole === 'nhan_vien_ban_hang' || userRole === 'thu_ngan') ? 'not-allowed' : 'pointer',
+                opacity: ((userRole === 'admin' && userBranch) || userRole === 'quan_ly_chi_nhanh' || userRole === 'nhan_vien_ban_hang' || userRole === 'thu_ngan') ? 0.6 : 1
+              }}
+            >
+              <option value="all">Tất cả chi nhánh</option>
+              {((userRole === 'admin' && !userBranch) ? branches : (userBranch ? [userBranch] : branches)).map(b => (
+                <option key={b} value={b}>{b}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Tìm kiếm</label>
             <input
               type="text"
               placeholder={`🔍 Tìm ${activeTab === "khach_no" ? "khách hàng" : "nhà cung cấp"}...`}
@@ -569,8 +646,8 @@ function CongNo() {
               className="form-input"
             />
           </div>
-          <div>
-            <label className="flex items-center space-x-2">
+          <div className="flex items-end">
+            <label className="flex items-center space-x-2 py-2">
               <input
                 type="checkbox"
                 checked={showAll}
@@ -592,7 +669,7 @@ function CongNo() {
         totalPages={1}
         itemsPerPage={50}
         totalItems={activeTab === "khach_no" ? debts.length : supplierDebts.length}
-        onPageChange={() => {}}
+        onPageChange={() => { }}
       />
 
       {/* Edit Modal - ĐƠN GIẢN HÓA */}
@@ -602,7 +679,7 @@ function CongNo() {
             <h3 className="text-lg font-bold mb-4">
               💳 Trả nợ {editModal.type === 'customer' ? 'khách hàng' : 'nhà cung cấp'}
             </h3>
-            
+
             <div className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -611,12 +688,12 @@ function CongNo() {
                 <input
                   type="text"
                   value={editForm.name}
-                  onChange={(e) => setEditForm({...editForm, name: e.target.value})}
+                  onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
                   className="form-input"
                   placeholder="Nhập tên..."
                 />
               </div>
-              
+
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   Số điện thoại
@@ -624,12 +701,12 @@ function CongNo() {
                 <input
                   type="text"
                   value={editForm.phone}
-                  onChange={(e) => setEditForm({...editForm, phone: e.target.value})}
+                  onChange={(e) => setEditForm({ ...editForm, phone: e.target.value })}
                   className="form-input"
                   placeholder="Nhập số điện thoại..."
                 />
               </div>
-              
+
               <div>
                 <label className="block text-sm font-semibold text-gray-700 mb-2">Số tiền trả lần này</label>
                 <input
@@ -643,12 +720,12 @@ function CongNo() {
                   Để trống nếu chỉ cập nhật thông tin khách hàng
                 </p>
               </div>
-              
+
               <div>
                 <label className="block text-sm font-semibold text-gray-700 mb-2">Nguồn tiền</label>
-                <select 
-                  value={paymentSource} 
-                  onChange={(e) => setPaymentSource(e.target.value)} 
+                <select
+                  value={paymentSource}
+                  onChange={(e) => setPaymentSource(e.target.value)}
                   className="form-input"
                 >
                   <option value="tien_mat">💵 Tiền mặt</option>
@@ -656,7 +733,7 @@ function CongNo() {
                   <option value="vi_dien_tu">📱 Ví điện tử</option>
                 </select>
               </div>
-              
+
               <div>
                 <label className="block text-sm font-semibold text-gray-700 mb-2">Ghi chú</label>
                 <input
@@ -671,7 +748,7 @@ function CongNo() {
                 </p>
               </div>
             </div>
-           
+
             <div className="flex gap-3 mt-6">
               <button
                 onClick={handleSaveEdit}
@@ -701,10 +778,10 @@ function CongNo() {
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded-xl p-6 w-full max-w-6xl mx-4 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-bold">🕑 Lịch sử {historyModal.type==='customer'?'trả nợ khách':'trả nợ NCC'} - {historyModal.name}</h3>
-              <button className="text-gray-600" onClick={()=>{setHistoryModal({open:false,type:'',name:''}); setHistoryItems([]);}}>✖</button>
+              <h3 className="text-lg font-bold">🕑 Lịch sử {historyModal.type === 'customer' ? 'trả nợ khách' : 'trả nợ NCC'} - {historyModal.name}</h3>
+              <button className="text-gray-600" onClick={() => { setHistoryModal({ open: false, type: '', name: '' }); setHistoryItems([]); }}>✖</button>
             </div>
-            {historyItems.length===0 ? (
+            {historyItems.length === 0 ? (
               <div className="text-sm text-gray-500">Chưa có lịch sử.</div>
             ) : (
               <table className="w-full text-sm">
@@ -719,26 +796,25 @@ function CongNo() {
                   </tr>
                 </thead>
                 <tbody>
-                  {historyItems.map((h, idx)=> {
+                  {historyItems.map((h, idx) => {
                     // Phân tích hành động để xác định màu sắc
                     const isPayment = h.action === 'Trả nợ' || h.action === 'Trả hàng';
                     const isDebt = h.action === 'Cộng nợ' || h.action === 'Nhập hàng';
-                    
+
                     // Trích xuất thông tin sản phẩm từ ghi chú
                     const productInfo = extractProductInfo(h.note || '');
-                    
+
                     return (
                       <tr key={idx} className="border-b hover:bg-gray-50">
                         <td className="p-2">{new Date(h.date).toLocaleString('vi-VN')}</td>
                         <td className="p-2 text-right font-medium">{formatCurrency(h.amount)}</td>
                         <td className="p-2 text-center">
-                          <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
-                            isPayment 
-                              ? 'bg-green-100 text-green-800' 
-                              : isDebt 
-                                ? 'bg-red-100 text-red-800' 
+                          <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${isPayment
+                              ? 'bg-green-100 text-green-800'
+                              : isDebt
+                                ? 'bg-red-100 text-red-800'
                                 : 'bg-gray-100 text-gray-800'
-                          }`}>
+                            }`}>
                             {isPayment ? '+' : isDebt ? '-' : ''} {h.action || ''}
                           </span>
                         </td>

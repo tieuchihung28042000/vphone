@@ -35,12 +35,13 @@ const BaoCao = () => {
         const payload = JSON.parse(atob(token.split('.')[1]));
         setUserRole(payload.role || null);
         setUserBranch(payload.branch_name || null);
-        
+
         // Nếu là admin chi nhánh, nhân viên hoặc thu ngân, tự động set branch
         if (payload.branch_name && (
-          (payload.role === 'admin') || 
-          payload.role === 'nhan_vien_ban_hang' || 
-          payload.role === 'thu_ngan'
+          payload.role === 'quan_ly_chi_nhanh' ||
+          payload.role === 'nhan_vien_ban_hang' ||
+          payload.role === 'thu_ngan' ||
+          (payload.role === 'admin' && payload.branch_name)
         )) {
           setSelectedBranch(payload.branch_name);
         }
@@ -80,14 +81,14 @@ const BaoCao = () => {
       const res = await fetch(url, {
         headers: getAuthHeaders()
       });
-      
+
       if (!res.ok) {
         throw new Error(`HTTP ${res.status}: ${res.statusText}`);
       }
-      
+
       const data = await res.json();
       // Tính lợi nhuận gộp nếu chưa có
-      const grossProfit = (data.totalCost !== undefined) 
+      const grossProfit = (data.totalCost !== undefined)
         ? (data.totalRevenue || 0) - (data.totalCost || 0)
         : (data.grossProfit || 0);
       setReportData({
@@ -119,7 +120,7 @@ const BaoCao = () => {
   return (
     <div style={{ padding: '20px' }}>
       <h2>Báo cáo tài chính tổng hợp</h2>
-      
+
       {/* Filter branch */}
       <div style={{ marginBottom: '20px', display: 'flex', gap: '10px', alignItems: 'center' }}>
         <label style={{ fontWeight: 'bold' }}>Chi nhánh:</label>
@@ -128,8 +129,9 @@ const BaoCao = () => {
           onChange={(e) => setSelectedBranch(e.target.value)}
           disabled={
             // Disable nếu là admin chi nhánh, nhân viên hoặc thu ngân
-            (userRole === 'admin' && userBranch) || 
-            userRole === 'nhan_vien_ban_hang' || 
+            (userRole === 'admin' && userBranch) ||
+            userRole === 'quan_ly_chi_nhanh' ||
+            userRole === 'nhan_vien_ban_hang' ||
             userRole === 'thu_ngan'
           }
           style={{
@@ -138,8 +140,8 @@ const BaoCao = () => {
             border: '1px solid #ccc',
             fontSize: '14px',
             minWidth: '200px',
-            cursor: ((userRole === 'admin' && userBranch) || userRole === 'nhan_vien_ban_hang' || userRole === 'thu_ngan') ? 'not-allowed' : 'pointer',
-            opacity: ((userRole === 'admin' && userBranch) || userRole === 'nhan_vien_ban_hang' || userRole === 'thu_ngan') ? 0.6 : 1
+            cursor: ((userRole === 'admin' && userBranch) || userRole === 'quan_ly_chi_nhanh' || userRole === 'nhan_vien_ban_hang' || userRole === 'thu_ngan') ? 'not-allowed' : 'pointer',
+            opacity: ((userRole === 'admin' && userBranch) || userRole === 'quan_ly_chi_nhanh' || userRole === 'nhan_vien_ban_hang' || userRole === 'thu_ngan') ? 0.6 : 1
           }}
         >
           <option value="all">Tất cả chi nhánh</option>
@@ -200,7 +202,7 @@ const BaoCao = () => {
         </div>
       </div>
       <div style={{ marginTop: '30px', textAlign: 'center', display: 'flex', gap: '10px', justifyContent: 'center' }}>
-        <button 
+        <button
           onClick={async () => {
             try {
               const branchParam = selectedBranch && selectedBranch !== 'all' ? `&branch=${selectedBranch}` : '';
@@ -208,11 +210,11 @@ const BaoCao = () => {
               const res = await fetch(url, {
                 headers: getAuthHeaders()
               });
-              
+
               if (!res.ok) {
                 throw new Error(`HTTP ${res.status}: ${res.statusText}`);
               }
-              
+
               const blob = await res.blob();
               const downloadUrl = window.URL.createObjectURL(blob);
               const a = document.createElement('a');
@@ -231,8 +233,8 @@ const BaoCao = () => {
         >
           📊 Xuất Excel
         </button>
-        <button 
-          onClick={() => navigate('/')} 
+        <button
+          onClick={() => navigate('/')}
           style={{ background: '#6c757d', color: 'white', border: 'none', padding: '10px 20px', borderRadius: '5px', cursor: 'pointer' }}
         >
           Quay lại trang chủ

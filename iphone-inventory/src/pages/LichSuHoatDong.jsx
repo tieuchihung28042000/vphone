@@ -17,6 +17,11 @@ function LichSuHoatDong() {
     branch: "all"
   });
 
+  // State cho thông tin user
+  const [userRole, setUserRole] = useState(null);
+  const [userBranch, setUserBranch] = useState(null);
+  const [branches, setBranches] = useState([]);
+
   // Helper function để lấy headers với token
   const getAuthHeaders = () => {
     const token = localStorage.getItem("token") || sessionStorage.getItem("token");
@@ -38,24 +43,24 @@ function LichSuHoatDong() {
       params.append('page', String(p));
       params.append('limit', String(limit));
 
-        const url = `${import.meta.env.VITE_API_URL || ''}/api/activity-logs?${params.toString()}`;
+      const url = `${import.meta.env.VITE_API_URL || ''}/api/activity-logs?${params.toString()}`;
       const res = await fetch(url, {
         headers: getAuthHeaders()
       });
       const json = await res.json();
-      
+
       if (res.ok) {
         // Backend trả về: { success, data, pagination }
         const data = Array.isArray(json.data) ? json.data : (json.items || []);
         const pagination = json.pagination || {};
-        
+
         // Debug: Kiểm tra dữ liệu nhận được
         console.log('🔍 Frontend received data:', data.slice(0, 2));
         if (data.length > 0) {
           console.log('🔍 First item description:', data[0].description);
           console.log('🔍 First item keys:', Object.keys(data[0]));
         }
-        
+
         setItems(data);
         setTotal(pagination.total || json.total || data.length || 0);
         setPage(pagination.page || json.page || 1);
@@ -73,7 +78,46 @@ function LichSuHoatDong() {
     }
   };
 
+  const fetchBranches = async () => {
+    try {
+      const res = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/branches`, {
+        headers: getAuthHeaders()
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setBranches(Array.isArray(data) ? data.map(b => b.name) : []);
+      }
+    } catch (e) {
+      console.error('Error fetching branches:', e);
+    }
+  };
+
   useEffect(() => {
+    fetchBranches();
+
+    // Get user info from token
+    try {
+      const token = localStorage.getItem('token') || sessionStorage.getItem('token');
+      if (token) {
+        const payload = JSON.parse(atob(token.split('.')[1]));
+        const role = payload.role || null;
+        const branch = payload.branch_name || null;
+        setUserRole(role);
+        setUserBranch(branch);
+
+        if (branch && (
+          role === 'quan_ly_chi_nhanh' ||
+          role === 'nhan_vien_ban_hang' ||
+          role === 'thu_ngan' ||
+          (role === 'admin' && branch)
+        )) {
+          setFilters(prev => ({ ...prev, branch: branch }));
+        }
+      }
+    } catch (e) {
+      console.error('Error decoding token:', e);
+    }
+
     fetchLogs(1);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -149,15 +193,15 @@ function LichSuHoatDong() {
       width: "flex-1", // Mô tả chi tiết chiếm phần còn lại
       render: (item) => {
         // Debug: Log để kiểm tra
-        console.log('🔍 Rendering item:', { 
-          id: item._id, 
-          description: item.description, 
-          action: item.action, 
-          module: item.module 
+        console.log('🔍 Rendering item:', {
+          id: item._id,
+          description: item.description,
+          action: item.action,
+          module: item.module
         });
-        
+
         const description = item.description || `${item.action || 'Thao tác'} ${item.module || 'mục'}`;
-        
+
         return (
           <div className="text-sm text-gray-800 leading-relaxed">
             {description}
@@ -189,7 +233,7 @@ function LichSuHoatDong() {
   };
 
   return (
-    <Layout 
+    <Layout
       activeTab="lich-su-hoat-dong"
       title="📋 Lịch sử hoạt động"
       subtitle="Theo dõi và quản lý hoạt động hệ thống"
@@ -222,7 +266,7 @@ function LichSuHoatDong() {
       {/* Filter Section */}
       <div className="bg-white/80 backdrop-blur-sm rounded-3xl card-shadow p-6">
         <h3 className="text-lg font-semibold text-gray-900 mb-4">🔍 Bộ lọc và tìm kiếm</h3>
-        
+
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-4">
           <div>
             <label className="block text-sm font-semibold text-gray-700 mb-2">Từ ngày</label>
@@ -233,7 +277,7 @@ function LichSuHoatDong() {
               className="form-input"
             />
           </div>
-          
+
           <div>
             <label className="block text-sm font-semibold text-gray-700 mb-2">Đến ngày</label>
             <input
@@ -243,7 +287,7 @@ function LichSuHoatDong() {
               className="form-input"
             />
           </div>
-          
+
           <div>
             <label className="block text-sm font-semibold text-gray-700 mb-2">Người dùng</label>
             <input
@@ -254,7 +298,7 @@ function LichSuHoatDong() {
               className="form-input"
             />
           </div>
-          
+
           <div>
             <label className="block text-sm font-semibold text-gray-700 mb-2">Module</label>
             <select
@@ -268,18 +312,31 @@ function LichSuHoatDong() {
               <option value="return_export">Trả hàng bán</option>
             </select>
           </div>
-          
+
           <div>
             <label className="block text-sm font-semibold text-gray-700 mb-2">Chi nhánh</label>
-            <input
-              type="text"
-              placeholder="Tên chi nhánh"
+            <select
               value={filters.branch}
               onChange={(e) => handleFilterChange('branch', e.target.value)}
+              disabled={
+                (userRole === 'admin' && userBranch) ||
+                userRole === 'quan_ly_chi_nhanh' ||
+                userRole === 'nhan_vien_ban_hang' ||
+                userRole === 'thu_ngan'
+              }
               className="form-input"
-            />
+              style={{
+                cursor: ((userRole === 'admin' && userBranch) || userRole === 'quan_ly_chi_nhanh' || userRole === 'nhan_vien_ban_hang' || userRole === 'thu_ngan') ? 'not-allowed' : 'pointer',
+                opacity: ((userRole === 'admin' && userBranch) || userRole === 'quan_ly_chi_nhanh' || userRole === 'nhan_vien_ban_hang' || userRole === 'thu_ngan') ? 0.6 : 1
+              }}
+            >
+              <option value="all">Tất cả chi nhánh</option>
+              {((userRole === 'admin' && !userBranch) ? branches : (userBranch ? [userBranch] : branches)).map(b => (
+                <option key={b} value={b}>{b}</option>
+              ))}
+            </select>
           </div>
-          
+
           <div className="flex items-end">
             <button
               onClick={handleSearch}

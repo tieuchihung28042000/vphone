@@ -4,17 +4,22 @@ import Inventory from '../models/Inventory.js';
 import ExportHistory from '../models/ExportHistory.js';
 import Cashbook from '../models/Cashbook.js';
 import ActivityLog from '../models/ActivityLog.js';
-import { authenticateToken, requireRole } from '../middleware/auth.js';
+import { authenticateToken, requireRole, filterByBranch } from '../middleware/auth.js';
 
 // POST /api/report/xuat-hang-batch
-router.post('/report/xuat-hang-batch', authenticateToken, requireRole(['admin','thu_ngan','nhan_vien_ban_hang']), async (req, res) => {
+router.post('/report/xuat-hang-batch', authenticateToken, requireRole(['admin', 'thu_ngan', 'nhan_vien_ban_hang']), filterByBranch, async (req, res) => {
   try {
-    const { items = [], customer_name, customer_phone, branch, sold_date, note, payments = [], sales_channel, auto_cashbook = true } = req.body;
+    let { items = [], customer_name, customer_phone, branch, sold_date, note, payments = [], sales_channel, auto_cashbook = true } = req.body;
+
+    // Enforce branch filter if present
+    if (req.branchFilter) {
+      branch = req.branchFilter.branch;
+    }
     if (!Array.isArray(items) || items.length === 0) {
       return res.status(400).json({ message: 'Thiếu danh sách sản phẩm' });
     }
 
-    const batch_id = `BATCH_${Date.now()}_${Math.random().toString(36).slice(2,6).toUpperCase()}`;
+    const batch_id = `BATCH_${Date.now()}_${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
     const soldDate = sold_date ? new Date(sold_date) : new Date();
 
     const created = [];
@@ -48,7 +53,7 @@ router.post('/report/xuat-hang-batch', authenticateToken, requireRole(['admin','
           created_by: req.user?._id,
           created_by_email: req.user?.email || '',
           created_by_name: req.user?.full_name || '',
-          da_thanh_toan: Array.isArray(payments) ? payments.reduce((s,p)=> s + (Number(p?.amount)||0), 0) : 0,
+          da_thanh_toan: Array.isArray(payments) ? payments.reduce((s, p) => s + (Number(p?.amount) || 0), 0) : 0,
           payments: Array.isArray(payments) ? payments.filter(p => p && p.source && Number(p.amount) > 0) : []
         });
         created.push(rec);
@@ -68,18 +73,18 @@ router.post('/report/xuat-hang-batch', authenticateToken, requireRole(['admin','
               price_sell: Number(price_sell) || item.price_sell || 0,
               customer_name: customer_name,
               customer_phone: customer_phone,
-              total_paid: Array.isArray(payments) ? payments.reduce((s,p)=> s + (Number(p?.amount)||0), 0) : 0,
+              total_paid: Array.isArray(payments) ? payments.reduce((s, p) => s + (Number(p?.amount) || 0), 0) : 0,
               branch: branch || item.branch,
               batch_id: batch_id
             },
             ref_id: item.imei || String(rec._id),
             branch: branch || item.branch
           };
-          
+
           // Tạo mô tả chi tiết
           const roleLabel = req.user?.role === 'admin' ? 'Admin' : (req.user?.role === 'thu_ngan' ? 'Thu ngân' : 'User');
-          activityData.description = `Nhân viên ${activityData.username} (${roleLabel}) tạo đơn xuất hàng batch - Sản phẩm: ${item.product_name || item.tenSanPham}${item.imei ? ` (IMEI: ${item.imei})` : ''} - Giá bán: ${new Intl.NumberFormat('vi-VN').format(Number(price_sell) || item.price_sell || 0)}đ${customer_name ? ` - Khách hàng: ${customer_name}` : ''}${customer_phone ? ` (${customer_phone})` : ''} - Đã thanh toán: ${new Intl.NumberFormat('vi-VN').format(Array.isArray(payments) ? payments.reduce((s,p)=> s + (Number(p?.amount)||0), 0) : 0)}đ`;
-          
+          activityData.description = `Nhân viên ${activityData.username} (${roleLabel}) tạo đơn xuất hàng batch - Sản phẩm: ${item.product_name || item.tenSanPham}${item.imei ? ` (IMEI: ${item.imei})` : ''} - Giá bán: ${new Intl.NumberFormat('vi-VN').format(Number(price_sell) || item.price_sell || 0)}đ${customer_name ? ` - Khách hàng: ${customer_name}` : ''}${customer_phone ? ` (${customer_phone})` : ''} - Đã thanh toán: ${new Intl.NumberFormat('vi-VN').format(Array.isArray(payments) ? payments.reduce((s, p) => s + (Number(p?.amount) || 0), 0) : 0)}đ`;
+
           await ActivityLog.create(activityData);
         } catch (e) { /* ignore log error */ }
       } else {
@@ -128,7 +133,7 @@ router.post('/report/xuat-hang-batch', authenticateToken, requireRole(['admin','
           created_by: req.user?._id,
           created_by_email: req.user?.email || '',
           created_by_name: req.user?.full_name || '',
-          da_thanh_toan: Array.isArray(payments) ? payments.reduce((s,p)=> s + (Number(p?.amount)||0), 0) : 0,
+          da_thanh_toan: Array.isArray(payments) ? payments.reduce((s, p) => s + (Number(p?.amount) || 0), 0) : 0,
           payments: Array.isArray(payments) ? payments.filter(p => p && p.source && Number(p.amount) > 0) : []
         });
         created.push(rec);
@@ -148,7 +153,7 @@ router.post('/report/xuat-hang-batch', authenticateToken, requireRole(['admin','
               price_sell: Number(price_sell) || 0,
               customer_name: customer_name,
               customer_phone: customer_phone,
-              total_paid: Array.isArray(payments) ? payments.reduce((s,p)=> s + (Number(p?.amount)||0), 0) : 0,
+              total_paid: Array.isArray(payments) ? payments.reduce((s, p) => s + (Number(p?.amount) || 0), 0) : 0,
               branch: branch || refInv?.branch || '',
               batch_id: batch_id,
               export_type: 'accessory'
@@ -156,11 +161,11 @@ router.post('/report/xuat-hang-batch', authenticateToken, requireRole(['admin','
             ref_id: refInv?.sku || sku || String(rec._id),
             branch: branch || refInv?.branch || ''
           };
-          
+
           // Tạo mô tả chi tiết
           const roleLabel = req.user?.role === 'admin' ? 'Admin' : (req.user?.role === 'thu_ngan' ? 'Thu ngân' : 'User');
-          activityData.description = `Nhân viên ${activityData.username} (${roleLabel}) tạo đơn xuất hàng phụ kiện batch - Sản phẩm: ${refInv?.product_name || refInv?.tenSanPham || (product_name || '')} (SKU: ${refInv?.sku || sku}) - Số lượng: ${q} - Giá bán: ${new Intl.NumberFormat('vi-VN').format(Number(price_sell) || 0)}đ${customer_name ? ` - Khách hàng: ${customer_name}` : ''}${customer_phone ? ` (${customer_phone})` : ''} - Đã thanh toán: ${new Intl.NumberFormat('vi-VN').format(Array.isArray(payments) ? payments.reduce((s,p)=> s + (Number(p?.amount)||0), 0) : 0)}đ`;
-          
+          activityData.description = `Nhân viên ${activityData.username} (${roleLabel}) tạo đơn xuất hàng phụ kiện batch - Sản phẩm: ${refInv?.product_name || refInv?.tenSanPham || (product_name || '')} (SKU: ${refInv?.sku || sku}) - Số lượng: ${q} - Giá bán: ${new Intl.NumberFormat('vi-VN').format(Number(price_sell) || 0)}đ${customer_name ? ` - Khách hàng: ${customer_name}` : ''}${customer_phone ? ` (${customer_phone})` : ''} - Đã thanh toán: ${new Intl.NumberFormat('vi-VN').format(Array.isArray(payments) ? payments.reduce((s, p) => s + (Number(p?.amount) || 0), 0) : 0)}đ`;
+
           await ActivityLog.create(activityData);
         } catch (e) { /* ignore log error */ }
       }
@@ -168,13 +173,13 @@ router.post('/report/xuat-hang-batch', authenticateToken, requireRole(['admin','
 
     // ✅ Phân bổ đã thanh toán theo tỉ lệ trên từng dòng (nếu có payments)
     try {
-      const totalPaid = Array.isArray(payments) ? payments.reduce((s,p)=> s + (Number(p?.amount)||0), 0) : 0;
-      const totalSale = created.reduce((s, r) => s + ((Number(r.price_sell)||0) * (Number(r.quantity)||1)), 0);
+      const totalPaid = Array.isArray(payments) ? payments.reduce((s, p) => s + (Number(p?.amount) || 0), 0) : 0;
+      const totalSale = created.reduce((s, r) => s + ((Number(r.price_sell) || 0) * (Number(r.quantity) || 1)), 0);
       if (totalPaid > 0 && totalSale > 0) {
         let allocated = 0;
         for (let i = 0; i < created.length; i++) {
           const r = created[i];
-          const lineTotal = (Number(r.price_sell)||0) * (Number(r.quantity)||1);
+          const lineTotal = (Number(r.price_sell) || 0) * (Number(r.quantity) || 1);
           let share = Math.floor((totalPaid * lineTotal) / totalSale);
           if (i === created.length - 1) {
             // dồn phần dư cho dòng cuối
@@ -209,11 +214,17 @@ router.post('/report/xuat-hang-batch', authenticateToken, requireRole(['admin','
 });
 
 // GET /api/report/xuat-hang-batch/:batch_id -> trả về tất cả items thuộc batch
-router.get('/report/xuat-hang-batch/:batch_id', authenticateToken, async (req, res) => {
+router.get('/report/xuat-hang-batch/:batch_id', authenticateToken, filterByBranch, async (req, res) => {
   try {
     const { batch_id } = req.params;
     if (!batch_id) return res.status(400).json({ message: 'Thiếu batch_id' });
-    const items = await ExportHistory.find({ batch_id }).sort({ sold_date: -1, _id: -1 });
+
+    let query = { batch_id };
+    if (req.branchFilter) {
+      query = { ...query, ...req.branchFilter };
+    }
+
+    const items = await ExportHistory.find(query).sort({ sold_date: -1, _id: -1 });
 
     // Fetch and aggregate payments for this batch
     const cashbookPayments = await Cashbook.aggregate([
@@ -229,10 +240,15 @@ router.get('/report/xuat-hang-batch/:batch_id', authenticateToken, async (req, r
 });
 
 // PUT /api/report/xuat-hang-batch/:batch_id -> cập nhật nhiều items trong batch
-router.put('/report/xuat-hang-batch/:batch_id', authenticateToken, requireRole(['admin','thu_ngan','nhan_vien_ban_hang']), async (req, res) => {
+router.put('/report/xuat-hang-batch/:batch_id', authenticateToken, requireRole(['admin', 'thu_ngan', 'nhan_vien_ban_hang']), filterByBranch, async (req, res) => {
   try {
     const { batch_id } = req.params;
-    const { items = [], customer_name, customer_phone, branch, sold_date, note, payments = [], total_paid } = req.body;
+    let { items = [], customer_name, customer_phone, branch, sold_date, note, payments = [], total_paid } = req.body;
+
+    // Enforce branch filter if present
+    if (req.branchFilter) {
+      branch = req.branchFilter.branch;
+    }
     if (!batch_id) return res.status(400).json({ message: 'Thiếu batch_id' });
     if (!Array.isArray(items) || items.length === 0) {
       return res.status(400).json({ message: 'Thiếu danh sách items để cập nhật' });
@@ -242,15 +258,15 @@ router.put('/report/xuat-hang-batch/:batch_id', authenticateToken, requireRole([
     let shareMap = {};
     try {
       const sumPaidRaw = (Array.isArray(payments) && payments.length > 0)
-        ? payments.reduce((s,p)=> s + (Number(p?.amount)||0), 0)
+        ? payments.reduce((s, p) => s + (Number(p?.amount) || 0), 0)
         : (total_paid !== undefined ? Number(total_paid) : undefined);
       if (sumPaidRaw !== undefined) {
         const sumPaid = Math.max(0, Number.isFinite(sumPaidRaw) ? sumPaidRaw : 0);
         const totals = (items || []).map(it => ({
           _id: String(it._id || ''),
-          total: (Number(it.price_sell)||0) * (Number(it.quantity)||1)
+          total: (Number(it.price_sell) || 0) * (Number(it.quantity) || 1)
         }));
-        const totalSaleFromPayload = totals.reduce((s,t)=> s + t.total, 0);
+        const totalSaleFromPayload = totals.reduce((s, t) => s + t.total, 0);
         if (totalSaleFromPayload > 0) {
           let allocated = 0;
           for (let i = 0; i < totals.length; i++) {
@@ -292,18 +308,18 @@ router.put('/report/xuat-hang-batch/:batch_id', authenticateToken, requireRole([
     // ✅ Re-allocate paid amount if provided (payments or total_paid), rồi trả về dữ liệu sau cùng
     try {
       const sumPaidRaw = (Array.isArray(payments) && payments.length > 0)
-        ? payments.reduce((s,p)=> s + (Number(p?.amount)||0), 0)
+        ? payments.reduce((s, p) => s + (Number(p?.amount) || 0), 0)
         : (total_paid !== undefined ? Number(total_paid) : undefined);
       if (sumPaidRaw !== undefined) {
         const sumPaid = Math.max(0, Number.isFinite(sumPaidRaw) ? sumPaidRaw : 0);
         // Load again các dòng hiện tại của batch
         const current = await ExportHistory.find({ batch_id }).sort({ _id: 1 });
-        const totalSale = current.reduce((s, r) => s + ((Number(r.price_sell)||0) * (Number(r.quantity)||1)), 0);
+        const totalSale = current.reduce((s, r) => s + ((Number(r.price_sell) || 0) * (Number(r.quantity) || 1)), 0);
         if (totalSale > 0 && sumPaid > 0) {
           let allocated = 0;
           for (let i = 0; i < current.length; i++) {
             const r = current[i];
-            const lineTotal = (Number(r.price_sell)||0) * (Number(r.quantity)||1);
+            const lineTotal = (Number(r.price_sell) || 0) * (Number(r.quantity) || 1);
             let share = Math.floor((sumPaid * lineTotal) / totalSale);
             if (i === current.length - 1) share = sumPaid - allocated;
             allocated += share;

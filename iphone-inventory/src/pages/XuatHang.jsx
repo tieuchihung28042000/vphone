@@ -187,11 +187,21 @@ function XuatHang() {
     availableStock: availableItems.length
   };
 
+  const getAuthHeaders = () => {
+    const token = localStorage.getItem('token') || sessionStorage.getItem('token');
+    return {
+      'Authorization': `Bearer ${token}`,
+      'Content-Type': 'application/json'
+    };
+  };
+
   // API functions
   const fetchAvailableItems = async () => {
     try {
       // ✅ Sửa: Gọi API tồn kho (sử dụng VITE_API_URL)
-      const res = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/ton-kho`);
+      const res = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/ton-kho`, {
+        headers: getAuthHeaders()
+      });
 
       if (!res.ok) throw new Error(`API Error: ${res.status}`);
 
@@ -238,7 +248,9 @@ function XuatHang() {
 
   const fetchSoldItems = async () => {
     try {
-      const res = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/xuat-hang-list`);
+      const res = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/xuat-hang-list`, {
+        headers: getAuthHeaders()
+      });
 
       if (!res.ok) throw new Error(`API Error: ${res.status}`);
 
@@ -261,7 +273,9 @@ function XuatHang() {
 
   const fetchBranches = async () => {
     try {
-      const res = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/branches`);
+      const res = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/branches`, {
+        headers: getAuthHeaders()
+      });
       const data = await res.json();
       setBranches(data);
     } catch (err) {
@@ -271,7 +285,9 @@ function XuatHang() {
 
   const fetchCategories = async () => {
     try {
-      const res = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/categories`);
+      const res = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/categories`, {
+        headers: getAuthHeaders()
+      });
       const data = await res.json();
       setCategories(data);
     } catch (err) {
@@ -2350,12 +2366,13 @@ function XuatHang() {
               disabled={
                 // Disable nếu là admin chi nhánh, nhân viên hoặc thu ngân
                 (userRole === 'admin' && userBranch) ||
+                userRole === 'quan_ly_chi_nhanh' ||
                 userRole === 'nhan_vien_ban_hang' ||
                 userRole === 'thu_ngan'
               }
               style={{
-                cursor: ((userRole === 'admin' && userBranch) || userRole === 'nhan_vien_ban_hang' || userRole === 'thu_ngan') ? 'not-allowed' : 'pointer',
-                opacity: ((userRole === 'admin' && userBranch) || userRole === 'nhan_vien_ban_hang' || userRole === 'thu_ngan') ? 0.6 : 1
+                cursor: ((userRole === 'admin' && userBranch) || userRole === 'quan_ly_chi_nhanh' || userRole === 'nhan_vien_ban_hang' || userRole === 'thu_ngan') ? 'not-allowed' : 'pointer',
+                opacity: ((userRole === 'admin' && userBranch) || userRole === 'quan_ly_chi_nhanh' || userRole === 'nhan_vien_ban_hang' || userRole === 'thu_ngan') ? 0.6 : 1
               }}
             >
               <option value="">Chọn chi nhánh</option>

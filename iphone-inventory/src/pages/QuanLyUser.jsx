@@ -29,14 +29,14 @@ function QuanLyUser() {
   const [changePasswordModal, setChangePasswordModal] = useState({ open: false, user: null });
   const [updateUserModal, setUpdateUserModal] = useState({ open: false, user: null });
   const [deleteUserModal, setDeleteUserModal] = useState({ open: false, user: null });
-  
+
   // Forms cho các modal
   const [changePasswordForm, setChangePasswordForm] = useState({
     currentPassword: "",
     newPassword: "",
     confirmPassword: ""
   });
-  
+
   const [updateUserForm, setUpdateUserForm] = useState({
     full_name: "",
     email: "",
@@ -108,7 +108,7 @@ function QuanLyUser() {
   useEffect(() => {
     fetchBranches();
     if (activeTab === "pending") {
-    fetchPendingUsers();
+      fetchPendingUsers();
     } else if (activeTab === "all") {
       fetchAllUsers();
     }
@@ -140,10 +140,10 @@ function QuanLyUser() {
     e.preventDefault();
     try {
       const token = localStorage.getItem("token") || sessionStorage.getItem("token");
-      
+
       // Tìm branch được chọn
       const selectedBranch = branches.find(b => b._id === createUserForm.branch_id);
-      
+
       const userData = {
         ...createUserForm,
         branch_name: selectedBranch ? selectedBranch.name : "",
@@ -218,24 +218,24 @@ function QuanLyUser() {
       alert("❌ Vui lòng nhập mật khẩu mới");
       return;
     }
-    
+
     if (changePasswordForm.newPassword !== changePasswordForm.confirmPassword) {
       alert("❌ Mật khẩu xác nhận không khớp");
       return;
     }
-    
+
     try {
       const token = localStorage.getItem("token") || sessionStorage.getItem("token");
       const payload = {
         newPassword: changePasswordForm.newPassword
       };
-      
+
       // Nếu không phải admin đổi mật khẩu cho người khác thì cần mật khẩu hiện tại
       const currentUser = JSON.parse(localStorage.getItem('user') || '{}');
       if (currentUser.role !== 'admin' && changePasswordModal.user._id !== currentUser._id) {
         payload.currentPassword = changePasswordForm.currentPassword;
       }
-      
+
       const res = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/user/change-password/${changePasswordModal.user._id}`, {
         method: "PUT",
         headers: {
@@ -263,10 +263,10 @@ function QuanLyUser() {
       alert("❌ Vui lòng nhập họ tên");
       return;
     }
-    
+
     try {
       const token = localStorage.getItem("token") || sessionStorage.getItem("token");
-      
+
       // Chuẩn bị payload, xử lý branch_id cho admin
       const payload = { ...updateUserForm };
       if (payload.role === 'admin') {
@@ -276,7 +276,7 @@ function QuanLyUser() {
         alert("❌ Vui lòng chọn chi nhánh cho user không phải admin");
         return;
       }
-      
+
       const res = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/user/update/${updateUserModal.user._id}`, {
         method: "PUT",
         headers: {
@@ -305,7 +305,7 @@ function QuanLyUser() {
     if (!window.confirm(`Bạn có chắc muốn xóa user "${deleteUserModal.user.email}"?`)) {
       return;
     }
-    
+
     try {
       const token = localStorage.getItem("token") || sessionStorage.getItem("token");
       const res = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/user/${deleteUserModal.user._id}`, {
@@ -403,11 +403,10 @@ function QuanLyUser() {
       key: "actions",
       render: (user) => (
         <button
-          className={`px-4 py-2 rounded-xl font-medium transition-all duration-200 ${
-            approvingId === user._id
-              ? 'bg-gray-400 text-white cursor-not-allowed'
-              : 'bg-green-500 hover:bg-green-600 text-white'
-          }`}
+          className={`px-4 py-2 rounded-xl font-medium transition-all duration-200 ${approvingId === user._id
+            ? 'bg-gray-400 text-white cursor-not-allowed'
+            : 'bg-green-500 hover:bg-green-600 text-white'
+            }`}
           disabled={approvingId === user._id}
           onClick={() => handleApprove(user._id)}
         >
@@ -442,7 +441,8 @@ function QuanLyUser() {
       key: "role",
       render: (user) => {
         const roleLabels = {
-          admin: "👑 Admin",
+          admin: "👑 Admin tổng",
+          quan_ly_chi_nhanh: "🏢 Quản lý chi nhánh",
           thu_ngan: "💰 Thu ngân",
           nhan_vien_ban_hang: "🛒 Nhân viên bán hàng",
           user: "👤 User"
@@ -455,7 +455,8 @@ function QuanLyUser() {
           >
             <option value="nhan_vien_ban_hang">🛒 Nhân viên bán hàng</option>
             <option value="thu_ngan">💰 Thu ngân</option>
-            <option value="admin">👑 Admin</option>
+            <option value="quan_ly_chi_nhanh">🏢 Quản lý chi nhánh</option>
+            <option value="admin">👑 Admin tổng</option>
           </select>
         );
       }
@@ -507,19 +508,19 @@ function QuanLyUser() {
   ];
 
   const renderContent = () => {
-  if (loading) {
-    return (
+    if (loading) {
+      return (
         <div className="flex items-center justify-center py-20">
           <div className="text-center">
             <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-purple-600 mx-auto mb-4"></div>
             <p className="text-gray-600">Đang tải danh sách user...</p>
           </div>
         </div>
-    );
-  }
+      );
+    }
 
-  if (error) {
-    return (
+    if (error) {
+      return (
         <div className="bg-red-50 border-l-4 border-red-500 p-6 rounded-2xl">
           <div className="flex items-center">
             <div className="text-red-600 text-xl mr-3">❌</div>
@@ -549,8 +550,8 @@ function QuanLyUser() {
           itemsPerPage={users.length}
           totalItems={users.length}
         />
-    );
-  }
+      );
+    }
 
     if (activeTab === "all") {
       return (
@@ -570,7 +571,7 @@ function QuanLyUser() {
   };
 
   return (
-    <Layout 
+    <Layout
       activeTab="quan-ly-user"
       title="👥 Quản Lý User"
       subtitle="Phê duyệt và quản lý người dùng"
@@ -605,21 +606,19 @@ function QuanLyUser() {
         <div className="flex flex-wrap gap-2 mb-6">
           <button
             onClick={() => setActiveTab("pending")}
-            className={`px-4 py-2 rounded-xl font-medium transition-all ${
-              activeTab === "pending"
-                ? "bg-orange-500 text-white"
-                : "bg-gray-200 text-gray-700 hover:bg-gray-300"
-            }`}
+            className={`px-4 py-2 rounded-xl font-medium transition-all ${activeTab === "pending"
+              ? "bg-orange-500 text-white"
+              : "bg-gray-200 text-gray-700 hover:bg-gray-300"
+              }`}
           >
             ⏳ Chờ phê duyệt ({stats.totalPending})
           </button>
           <button
             onClick={() => setActiveTab("all")}
-            className={`px-4 py-2 rounded-xl font-medium transition-all ${
-              activeTab === "all"
-                ? "bg-blue-500 text-white"
-                : "bg-gray-200 text-gray-700 hover:bg-gray-300"
-            }`}
+            className={`px-4 py-2 rounded-xl font-medium transition-all ${activeTab === "all"
+              ? "bg-blue-500 text-white"
+              : "bg-gray-200 text-gray-700 hover:bg-gray-300"
+              }`}
           >
             👥 Tất cả User ({stats.totalUsers})
           </button>
@@ -639,14 +638,14 @@ function QuanLyUser() {
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded-2xl p-8 max-w-md w-full mx-4 max-h-[90vh] overflow-y-auto">
             <h3 className="text-xl font-bold text-gray-900 mb-6">➕ Tạo tài khoản mới</h3>
-            
+
             <form onSubmit={handleCreateUser} className="space-y-4">
               <div>
                 <label className="block text-sm font-semibold text-gray-700 mb-2">Email *</label>
                 <input
                   type="email"
                   value={createUserForm.email}
-                  onChange={(e) => setCreateUserForm({...createUserForm, email: e.target.value})}
+                  onChange={(e) => setCreateUserForm({ ...createUserForm, email: e.target.value })}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                   required
                 />
@@ -657,7 +656,7 @@ function QuanLyUser() {
                 <input
                   type="password"
                   value={createUserForm.password}
-                  onChange={(e) => setCreateUserForm({...createUserForm, password: e.target.value})}
+                  onChange={(e) => setCreateUserForm({ ...createUserForm, password: e.target.value })}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                   required
                 />
@@ -668,7 +667,7 @@ function QuanLyUser() {
                 <input
                   type="text"
                   value={createUserForm.username || ""}
-                  onChange={(e) => setCreateUserForm({...createUserForm, username: e.target.value || null})}
+                  onChange={(e) => setCreateUserForm({ ...createUserForm, username: e.target.value || null })}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                   placeholder="Để trống nếu không cần username"
                 />
@@ -679,7 +678,7 @@ function QuanLyUser() {
                 <input
                   type="text"
                   value={createUserForm.full_name}
-                  onChange={(e) => setCreateUserForm({...createUserForm, full_name: e.target.value})}
+                  onChange={(e) => setCreateUserForm({ ...createUserForm, full_name: e.target.value })}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>
@@ -689,7 +688,7 @@ function QuanLyUser() {
                 <input
                   type="text"
                   value={createUserForm.phone}
-                  onChange={(e) => setCreateUserForm({...createUserForm, phone: e.target.value})}
+                  onChange={(e) => setCreateUserForm({ ...createUserForm, phone: e.target.value })}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>
@@ -698,13 +697,14 @@ function QuanLyUser() {
                 <label className="block text-sm font-semibold text-gray-700 mb-2">Vai trò *</label>
                 <select
                   value={createUserForm.role}
-                  onChange={(e) => setCreateUserForm({...createUserForm, role: e.target.value})}
+                  onChange={(e) => setCreateUserForm({ ...createUserForm, role: e.target.value })}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                   required
                 >
                   <option value="nhan_vien_ban_hang">🛒 Nhân viên bán hàng</option>
                   <option value="thu_ngan">💰 Thu ngân</option>
-                  <option value="admin">👑 Admin</option>
+                  <option value="quan_ly_chi_nhanh">🏢 Quản lý chi nhánh</option>
+                  <option value="admin">👑 Admin tổng</option>
                 </select>
               </div>
 
@@ -713,7 +713,7 @@ function QuanLyUser() {
                   <label className="block text-sm font-semibold text-gray-700 mb-2">Chi nhánh *</label>
                   <select
                     value={createUserForm.branch_id}
-                    onChange={(e) => setCreateUserForm({...createUserForm, branch_id: e.target.value})}
+                    onChange={(e) => setCreateUserForm({ ...createUserForm, branch_id: e.target.value })}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                     required
                   >
@@ -752,7 +752,7 @@ function QuanLyUser() {
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded-2xl p-6 max-w-md w-full mx-4">
             <h3 className="text-xl font-bold text-gray-900 mb-4">🔑 Đổi mật khẩu - {changePasswordModal.user?.email}</h3>
-            
+
             <div className="space-y-4">
               {/* Chỉ hiển thị mật khẩu hiện tại nếu không phải admin đổi cho người khác */}
               {(() => {
@@ -764,37 +764,37 @@ function QuanLyUser() {
                     <input
                       type="password"
                       value={changePasswordForm.currentPassword}
-                      onChange={(e) => setChangePasswordForm({...changePasswordForm, currentPassword: e.target.value})}
+                      onChange={(e) => setChangePasswordForm({ ...changePasswordForm, currentPassword: e.target.value })}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                       required
                     />
                   </div>
                 ) : null;
               })()}
-              
+
               <div>
                 <label className="block text-sm font-semibold text-gray-700 mb-2">Mật khẩu mới *</label>
                 <input
                   type="password"
                   value={changePasswordForm.newPassword}
-                  onChange={(e) => setChangePasswordForm({...changePasswordForm, newPassword: e.target.value})}
+                  onChange={(e) => setChangePasswordForm({ ...changePasswordForm, newPassword: e.target.value })}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                   required
                 />
               </div>
-              
+
               <div>
                 <label className="block text-sm font-semibold text-gray-700 mb-2">Xác nhận mật khẩu mới *</label>
                 <input
                   type="password"
                   value={changePasswordForm.confirmPassword}
-                  onChange={(e) => setChangePasswordForm({...changePasswordForm, confirmPassword: e.target.value})}
+                  onChange={(e) => setChangePasswordForm({ ...changePasswordForm, confirmPassword: e.target.value })}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                   required
                 />
               </div>
             </div>
-            
+
             <div className="flex gap-3 mt-6">
               <button
                 onClick={() => setChangePasswordModal({ open: false, user: null })}
@@ -818,58 +818,59 @@ function QuanLyUser() {
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded-2xl p-6 max-w-md w-full mx-4 max-h-[90vh] overflow-y-auto">
             <h3 className="text-xl font-bold text-gray-900 mb-4">✏️ Cập nhật thông tin user</h3>
-            
+
             <div className="space-y-4">
               <div>
                 <label className="block text-sm font-semibold text-gray-700 mb-2">Họ tên *</label>
                 <input
                   type="text"
                   value={updateUserForm.full_name}
-                  onChange={(e) => setUpdateUserForm({...updateUserForm, full_name: e.target.value})}
+                  onChange={(e) => setUpdateUserForm({ ...updateUserForm, full_name: e.target.value })}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                   required
                 />
               </div>
-              
+
               <div>
                 <label className="block text-sm font-semibold text-gray-700 mb-2">Email</label>
                 <input
                   type="email"
                   value={updateUserForm.email}
-                  onChange={(e) => setUpdateUserForm({...updateUserForm, email: e.target.value})}
+                  onChange={(e) => setUpdateUserForm({ ...updateUserForm, email: e.target.value })}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>
-              
+
               <div>
                 <label className="block text-sm font-semibold text-gray-700 mb-2">Số điện thoại</label>
                 <input
                   type="text"
                   value={updateUserForm.phone}
-                  onChange={(e) => setUpdateUserForm({...updateUserForm, phone: e.target.value})}
+                  onChange={(e) => setUpdateUserForm({ ...updateUserForm, phone: e.target.value })}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>
-              
+
               <div>
                 <label className="block text-sm font-semibold text-gray-700 mb-2">Vai trò</label>
                 <select
                   value={updateUserForm.role}
-                  onChange={(e) => setUpdateUserForm({...updateUserForm, role: e.target.value})}
+                  onChange={(e) => setUpdateUserForm({ ...updateUserForm, role: e.target.value })}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                 >
                   <option value="nhan_vien_ban_hang">🛒 Nhân viên bán hàng</option>
                   <option value="thu_ngan">💰 Thu ngân</option>
-                  <option value="admin">👑 Admin</option>
+                  <option value="quan_ly_chi_nhanh">🏢 Quản lý chi nhánh</option>
+                  <option value="admin">👑 Admin tổng</option>
                 </select>
               </div>
-              
+
               {updateUserForm.role !== 'admin' && (
                 <div>
                   <label className="block text-sm font-semibold text-gray-700 mb-2">Chi nhánh</label>
                   <select
                     value={updateUserForm.branch_id}
-                    onChange={(e) => setUpdateUserForm({...updateUserForm, branch_id: e.target.value})}
+                    onChange={(e) => setUpdateUserForm({ ...updateUserForm, branch_id: e.target.value })}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                   >
                     <option value="">Chọn chi nhánh</option>
@@ -882,7 +883,7 @@ function QuanLyUser() {
                 </div>
               )}
             </div>
-            
+
             <div className="flex gap-3 mt-6">
               <button
                 onClick={() => setUpdateUserModal({ open: false, user: null })}
@@ -906,7 +907,7 @@ function QuanLyUser() {
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded-2xl p-6 max-w-md w-full mx-4">
             <h3 className="text-xl font-bold text-gray-900 mb-4">🗑️ Xóa user</h3>
-            
+
             <div className="mb-6">
               <p className="text-gray-600 mb-2">Bạn có chắc muốn xóa user này?</p>
               <div className="bg-gray-50 p-4 rounded-lg">
@@ -916,7 +917,7 @@ function QuanLyUser() {
               </div>
               <p className="text-red-600 text-sm mt-2">⚠️ Hành động này không thể hoàn tác!</p>
             </div>
-            
+
             <div className="flex gap-3">
               <button
                 onClick={() => setDeleteUserModal({ open: false, user: null })}

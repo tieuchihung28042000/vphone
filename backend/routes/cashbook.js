@@ -18,14 +18,14 @@ function generateReceiptCode(type, date = new Date()) {
 async function calculateBalance(source, branch, amount, type) {
   try {
     // Lấy giao dịch gần nhất cùng nguồn và chi nhánh
-    const lastTransaction = await Cashbook.findOne({ 
-      source, 
-      branch 
+    const lastTransaction = await Cashbook.findOne({
+      source,
+      branch
     }).sort({ createdAt: -1 });
-    
+
     const lastBalance = lastTransaction ? (lastTransaction.balance_after || 0) : 0;
     const newBalance = type === 'thu' ? lastBalance + Number(amount) : lastBalance - Number(amount);
-    
+
     return { balance_before: lastBalance, balance_after: newBalance };
   } catch (err) {
     console.error('Error calculating balance:', err);
@@ -52,17 +52,22 @@ async function reindexBalances(source, branch) {
 }
 
 // 1. Thêm mới giao dịch (POST)
-router.post('/', authenticateToken, async (req, res) => {
+router.post('/', authenticateToken, filterByBranch, async (req, res) => {
   try {
-    const { 
-      type, content, amount, source, branch, category, 
-      supplier, customer, note, user, related_id, related_type, date 
+    let {
+      type, content, amount, source, branch, category,
+      supplier, customer, note, user, related_id, related_type, date
     } = req.body;
+
+    // Enforce branch filter if present
+    if (req.branchFilter) {
+      branch = req.branchFilter.branch;
+    }
 
     // Validate bắt buộc
     if (!type || !content || !amount || !source || !branch) {
-      return res.status(400).json({ 
-        message: "Thiếu trường bắt buộc (type/content/amount/source/branch)" 
+      return res.status(400).json({
+        message: "Thiếu trường bắt buộc (type/content/amount/source/branch)"
       });
     }
 
@@ -110,12 +115,12 @@ router.post('/', authenticateToken, async (req, res) => {
         ref_id: cashbook.receipt_code || String(cashbook._id),
         branch: cashbook.branch
       };
-      
+
       // Tạo mô tả chi tiết
       const typeLabel = cashbook.type === 'thu' ? 'phiếu thu' : 'phiếu chi';
       const roleLabel = req.user?.role === 'admin' ? 'Admin' : (req.user?.role === 'thu_ngan' ? 'Thu ngân' : 'User');
       activityData.description = `Nhân viên ${activityData.username} (${roleLabel}) tạo ${typeLabel} #${cashbook.receipt_code || 'N/A'} - Nội dung: ${cashbook.content || 'N/A'} - Số tiền: ${new Intl.NumberFormat('vi-VN').format(cashbook.amount || 0)}đ${cashbook.customer ? ` - Khách hàng: ${cashbook.customer}` : ''}${cashbook.supplier ? ` - Nhà cung cấp: ${cashbook.supplier}` : ''} - Số dư sau: ${new Intl.NumberFormat('vi-VN').format(cashbook.balance_after || 0)}đ`;
-      
+
       await ActivityLog.create(activityData);
     } catch (e) { /* ignore log error */ }
     res.status(201).json({ message: '✅ Thêm giao dịch thành công', cashbook });
@@ -126,11 +131,15 @@ router.post('/', authenticateToken, async (req, res) => {
 });
 
 // 2. Sửa giao dịch (PUT)
-router.put('/:id', authenticateToken, async (req, res) => {
+router.put('/:id', authenticateToken, filterByBranch, async (req, res) => {
   try {
-    const transaction = await Cashbook.findById(req.params.id);
+    let query = { _id: req.params.id };
+    if (req.branchFilter) {
+      query = { ...query, ...req.branchFilter };
+    }
+    const transaction = await Cashbook.findOne(query);
     if (!transaction) {
-      return res.status(404).json({ message: 'Không tìm thấy giao dịch' });
+      return res.status(404).json({ message: 'Không tìm thấy giao dịch hoặc bạn không có quyền chỉnh sửa' });
     }
 
     // Kiểm tra quyền chỉnh sửa: cho phép nếu chưa bị khóa (editable !== false),
@@ -144,11 +153,17 @@ router.put('/:id', authenticateToken, async (req, res) => {
 
     // Cập nhật số dư nếu thay đổi số tiền
     let updateData = { ...req.body };
+
+    // Nếu bị giới hạn branch, không cho phép đổi branch của transaction
+    if (req.branchFilter) {
+      delete updateData.branch;
+    }
+
     if (req.body.amount && Number(req.body.amount) !== transaction.amount) {
       const balanceInfo = await calculateBalance(
-        req.body.source || transaction.source, 
-        req.body.branch || transaction.branch, 
-        Number(req.body.amount), 
+        req.body.source || transaction.source,
+        req.body.branch || transaction.branch,
+        Number(req.body.amount),
         req.body.type || transaction.type
       );
       updateData = { ...updateData, ...balanceInfo };
@@ -191,12 +206,12 @@ router.put('/:id', authenticateToken, async (req, res) => {
         ref_id: updated.receipt_code || String(updated._id),
         branch: updated.branch
       };
-      
+
       // Tạo mô tả chi tiết
       const roleLabel = req.user?.role === 'admin' ? 'Admin' : (req.user?.role === 'thu_ngan' ? 'Thu ngân' : 'User');
       const typeLabel = updated.type === 'thu' ? 'phiếu thu' : 'phiếu chi';
       activityData.description = `Nhân viên ${activityData.username} (${roleLabel}) cập nhật ${typeLabel} #${updated.receipt_code || 'N/A'} - Nội dung: ${updated.content || 'N/A'} - Số tiền từ ${new Intl.NumberFormat('vi-VN').format(transaction.amount || 0)}đ thành ${new Intl.NumberFormat('vi-VN').format(updated.amount || 0)}đ${updated.customer ? ` - Khách hàng: ${updated.customer}` : ''}${updated.supplier ? ` - Nhà cung cấp: ${updated.supplier}` : ''}`;
-      
+
       await ActivityLog.create(activityData);
     } catch (e) { /* ignore log error */ }
     res.json({ message: '✅ Đã cập nhật giao dịch', cashbook: updated });
@@ -207,11 +222,15 @@ router.put('/:id', authenticateToken, async (req, res) => {
 });
 
 // 3. Xoá giao dịch (DELETE)
-router.delete('/:id', authenticateToken, async (req, res) => {
+router.delete('/:id', authenticateToken, filterByBranch, async (req, res) => {
   try {
-    const transaction = await Cashbook.findById(req.params.id);
+    let query = { _id: req.params.id };
+    if (req.branchFilter) {
+      query = { ...query, ...req.branchFilter };
+    }
+    const transaction = await Cashbook.findOne(query);
     if (!transaction) {
-      return res.status(404).json({ message: 'Không tìm thấy giao dịch' });
+      return res.status(404).json({ message: 'Không tìm thấy giao dịch hoặc bạn không có quyền xóa' });
     }
 
     // Kiểm tra quyền xóa: cho phép nếu chưa bị khóa (editable !== false),
@@ -245,12 +264,12 @@ router.delete('/:id', authenticateToken, async (req, res) => {
         ref_id: transaction.receipt_code || String(transaction._id),
         branch: transaction.branch
       };
-      
+
       // Tạo mô tả chi tiết
       const roleLabel = req.user?.role === 'admin' ? 'Admin' : (req.user?.role === 'thu_ngan' ? 'Thu ngân' : 'User');
       const typeLabel = transaction.type === 'thu' ? 'phiếu thu' : 'phiếu chi';
       activityData.description = `Nhân viên ${activityData.username} (${roleLabel}) xóa ${typeLabel} #${transaction.receipt_code || 'N/A'} - Nội dung: ${transaction.content || 'N/A'} - Số tiền: ${new Intl.NumberFormat('vi-VN').format(transaction.amount || 0)}đ${transaction.customer ? ` - Khách hàng: ${transaction.customer}` : ''}${transaction.supplier ? ` - Nhà cung cấp: ${transaction.supplier}` : ''}`;
-      
+
       await ActivityLog.create(activityData);
     } catch (e) { /* ignore log error */ }
     // Reindex balances cho cùng nguồn và chi nhánh để số dư chính xác
@@ -267,45 +286,45 @@ router.delete('/:id', authenticateToken, async (req, res) => {
 // 4. Lấy danh sách, lọc nâng cao (GET)
 router.get('/', authenticateToken, filterByBranch, async (req, res) => {
   try {
-    const { 
-      type, from, to, branch, source, category, 
-      search, customer, supplier, related_type, page = 1, limit = 100 
+    const {
+      type, from, to, branch, source, category,
+      search, customer, supplier, related_type, page = 1, limit = 100
     } = req.query;
 
     let query = {};
-    
+
     // Áp dụng branch filter từ middleware (cho admin chi nhánh, nhân viên, thu ngân)
     if (req.branchFilter) {
       Object.assign(query, req.branchFilter);
     }
-    
+
     // Lọc theo loại thu/chi
     if (type && type !== 'all') query.type = type;
-    
+
     // Lọc theo chi nhánh (nếu user chọn cụ thể, override filter từ middleware)
     if (branch && branch !== 'all') query.branch = branch;
-    
+
     // Lọc theo nguồn tiền
     if (source && source !== 'all') query.source = source;
-    
+
     // Lọc theo phân loại
     if (category && category !== 'all') query.category = category;
-    
+
     // Lọc theo loại liên kết
     if (related_type && related_type !== 'all') query.related_type = related_type;
-    
+
     // Lọc theo khách hàng
     if (customer) query.customer = new RegExp(customer, 'i');
-    
+
     // Lọc theo nhà cung cấp
     if (supplier) query.supplier = new RegExp(supplier, 'i');
-    
+
     // Lọc theo nội dung (mô tả) - ưu tiên filter content nếu có
     const contentFilter = req.query.content;
     if (contentFilter && contentFilter.trim()) {
       query.content = new RegExp(contentFilter.trim(), 'i');
     }
-    
+
     // Tìm kiếm trong nội dung và ghi chú (chỉ khi không có filter content riêng)
     if (search && !contentFilter) {
       query.$or = [
@@ -356,12 +375,12 @@ router.get('/', authenticateToken, filterByBranch, async (req, res) => {
     const summary = stats[0] || { totalThu: 0, totalChi: 0 };
     summary.balance = summary.totalThu - summary.totalChi;
 
-    res.json({ 
-      items, 
-      total, 
-      page: Number(page), 
+    res.json({
+      items,
+      total,
+      page: Number(page),
       limit: Number(limit),
-      summary 
+      summary
     });
   } catch (err) {
     console.error('Error fetching cashbook transactions:', err);
@@ -373,7 +392,7 @@ router.get('/', authenticateToken, filterByBranch, async (req, res) => {
 router.post('/auto-sale', async (req, res) => {
   try {
     const { customer, amount, source, branch, user, sale_id, note } = req.body;
-    
+
     const receipt_code = generateReceiptCode('thu');
     const balanceInfo = await calculateBalance(source, branch, Number(amount), 'thu');
 
@@ -404,7 +423,7 @@ router.post('/auto-sale', async (req, res) => {
 router.post('/auto-purchase', async (req, res) => {
   try {
     const { supplier, amount, source, branch, user, purchase_id, note } = req.body;
-    
+
     const receipt_code = generateReceiptCode('chi');
     const balanceInfo = await calculateBalance(source, branch, Number(amount), 'chi');
     if (balanceInfo.balance_after < 0) {
@@ -438,11 +457,11 @@ router.post('/auto-purchase', async (req, res) => {
 router.post('/auto-debt', async (req, res) => {
   try {
     const { customer, amount, source, branch, user, debt_id, note, debt_type } = req.body;
-    
+
     // debt_type: 'pay' (khách trả nợ = thu tiền) hoặc 'add' (cộng nợ = chi tiền)
     const type = debt_type === 'pay' ? 'thu' : 'chi';
     const content = debt_type === 'pay' ? 'Thu tiền trả nợ' : 'Chi tiền công nợ';
-    
+
     const receipt_code = generateReceiptCode(type);
     const balanceInfo = await calculateBalance(source, branch, Number(amount), type);
     if (type === 'chi' && balanceInfo.balance_after < 0) {
@@ -473,15 +492,19 @@ router.post('/auto-debt', async (req, res) => {
 });
 
 // 8. Xuất Excel nâng cao (GET)
-router.get('/export-excel', async (req, res) => {
+router.get('/export-excel', authenticateToken, filterByBranch, async (req, res) => {
   try {
-    const { 
-      type, from, to, branch, source, category, 
-      search, customer, supplier, related_type 
+    const {
+      type, from, to, branch, source, category,
+      search, customer, supplier, related_type
     } = req.query;
 
     // Sử dụng lại logic lọc
     let query = {};
+    if (req.branchFilter) {
+      Object.assign(query, req.branchFilter);
+    }
+
     if (type && type !== 'all') query.type = type;
     if (branch && branch !== 'all') query.branch = branch;
     if (source && source !== 'all') query.source = source;
@@ -513,9 +536,9 @@ router.get('/export-excel', async (req, res) => {
       'Loại': item.type === 'thu' ? 'Thu' : 'Chi',
       'Nội dung': item.content,
       'Số tiền': item.amount,
-      'Nguồn tiền': item.source === 'tien_mat' ? 'Tiền mặt' : 
-                    item.source === 'the' ? 'Thẻ' : 
-                    item.source === 'vi_dien_tu' ? 'Ví điện tử' : 'Công nợ',
+      'Nguồn tiền': item.source === 'tien_mat' ? 'Tiền mặt' :
+        item.source === 'the' ? 'Thẻ' :
+          item.source === 'vi_dien_tu' ? 'Ví điện tử' : 'Công nợ',
       'Khách hàng': item.customer || '',
       'Nhà cung cấp': item.supplier || '',
       'Chi nhánh': item.branch,
@@ -544,7 +567,7 @@ router.get('/export-excel', async (req, res) => {
       }
     ]);
     const summary = stats[0] || { totalThu: 0, totalChi: 0 };
-    
+
     const statsData = [
       { 'Chỉ tiêu': 'Tổng thu', 'Giá trị': summary.totalThu },
       { 'Chỉ tiêu': 'Tổng chi', 'Giá trị': summary.totalChi },
@@ -556,7 +579,7 @@ router.get('/export-excel', async (req, res) => {
     // Xuất file
     const buffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
     const fileName = `soquy_${new Date().toISOString().slice(0, 10)}.xlsx`;
-    
+
     res.set('Content-Disposition', `attachment; filename="${fileName}"`);
     res.type('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     res.send(buffer);
@@ -570,12 +593,12 @@ router.get('/balance', authenticateToken, filterByBranch, async (req, res) => {
   try {
     const { branch } = req.query;
     let query = {};
-    
+
     // Áp dụng branch filter từ middleware
     if (req.branchFilter) {
       Object.assign(query, req.branchFilter);
     }
-    
+
     if (branch && branch !== 'all') query.branch = branch;
 
     const balance = await Cashbook.aggregate([
@@ -583,14 +606,14 @@ router.get('/balance', authenticateToken, filterByBranch, async (req, res) => {
       {
         $group: {
           _id: { source: "$source", branch: "$branch" },
-          balance: { 
-            $sum: { 
+          balance: {
+            $sum: {
               $cond: [
-                { $eq: ["$type", "thu"] }, 
-                "$amount", 
+                { $eq: ["$type", "thu"] },
+                "$amount",
                 { $multiply: ["$amount", -1] }
-              ] 
-            } 
+              ]
+            }
           }
         }
       }
@@ -604,9 +627,14 @@ router.get('/balance', authenticateToken, filterByBranch, async (req, res) => {
 });
 
 // 10. Chỉnh sửa tổng quỹ theo nguồn tiền
-router.post('/adjust-balance', async (req, res) => {
+router.post('/adjust-balance', authenticateToken, filterByBranch, async (req, res) => {
   try {
-    const { branch, tien_mat, the, vi_dien_tu, note, user } = req.body;
+    let { branch, tien_mat, the, vi_dien_tu, note, user } = req.body;
+
+    // Enforce branch filter if present
+    if (req.branchFilter) {
+      branch = req.branchFilter.branch;
+    }
 
     if (!branch) {
       return res.status(400).json({ message: 'Thiếu thông tin chi nhánh' });
@@ -632,14 +660,14 @@ router.post('/adjust-balance', async (req, res) => {
       {
         $group: {
           _id: { source: "$source" },
-          balance: { 
-            $sum: { 
+          balance: {
+            $sum: {
               $cond: [
-                { $eq: ["$type", "thu"] }, 
-                "$amount", 
+                { $eq: ["$type", "thu"] },
+                "$amount",
                 { $multiply: ["$amount", -1] }
-              ] 
-            } 
+              ]
+            }
           }
         }
       }
@@ -656,7 +684,7 @@ router.post('/adjust-balance', async (req, res) => {
         const newBalance = Number(tien_mat);
         const currentTienMat = currentBalanceMap['tien_mat'] || 0;
         const diff = newBalance - currentTienMat;
-        
+
         if (diff !== 0) {
           const receipt_code = generateReceiptCode(diff > 0 ? 'thu' : 'chi', date);
           const adjustment = new Cashbook({
@@ -673,7 +701,7 @@ router.post('/adjust-balance', async (req, res) => {
             balance_after: newBalance,
             date: date
           });
-          
+
           await adjustment.save();
           adjustments.push(adjustment);
         }
@@ -689,7 +717,7 @@ router.post('/adjust-balance', async (req, res) => {
         const newBalance = Number(the);
         const currentThe = currentBalanceMap['the'] || 0;
         const diff = newBalance - currentThe;
-        
+
         if (diff !== 0) {
           const receipt_code = generateReceiptCode(diff > 0 ? 'thu' : 'chi', date);
           const adjustment = new Cashbook({
@@ -706,7 +734,7 @@ router.post('/adjust-balance', async (req, res) => {
             balance_after: newBalance,
             date: date
           });
-          
+
           await adjustment.save();
           adjustments.push(adjustment);
         }
@@ -722,7 +750,7 @@ router.post('/adjust-balance', async (req, res) => {
         const newBalance = Number(vi_dien_tu);
         const currentViDienTu = currentBalanceMap['vi_dien_tu'] || 0;
         const diff = newBalance - currentViDienTu;
-        
+
         if (diff !== 0) {
           const receipt_code = generateReceiptCode(diff > 0 ? 'thu' : 'chi', date);
           const adjustment = new Cashbook({
@@ -739,7 +767,7 @@ router.post('/adjust-balance', async (req, res) => {
             balance_after: newBalance,
             date: date
           });
-          
+
           await adjustment.save();
           adjustments.push(adjustment);
         }
@@ -749,10 +777,10 @@ router.post('/adjust-balance', async (req, res) => {
       }
     }
 
-    res.json({ 
-      message: '✅ Đã điều chỉnh tổng quỹ thành công!', 
+    res.json({
+      message: '✅ Đã điều chỉnh tổng quỹ thành công!',
       adjustments: adjustments.length,
-      details: adjustments 
+      details: adjustments
     });
   } catch (err) {
     res.status(400).json({ message: '❌ Lỗi điều chỉnh tổng quỹ', error: err.message });
@@ -763,14 +791,14 @@ router.post('/adjust-balance', async (req, res) => {
 router.get('/total-summary', authenticateToken, filterByBranch, async (req, res) => {
   try {
     const { from, to, type, source, search } = req.query;
-    
+
     let query = {};
-    
+
     // Áp dụng branch filter từ middleware
     if (req.branchFilter) {
       Object.assign(query, req.branchFilter);
     }
-    
+
     // Filter theo thời gian
     if (from && to) {
       query.date = {
@@ -782,17 +810,17 @@ router.get('/total-summary', authenticateToken, filterByBranch, async (req, res)
     } else if (to) {
       query.date = { $lte: new Date(to + 'T23:59:59') };
     }
-    
+
     // Filter theo loại giao dịch
     if (type && type !== 'all') {
       query.type = type;
     }
-    
+
     // Filter theo nguồn tiền
     if (source && source !== 'all') {
       query.source = source;
     }
-    
+
     // Search trong content hoặc note
     if (search && search.trim()) {
       query.$or = [
@@ -849,7 +877,7 @@ router.get('/total-summary', authenticateToken, filterByBranch, async (req, res)
     ]);
 
     const stats = totalStats[0] || { totalThu: 0, totalChi: 0, totalTransactions: 0 };
-    
+
     res.json({
       totalThu: stats.totalThu,
       totalChi: stats.totalChi,
@@ -905,7 +933,7 @@ router.get('/content-suggestions', authenticateToken, async (req, res) => {
 router.post('/content-suggestions', authenticateToken, async (req, res) => {
   try {
     const { content, type = 'all', branch } = req.body;
-    
+
     if (!content || !content.trim()) {
       return res.status(400).json({ message: '❌ Mô tả không được để trống' });
     }

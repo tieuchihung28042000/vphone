@@ -25,10 +25,22 @@ function TonKhoSoLuong() {
   const [imeiDetails, setImeiDetails] = useState([]);
   const [showLowStockOnly, setShowLowStockOnly] = useState(false);
   const [branches, setBranches] = useState([]);
+  const [userRole, setUserRole] = useState(null);
+  const [userBranch, setUserBranch] = useState(null);
   const navigate = useNavigate();
 
+  const getAuthHeaders = () => {
+    const token = localStorage.getItem('token') || sessionStorage.getItem('token');
+    return {
+      'Authorization': `Bearer ${token}`,
+      'Content-Type': 'application/json'
+    };
+  };
+
   useEffect(() => {
-    fetch(`${import.meta.env.VITE_API_URL || ''}/api/ton-kho`)
+    fetch(`${import.meta.env.VITE_API_URL || ''}/api/ton-kho`, {
+      headers: getAuthHeaders()
+    })
       .then((res) => res.json())
       .then((res) => {
         console.log("API trả về:", res.items);
@@ -43,13 +55,13 @@ function TonKhoSoLuong() {
               : "Không rõ";
 
           // Sử dụng product_name khi SKU rỗng để tránh gom nhóm sai
-          const uniqueKey = item.sku && item.sku.trim() 
-            ? item.sku 
+          const uniqueKey = item.sku && item.sku.trim()
+            ? item.sku
             : item.product_name || item.tenSanPham || `product_${item._id}`;
-          
+
           // ✅ Sửa: Gộp theo tên + SKU + thư mục + chi nhánh, KHÔNG phân biệt ngày tháng
           const key = uniqueKey + "|" + (item.product_name || item.tenSanPham || "") + "|" + (item.category || "") + "|" + (item.branch || "");
-          
+
           if (!grouped[key]) {
             grouped[key] = {
               sku: item.sku || "Không rõ",
@@ -119,22 +131,46 @@ function TonKhoSoLuong() {
       });
   }, []);
 
+  // Lấy role và branch từ token
+  useEffect(() => {
+    try {
+      const token = localStorage.getItem('token') || sessionStorage.getItem('token');
+      if (token) {
+        const payload = JSON.parse(atob(token.split('.')[1]));
+        setUserRole(payload.role || null);
+        setUserBranch(payload.branch_name || null);
+
+        // Nếu là admin chi nhánh, nhân viên hoặc thu ngân, tự động set branch
+        if (payload.branch_name && (
+          payload.role === 'quan_ly_chi_nhanh' ||
+          payload.role === 'nhan_vien_ban_hang' ||
+          payload.role === 'thu_ngan' ||
+          (payload.role === 'admin' && payload.branch_name)
+        )) {
+          setBranchFilter(payload.branch_name);
+        }
+      }
+    } catch (e) {
+      console.error('Error decoding token:', e);
+    }
+  }, []);
+
   const filteredData = data.filter((row) => {
     const combined = `${row.tenSanPham} ${row.sku}`.toLowerCase();
     const matchSearch = combined.includes(search.toLowerCase());
-    
+
     // ✅ Cải thiện logic filter để xử lý dữ liệu thiếu branch/category
-    const matchBranch = branchFilter === "all" || 
-      row.branch === branchFilter || 
+    const matchBranch = branchFilter === "all" ||
+      row.branch === branchFilter ||
       (branchFilter === "Mặc định" && (!row.branch || row.branch === ""));
-      
-    const matchCategory = categoryFilter === "all" || 
-      row.category === categoryFilter || 
+
+    const matchCategory = categoryFilter === "all" ||
+      row.category === categoryFilter ||
       (categoryFilter === "Không rõ" && (!row.category || row.category === ""));
-      
+
     const matchMonth = monthFilter === "" || row.importMonth === monthFilter;
     const matchLowStock = !showLowStockOnly || row.totalRemain < 2;
-    
+
     return matchSearch && matchBranch && matchMonth && matchLowStock && matchCategory;
   });
 
@@ -162,22 +198,24 @@ function TonKhoSoLuong() {
     setSelectedSKU(row.sku);
     setImeiList(row.imeis);
     setImeiDetails([]); // ✅ Reset data trước khi load
-    
+
     // ✅ Thêm loading state để hiển thị spinner
     if (row.imeis.length === 0) {
       console.warn('⚠️ Không có IMEI nào để hiển thị');
       return;
     }
-    
+
     // Fetch detailed info for each IMEI
     try {
       console.log('🔍 Fetching details for IMEIs:', row.imeis); // Debug
-      
+
       const imeiDetailsPromises = row.imeis.map(async (imei) => {
         try {
-          const res = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/imei-detail/${imei}`);
+          const res = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/imei-detail/${imei}`, {
+            headers: getAuthHeaders()
+          });
           console.log(`📱 IMEI ${imei} response status:`, res.status); // Debug
-          
+
           if (res.ok) {
             const data = await res.json();
             console.log(`📱 IMEI ${imei} data:`, data.item); // Debug
@@ -192,37 +230,37 @@ function TonKhoSoLuong() {
           return null;
         }
       });
-      
+
       // ✅ Đặt timeout để tránh loading vô hạn
-      const timeoutPromise = new Promise((_, reject) => 
+      const timeoutPromise = new Promise((_, reject) =>
         setTimeout(() => reject(new Error('Timeout after 30 seconds')), 30000)
       );
-      
+
       const details = await Promise.race([
         Promise.all(imeiDetailsPromises),
         timeoutPromise
       ]);
-      
+
       const validDetails = details.filter(item => item !== null);
       console.log('✅ Valid IMEI details:', validDetails); // Debug
-      
+
       setImeiDetails(validDetails);
-      
+
       // ✅ Nếu không có details nào thì hiển thị thông báo
       if (validDetails.length === 0) {
         console.warn('⚠️ Không có thông tin chi tiết nào được tải');
         // Đặt một object đặc biệt để báo lỗi
-        setImeiDetails([{ 
-          error: true, 
-          message: 'Không thể tải thông tin chi tiết IMEI. Vui lòng thử lại.' 
+        setImeiDetails([{
+          error: true,
+          message: 'Không thể tải thông tin chi tiết IMEI. Vui lòng thử lại.'
         }]);
       }
     } catch (err) {
       console.error('❌ Error fetching IMEI details:', err);
       // ✅ Đảm bảo luôn có feedback cho user
-      setImeiDetails([{ 
-        error: true, 
-        message: err.message || 'Lỗi kết nối. Vui lòng thử lại sau.' 
+      setImeiDetails([{
+        error: true,
+        message: err.message || 'Lỗi kết nối. Vui lòng thử lại sau.'
       }]);
     }
   };
@@ -289,7 +327,7 @@ function TonKhoSoLuong() {
       render: (row) => {
         let colorClass = "text-green-600";
         let icon = "✅";
-        
+
         if (row.totalRemain === 0) {
           colorClass = "text-red-600";
           icon = "❌";
@@ -298,10 +336,10 @@ function TonKhoSoLuong() {
           icon = "⚠️";
         }
 
-  return (
+        return (
           <div className={`text-sm font-bold ${colorClass}`}>
             {icon} {formatNumber(row.totalRemain)}
-      </div>
+          </div>
         );
       }
     },
@@ -311,12 +349,12 @@ function TonKhoSoLuong() {
       render: (row) => (
         <div className="flex gap-2">
           {row.imeis.length > 0 && (
-        <button
+            <button
               onClick={() => handleShowIMEI(row)}
               className="btn-action-edit text-xs"
-        >
+            >
               📱 IMEI ({row.imeis.length})
-        </button>
+            </button>
           )}
         </div>
       )
@@ -325,7 +363,7 @@ function TonKhoSoLuong() {
 
   if (loading) {
     return (
-      <Layout 
+      <Layout
         activeTab="ton-kho"
         title="📦 Tồn Kho"
         subtitle="Theo dõi số lượng tồn kho"
@@ -341,7 +379,7 @@ function TonKhoSoLuong() {
   }
 
   return (
-    <Layout 
+    <Layout
       activeTab="ton-kho"
       title="📦 Tồn Kho"
       subtitle="Theo dõi số lượng tồn kho"
@@ -382,57 +420,68 @@ function TonKhoSoLuong() {
       <FilterCard onClearFilters={clearFilters}>
         <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-4">
           <div>
-        <input
-          type="text"
+            <input
+              type="text"
               placeholder="🔍 Tìm tên hoặc SKU..."
               className="form-input"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-        />
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
           </div>
           <div>
-        <select
+            <select
               className="form-input"
-          value={branchFilter}
-          onChange={(e) => setBranchFilter(e.target.value)}
-        >
+              value={branchFilter}
+              onChange={(e) => setBranchFilter(e.target.value)}
+              disabled={
+                (userRole === 'admin' && userBranch) ||
+                userRole === 'quan_ly_chi_nhanh' ||
+                userRole === 'nhan_vien_ban_hang' ||
+                userRole === 'thu_ngan'
+              }
+              style={{
+                cursor: ((userRole === 'admin' && userBranch) || userRole === 'quan_ly_chi_nhanh' || userRole === 'nhan_vien_ban_hang' || userRole === 'thu_ngan') ? 'not-allowed' : 'pointer',
+                opacity: ((userRole === 'admin' && userBranch) || userRole === 'quan_ly_chi_nhanh' || userRole === 'nhan_vien_ban_hang' || userRole === 'thu_ngan') ? 0.6 : 1
+              }}
+            >
               <option value="all">🏢 Tất cả chi nhánh</option>
-          {branches.map(branch => (
-            <option key={branch} value={branch}>{branch}</option>
-          ))}
-        </select>
+              {/* Admin tổng thấy tất cả, admin chi nhánh chỉ thấy chi nhánh của mình */}
+              {((userRole === 'admin' && !userBranch) ? branches : (userBranch ? branches.filter(b => b === userBranch) : branches)).map(branch => (
+                <option key={branch} value={branch}>{branch}</option>
+              ))}
+            </select>
           </div>
           <div>
-        <select
+            <select
               className="form-input"
-          value={categoryFilter}
-          onChange={e => setCategoryFilter(e.target.value)}
-        >
+              value={categoryFilter}
+              onChange={e => setCategoryFilter(e.target.value)}
+            >
               <option value="all">📁 Tất cả danh mục</option>
-          {categories.map(cat => (
-            <option key={cat} value={cat}>{cat}</option>
-          ))}
-        </select>
+              {categories.map(cat => (
+                <option key={cat} value={cat}>{cat}</option>
+              ))}
+            </select>
           </div>
           <div>
-        <input
-          type="month"
+            <input
+              type="month"
               className="form-input"
-          value={monthFilter}
-          onChange={(e) => setMonthFilter(e.target.value)}
-        />
+              value={monthFilter}
+              onChange={(e) => setMonthFilter(e.target.value)}
+            />
           </div>
           <div>
             <label className="flex items-center space-x-2">
-          <input
-            type="checkbox"
-            checked={showLowStockOnly}
+              <input
+                type="checkbox"
+                checked={showLowStockOnly}
                 onChange={(e) => setShowLowStockOnly(e.target.checked)}
                 className="w-4 h-4 text-orange-600 rounded focus:ring-orange-500"
-          />
+              />
               <span className="text-sm font-medium text-gray-700">Chỉ hàng sắp hết</span>
-        </label>
-      </div>
+            </label>
+          </div>
           <div>
             <button
               onClick={exportToExcel}
@@ -465,7 +514,7 @@ function TonKhoSoLuong() {
                 Tổng cộng: <span className="font-semibold text-blue-600">{imeiList.length}</span> IMEI
               </div>
             </div>
-            
+
             {imeiList.length === 0 ? (
               <div className="text-center py-8">
                 <p className="text-gray-500">Không có IMEI nào để hiển thị.</p>
@@ -541,11 +590,10 @@ function TonKhoSoLuong() {
                           )}
                         </td>
                         <td className="px-4 py-3">
-                          <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
-                            item.status === 'sold' 
-                              ? 'bg-red-100 text-red-800' 
-                              : 'bg-green-100 text-green-800'
-                          }`}>
+                          <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${item.status === 'sold'
+                            ? 'bg-red-100 text-red-800'
+                            : 'bg-green-100 text-green-800'
+                            }`}>
                             {item.status === 'sold' ? '✅ Đã bán' : '📦 Tồn kho'}
                           </span>
                           {item.status === 'sold' && (
@@ -580,7 +628,7 @@ function TonKhoSoLuong() {
                 </table>
               </div>
             )}
-            
+
             <div className="mt-6 flex justify-end">
               <button
                 onClick={() => {

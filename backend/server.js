@@ -54,7 +54,7 @@ import returnImportRoutes from './routes/returnImport.js';
 import returnExportRoutes from './routes/returnExport.js';
 import activityLogRoutes from './routes/activityLog.js';
 import inventoryRoutes from './routes/inventory.js';
-import { authenticateToken, filterByBranch } from './middleware/auth.js';
+import { authenticateToken, requireBranch, requireRole, filterByBranch } from './middleware/auth.js';
 
 const app = express();
 
@@ -76,7 +76,7 @@ function normalizeCashSource(input) {
 
 // CORS configuration - cho phép tất cả origins để dễ triển khai
 app.use(cors({
-  origin: function(origin, callback) {
+  origin: function (origin, callback) {
     // Cho phép tất cả origins để dễ triển khai cho nhiều người
     console.log('✅ CORS allowing origin:', origin || 'no-origin');
     return callback(null, true);
@@ -107,102 +107,20 @@ app.use('/api/return-export', returnExportRoutes);
 console.log('✅ [SERVER] Đã đăng ký tất cả routes');
 
 // ==================== API: SUPER DEBUG BACKEND ====================
-app.get('/api/super-debug/:id', async (req, res) => {
-  try {
-    const id = req.params.id;
-    console.log('🔍 BACKEND SUPER DEBUG for ID:', id);
-    
-    // Test trong Inventory
-    const inventoryItem = await Inventory.findById(id);
-    console.log('📦 Backend Inventory result:', inventoryItem ? {
-      _id: inventoryItem._id,
-      product_name: inventoryItem.product_name,
-      status: inventoryItem.status,
-      price_sell: inventoryItem.price_sell,
-      giaBan: inventoryItem.giaBan
-    } : 'NOT FOUND');
-    
-    // Test trong ExportHistory  
-    let exportItem = null;
-    try {
-      exportItem = await ExportHistory.findById(id);
-      console.log('📋 Backend ExportHistory result:', exportItem ? {
-        _id: exportItem._id,
-        product_name: exportItem.product_name,
-        price_sell: exportItem.price_sell
-      } : 'NOT FOUND');
-    } catch (err) {
-      console.log('📋 ExportHistory model error:', err.message);
-    }
-    
-    // Đếm records
-    const inventoryCount = await Inventory.countDocuments();
-    const soldCount = await Inventory.countDocuments({ status: 'sold' });
-    
-    res.status(200).json({
-      message: '🔍 BACKEND SUPER DEBUG RESULTS',
-      test_id: id,
-      inventory_item: inventoryItem ? {
-        found: true,
-        _id: inventoryItem._id,
-        product_name: inventoryItem.product_name,
-        status: inventoryItem.status,
-        price_sell: inventoryItem.price_sell,
-        giaBan: inventoryItem.giaBan
-      } : { found: false },
-      export_history_item: exportItem ? {
-        found: true,
-        _id: exportItem._id,
-        product_name: exportItem.product_name,
-        price_sell: exportItem.price_sell
-      } : { found: false },
-      collections_stats: {
-        total_inventory: inventoryCount,
-        inventory_sold: soldCount
-      }
-    });
-  } catch (error) {
-    console.error('❌ Backend super debug error:', error);
-    res.status(500).json({ message: '❌ Backend super debug failed', error: error.message });
-  }
-});
 
 // ==================== API: SIMPLE UPDATE TEST ====================
-app.put('/api/test-update/:id', async (req, res) => {
-  try {
-    console.log('🧪 SIMPLE UPDATE TEST for ID:', req.params.id);
-    console.log('🧪 Request body:', req.body);
-    
-    // Đơn giản: chỉ update 1 field
-    const updated = await Inventory.findByIdAndUpdate(
-      req.params.id,
-      { $set: { note: 'TEST UPDATE WORKED', updatedAt: new Date() } },
-      { new: true }
-    );
-    
-    if (!updated) {
-      return res.status(404).json({ message: '❌ Test update failed - record not found' });
-    }
-    
-    res.status(200).json({
-      message: '✅ TEST UPDATE SUCCESS!',
-      updated_fields: {
-        _id: updated._id,
-        note: updated.note,
-        product_name: updated.product_name,
-        status: updated.status
-      }
-    });
-  } catch (error) {
-    console.error('❌ Test update error:', error);
-    res.status(500).json({ message: '❌ Test update failed', error: error.message });
-  }
-});
 
 // API lấy danh sách nhập hàng
-app.get('/api/nhap-hang', async (req, res) => {
+app.get('/api/nhap-hang', authenticateToken, filterByBranch, async (req, res) => {
   try {
-    const items = await Inventory.find().sort({ import_date: -1, _id: -1 });
+    const { branch } = req.query;
+    let query = {};
+    if (req.branchFilter) {
+      query = { ...req.branchFilter };
+    } else if (branch && branch !== 'all') {
+      query.branch = branch;
+    }
+    const items = await Inventory.find(query).sort({ import_date: -1, _id: -1 });
     res.status(200).json({ items });
   } catch (error) {
     console.error('❌ Lỗi khi lấy danh sách nhập hàng:', error.message);
@@ -211,7 +129,7 @@ app.get('/api/nhap-hang', async (req, res) => {
 });
 
 // API nhập hàng (tích hợp ghi sổ quỹ)
-app.post('/api/nhap-hang', async (req, res) => {
+app.post('/api/nhap-hang', authenticateToken, async (req, res) => {
   try {
     const {
       imei,
@@ -229,6 +147,9 @@ app.post('/api/nhap-hang', async (req, res) => {
       payments // [{source, amount}] nếu đa nguồn
     } = req.body;
 
+    // Gán user thực hiện vào log
+    const execUser = req.user?.username || 'Admin';
+
     if (imei) {
       const exists = await Inventory.findOne({ imei });
       if (exists) {
@@ -237,7 +158,7 @@ app.post('/api/nhap-hang', async (req, res) => {
       // Tính toán đã thanh toán
       const priceImportNum = Number(price_import) || 0;
       const daTTNhapNum = Number(da_thanh_toan_nhap) || 0; // ✅ Không tự động full, thiếu thì = 0
-      
+
       const newItem = new Inventory({
         imei,
         sku,
@@ -343,7 +264,7 @@ app.post('/api/nhap-hang', async (req, res) => {
       const quantityNum = Number(quantity || 1);
       const priceImportNum = Number(price_import) || 0;
       const daTTNhapNum = Number(da_thanh_toan_nhap) || 0; // ✅ Không tự động full, thiếu thì = 0
-      
+
       existItem.quantity = (existItem.quantity || 1) + quantityNum;
       existItem.import_date = import_date || existItem.import_date;
       existItem.supplier = supplier || existItem.supplier;
@@ -393,7 +314,7 @@ app.post('/api/nhap-hang', async (req, res) => {
       const quantityNum = Number(quantity || 1);
       const priceImportNum = Number(price_import) || 0;
       const daTTNhapNum = Number(da_thanh_toan_nhap) || 0; // ✅ Không tự động full, thiếu thì = 0
-      
+
       const newItem = new Inventory({
         sku,
         price_import: priceImportNum,
@@ -475,7 +396,7 @@ app.post('/api/nhap-hang', async (req, res) => {
 });
 
 // API sửa hàng
-app.put('/api/nhap-hang/:id', async (req, res) => {
+app.put('/api/nhap-hang/:id', authenticateToken, requireBranch, async (req, res) => {
   try {
     // ✅ FIX: Lấy record hiện tại trước khi cập nhật
     const existingItem = await Inventory.findById(req.params.id);
@@ -485,7 +406,7 @@ app.put('/api/nhap-hang/:id', async (req, res) => {
 
     // ✅ FIX: Tạo updateData và bảo vệ price_import khỏi bị thay đổi
     const updateData = { ...req.body };
-    
+
     // ✅ Bảo vệ price_import - chỉ cho phép cập nhật nếu có giá trị và khác 0
     if (updateData.price_import !== undefined) {
       const newPriceImport = Number(updateData.price_import) || 0;
@@ -530,7 +451,7 @@ app.put('/api/nhap-hang/:id', async (req, res) => {
 });
 
 // API xoá hàng
-app.delete('/api/nhap-hang/:id', async (req, res) => {
+app.delete('/api/nhap-hang/:id', authenticateToken, requireBranch, async (req, res) => {
   try {
     const deletedItem = await Inventory.findByIdAndDelete(req.params.id);
 
@@ -549,7 +470,7 @@ app.delete('/api/nhap-hang/:id', async (req, res) => {
 });
 
 // API xuất hàng (tích hợp ghi sổ quỹ)
-app.post('/api/xuat-hang', async (req, res) => {
+app.post('/api/xuat-hang', authenticateToken, requireBranch, async (req, res) => {
   try {
     const {
       imei,
@@ -561,7 +482,6 @@ app.post('/api/xuat-hang', async (req, res) => {
       sku,
       product_name,
       sold_date,
-      // debt, // ✅ REMOVED: Không dùng field debt nữa
       da_thanh_toan, // Số tiền đã thanh toán
       branch,
       source, // Nguồn tiền (frontend truyền lên)
@@ -569,12 +489,14 @@ app.post('/api/xuat-hang', async (req, res) => {
       quantity // Số lượng (cho phụ kiện)
     } = req.body;
 
+    const execUser = req.user?.username || 'Admin';
+
     console.log('🔍 POST /api/xuat-hang received da_thanh_toan:', da_thanh_toan);
     console.log('🔍 POST da_thanh_toan type:', typeof da_thanh_toan);
     console.log('🔍 POST full request body:', req.body);
 
     let item;
-    
+
     // ✅ Xử lý phụ kiện và sản phẩm có IMEI khác nhau
     if (is_accessory || !imei) {
       // Phụ kiện: ưu tiên tìm theo SKU + chi nhánh, kèm theo tên; chỉ lấy hàng còn tồn
@@ -590,10 +512,10 @@ app.post('/api/xuat-hang', async (req, res) => {
         ...(orConds.length > 0 ? { $or: orConds } : {})
       };
       const availableItems = await Inventory.find(query);
-      
+
       if (availableItems.length === 0) {
         // Thử tìm mềm hơn theo SKU + chi nhánh, bất kể status (để biết vì sao không thấy)
-        const soft = await Inventory.findOne({ sku, ...(branch ? { branch } : {}), status: { $in: ['in_stock','sold'] } });
+        const soft = await Inventory.findOne({ sku, ...(branch ? { branch } : {}), status: { $in: ['in_stock', 'sold'] } });
         if (!soft) {
           return res.status(404).json({ message: '❌ Không tìm thấy phụ kiện trong kho.' });
         }
@@ -602,24 +524,24 @@ app.post('/api/xuat-hang', async (req, res) => {
         }
         availableItems.push(soft);
       }
-      
+
       // Lấy item đầu tiên có số lượng > 0
       item = availableItems.find(i => (i.quantity || 0) > 0) || availableItems[0];
-      
+
       if (!item) {
         return res.status(404).json({ message: '❌ Phụ kiện đã hết hàng.' });
       }
-      
+
       // ✅ Kiểm tra số lượng trực tiếp từ Inventory (logic đơn giản)
       const sellQuantity = parseInt(quantity) || 1;
       const currentQuantity = item.quantity || 0;
-      
+
       if (currentQuantity < sellQuantity) {
-        return res.status(400).json({ 
-          message: `❌ Không đủ số lượng. Còn lại: ${currentQuantity}, yêu cầu: ${sellQuantity}` 
+        return res.status(400).json({
+          message: `❌ Không đủ số lượng. Còn lại: ${currentQuantity}, yêu cầu: ${sellQuantity}`
         });
       }
-      
+
     } else {
       // Sản phẩm có IMEI: tìm theo IMEI
       item = await Inventory.findOne({ imei });
@@ -636,21 +558,21 @@ app.post('/api/xuat-hang', async (req, res) => {
     if (is_accessory || !imei) {
       // ✅ PHỤ KIỆN: TRỪ trực tiếp quantity trong Inventory (logic đơn giản)
       const sellQuantity = parseInt(quantity) || 1;
-      
+
       // ✅ Trừ trực tiếp quantity trong Inventory
       item.quantity = (item.quantity || 0) - sellQuantity;
-      
+
       // Nếu hết hàng thì chuyển status
       if (item.quantity <= 0) {
         item.status = 'sold';
         item.quantity = 0;
       }
-      
+
       // ✅ Ghi vào ExportHistory thay vì Inventory
       const priceSellNum = Number(price_sell) || 0;
       // ✅ FIX: Không tự động tính da_thanh_toan khi bán hàng, lưu đúng giá trị người dùng nhập
       let daTTNum = parseFloat(da_thanh_toan) || 0; // Lưu giá trị người dùng nhập (kể cả 0)
-      
+
       console.log('🔧 Creating ExportHistory for accessory with quantity:', sellQuantity); // ✅ Debug log
       console.log('🔍 POST Accessory da_thanh_toan - FIXED:', {
         input_da_thanh_toan: da_thanh_toan,
@@ -659,7 +581,7 @@ app.post('/api/xuat-hang', async (req, res) => {
         sellQuantity,
         note: 'Không tự động tính, lưu đúng giá trị người dùng nhập'
       });
-      
+
       const soldAccessory = new ExportHistory({
         imei: '', // Phụ kiện không có IMEI
         sku: item.sku,
@@ -680,7 +602,7 @@ app.post('/api/xuat-hang', async (req, res) => {
         created_by_email: req.user?.email || '',
         created_by_name: req.user?.full_name || ''
       });
-      
+
       console.log('✅ ExportHistory record to be saved:', {
         sku: soldAccessory.sku,
         product_name: soldAccessory.product_name,
@@ -688,7 +610,7 @@ app.post('/api/xuat-hang', async (req, res) => {
         price_sell: soldAccessory.price_sell,
         da_thanh_toan: soldAccessory.da_thanh_toan
       }); // ✅ Debug log
-      
+
       await soldAccessory.save();
       // Lịch sử hoạt động: Xuất hàng phụ kiện
       try {
@@ -705,7 +627,7 @@ app.post('/api/xuat-hang', async (req, res) => {
       } catch (e) { /* ignore */ }
       // ✅ Save item vì đã thay đổi quantity
       await item.save();
-      
+
       // ✅ DEBUG: Kiểm tra record sau khi lưu
       const savedRecord = await ExportHistory.findById(soldAccessory._id);
       console.log('🔍 SAVED ACCESSORY RECORD:', {
@@ -714,23 +636,23 @@ app.post('/api/xuat-hang', async (req, res) => {
         quantity: savedRecord.quantity,
         price_sell: savedRecord.price_sell
       });
-      
+
       // Đặt item thành soldAccessory để ghi sổ quỹ
       item = soldAccessory;
-      
+
     } else {
       // ✅ Sản phẩm IMEI: Tạo record mới trong ExportHistory + cập nhật Inventory
-      
+
       // 1. Cập nhật Inventory (chuyển status sang sold)
       item.status = 'sold';
       item.sold_date = sold_date ? new Date(sold_date) : new Date();
       await item.save();
-      
+
       // 2. Tạo record mới trong ExportHistory
       const priceSellNum = Number(price_sell) || 0;
       // ✅ FIX: Không tự động tính da_thanh_toan khi bán hàng, lưu đúng giá trị người dùng nhập
       let daTTNum = parseFloat(da_thanh_toan) || 0; // Lưu giá trị người dùng nhập (kể cả 0)
-      
+
       console.log('🔧 Creating ExportHistory for IMEI product with quantity: 1'); // ✅ Debug log
       console.log('🔍 POST IMEI da_thanh_toan - FIXED:', {
         input_da_thanh_toan: da_thanh_toan,
@@ -738,7 +660,7 @@ app.post('/api/xuat-hang', async (req, res) => {
         priceSellNum,
         note: 'Không tự động tính, lưu đúng giá trị người dùng nhập'
       });
-      
+
       const soldItem = new ExportHistory({
         imei: item.imei,
         sku: sku || item.sku,
@@ -759,7 +681,7 @@ app.post('/api/xuat-hang', async (req, res) => {
         created_by_email: req.user?.email || '',
         created_by_name: req.user?.full_name || ''
       });
-      
+
       console.log('✅ ExportHistory IMEI record to be saved:', {
         imei: soldItem.imei,
         sku: soldItem.sku,
@@ -768,7 +690,7 @@ app.post('/api/xuat-hang', async (req, res) => {
         price_sell: soldItem.price_sell,
         da_thanh_toan: soldItem.da_thanh_toan
       }); // ✅ Debug log
-      
+
       await soldItem.save();
       // Lịch sử hoạt động: Xuất hàng IMEI
       try {
@@ -783,7 +705,7 @@ app.post('/api/xuat-hang', async (req, res) => {
           payload_snapshot: soldItem.toObject(),
         });
       } catch (e) { /* ignore */ }
-      
+
       // ✅ DEBUG: Kiểm tra record sau khi lưu
       const savedIMEIRecord = await ExportHistory.findById(soldItem._id);
       console.log('🔍 SAVED IMEI RECORD:', {
@@ -793,7 +715,7 @@ app.post('/api/xuat-hang', async (req, res) => {
         price_sell: savedIMEIRecord.price_sell,
         imei: savedIMEIRecord.imei
       });
-      
+
       // Cập nhật item để sử dụng cho phần ghi sổ quỹ phía dưới
       item = soldItem;
     }
@@ -801,10 +723,10 @@ app.post('/api/xuat-hang', async (req, res) => {
     const profit = (item.giaBan || 0) - (item.price_import || 0);
 
     // --- Ghi SỔ QUỸ: THU TIỀN ---
-    const productDescription = item.imei 
+    const productDescription = item.imei
       ? `${item.product_name} (IMEI: ${item.imei})`
       : `${item.product_name} (Phụ kiện - SL: ${item.quantity || 1})`;
-      
+
     // Ghi sổ quỹ với số tiền đã thanh toán thực tế
     const amountReceived = Number(item.da_thanh_toan || da_thanh_toan || 0);
     if (amountReceived > 0) {
@@ -850,59 +772,45 @@ app.post('/api/xuat-hang', async (req, res) => {
   }
 });
 
-// API cảnh báo tồn kho - ✅ ADDED: Tạo API mới cho cảnh báo tồn kho
-app.get('/api/canh-bao-ton-kho', async (req, res) => {
+// API cảnh báo tồn kho
+app.get('/api/canh-bao-ton-kho', authenticateToken, filterByBranch, async (req, res) => {
   try {
-    // Lấy tất cả phụ kiện (IMEI null) và máy iPhone (có IMEI) có status in_stock
-    const inventories = await Inventory.find({ status: 'in_stock' });
+    const { branch } = req.query;
+    let query = { status: 'in_stock' };
 
-    // Lấy tổng xuất theo từng sku (chỉ cho phụ kiện)
-    const exportAgg = await ExportHistory.aggregate([
-      { $match: { imei: { $in: [null, ""] } } }, // Chỉ phụ kiện (không IMEI)
-      { $group: { _id: "$sku", totalExported: { $sum: "$quantity" } } }
-    ]);
-    const exportMap = {};
-    exportAgg.forEach(e => exportMap[e._id] = e.totalExported);
+    // Apply branch filter (from middleware or query)
+    if (req.branchFilter) {
+      query = { ...query, ...req.branchFilter };
+    } else if (branch && branch !== 'all') {
+      query.branch = branch;
+    }
 
-    // Gom phụ kiện thành 1 dòng duy nhất mỗi SKU
-    const accessoriesMap = {};
-    
-    for (const item of inventories) {
-      if (!item.imei) {
-        // Phụ kiện: gom theo SKU + tên + chi nhánh
-        const key = (item.sku || '') + '|' + (item.product_name || item.tenSanPham || '') + '|' + (item.branch || '');
-        if (!accessoriesMap[key]) {
-          accessoriesMap[key] = {
-            sku: item.sku || "",
-            tenSanPham: item.product_name || item.tenSanPham || "",
-            product_name: item.product_name || item.tenSanPham || "",
-            branch: item.branch || "",
-            quantity: 0, // Tổng số nhập
-            totalRemain: 0, // Tổng tồn kho
-          };
-        }
-        accessoriesMap[key].quantity += Number(item.quantity) || 1;
+    // Lấy tất cả kho theo điều kiện
+    const inventories = await Inventory.find(query);
+
+    // Grouping logic for both accessories and others
+    const map = {};
+    inventories.forEach(item => {
+      // Group by SKU and branch
+      const key = (item.sku || 'N/A') + '|' + (item.branch || 'N/A');
+      if (!map[key]) {
+        map[key] = {
+          sku: item.sku || "N/A",
+          tenSanPham: item.product_name || item.tenSanPham || "N/A",
+          branch: item.branch || "Mặc định",
+          totalRemain: 0,
+        };
       }
-    }
-    
-    // Tính số lượng còn lại cho phụ kiện = số nhập - số xuất
-    const lowStockItems = [];
-    for (const key in accessoriesMap) {
-      const acc = accessoriesMap[key];
-      const totalExported = exportMap[acc.sku] || 0;
-      acc.totalRemain = acc.quantity - totalExported;
-      if (acc.totalRemain < 0) acc.totalRemain = 0;
-      
-      // Chỉ lấy các sản phẩm có tồn kho <= 2 (cảnh báo)
-      if (acc.totalRemain <= 2) {
-        lowStockItems.push(acc);
-      }
-    }
+      // For items with quantity, add it; for items without (IMEI), it's 1
+      map[key].totalRemain += Number(item.quantity || 1);
+    });
+
+    const result = Object.values(map).filter(item => item.totalRemain < 2);
 
     res.status(200).json({
       message: '✅ Danh sách cảnh báo tồn kho',
-      total: lowStockItems.length,
-      items: lowStockItems,
+      total: result.length,
+      items: result,
     });
   } catch (error) {
     console.error('❌ Lỗi khi lấy cảnh báo tồn kho:', error.message);
@@ -911,13 +819,17 @@ app.get('/api/canh-bao-ton-kho', async (req, res) => {
 });
 
 // API chi tiết IMEI
-app.get('/api/imei-detail/:imei', async (req, res) => {
+app.get('/api/imei-detail/:imei', authenticateToken, filterByBranch, async (req, res) => {
   try {
     const { imei } = req.params;
-    const item = await Inventory.findOne({ imei });
-    
+    let query = { imei };
+    if (req.branchFilter) {
+      query = { ...query, ...req.branchFilter };
+    }
+    const item = await Inventory.findOne(query);
+
     if (!item) {
-      return res.status(404).json({ message: '❌ Không tìm thấy IMEI này' });
+      return res.status(404).json({ message: '❌ Không tìm thấy IMEI này hoặc bạn không có quyền truy cập.' });
     }
 
     res.status(200).json({
@@ -931,17 +843,24 @@ app.get('/api/imei-detail/:imei', async (req, res) => {
 });
 
 // API tồn kho (logic đơn giản)
-app.get('/api/ton-kho', async (req, res) => {
+app.get('/api/ton-kho', authenticateToken, filterByBranch, async (req, res) => {
   try {
     console.log('🔍 API /api/ton-kho được gọi (logic đơn giản)');
-    
+    const { branch } = req.query;
+    let filter = {};
+    if (req.branchFilter) {
+      filter = { ...req.branchFilter };
+    } else if (branch && branch !== 'all') {
+      filter.branch = branch;
+    }
+
     // ✅ Chỉ lấy từ Inventory, không cần tính toán phức tạp
-    const items = await Inventory.find({});
-    
+    const items = await Inventory.find(filter);
+
     // ✅ Phân loại sản phẩm: iPhone (có IMEI) vs phụ kiện (không IMEI)
     const imeiItems = []; // Máy có IMEI
     const accessoriesMap = {}; // Phụ kiện gom nhóm theo SKU
-    
+
     for (const item of items) {
       if (item.imei) {
         // ✅ Sản phẩm có IMEI: giữ nguyên từng item riêng biệt
@@ -986,7 +905,7 @@ app.get('/api/ton-kho', async (req, res) => {
         }
       }
     }
-    
+
     // Kết quả trả về: iPhone (IMEI riêng) + phụ kiện (mỗi loại 1 dòng)
     const accessoriesItems = Object.values(accessoriesMap);
     const allItems = [...imeiItems, ...accessoriesItems];
@@ -1004,45 +923,7 @@ app.get('/api/ton-kho', async (req, res) => {
   }
 });
 
-// API cảnh báo tồn kho
-app.get('/api/canh-bao-ton-kho', async (req, res) => {
-  try {
-    const items = await Inventory.find({ status: 'in_stock' });
-
-    const grouped = {};
-    items.forEach((item) => {
-      const key = item.sku + (item.branch || '');
-      if (!grouped[key]) {
-        grouped[key] = {
-          sku: item.sku || 'Không rõ',
-          tenSanPham: item.tenSanPham || item.product_name || 'Không rõ',
-          branch: item.branch || 'Mặc định',
-          totalImport: 0,
-          imeis: [],
-        };
-      }
-
-      grouped[key].totalImport += 1;
-      grouped[key].imeis.push(item.imei);
-    });
-
-    const result = Object.values(grouped)
-      .map((g) => ({
-        ...g,
-        totalRemain: g.imeis.length,
-      }))
-      .filter((g) => g.totalRemain < 2);
-
-    res.status(200).json({
-      message: '✅ Danh sách hàng tồn kho thấp (dưới 2)',
-      total: result.length,
-      items: result,
-    });
-  } catch (error) {
-    console.error('❌ Lỗi khi lấy danh sách cảnh báo tồn kho:', error.message);
-    res.status(500).json({ message: '❌ Lỗi server khi xử lý cảnh báo tồn kho', error: error.message });
-  }
-});
+// Duplicate route removed (combined above)
 
 // API danh sách xuất hàng  
 app.get('/api/xuat-hang-list', authenticateToken, filterByBranch, async (req, res) => {
@@ -1052,18 +933,18 @@ app.get('/api/xuat-hang-list', authenticateToken, filterByBranch, async (req, re
     if (req.branchFilter) {
       query.branch = req.branchFilter.branch;
     }
-    
+
     // ✅ Lấy từ ExportHistory thay vì Inventory (vì dữ liệu thực tế ở đây)
     const rawItems = await ExportHistory.find(query)
-      .sort({ 
+      .sort({
         sold_date: -1,      // Ưu tiên theo ngày bán (mới nhất trước)
         export_date: -1,    // Hoặc export_date
         updated_at: -1,     // Nếu không có sold_date thì theo updated_at  
         created_at: -1      // Cuối cùng theo created_at
       });
-    
+
     console.log(`✅ Found ${rawItems.length} export records from ExportHistory (including accessories)`);
-    
+
     // Debug: Log một sample để check field (chỉ trong development)
     if (rawItems.length > 0 && process.env.NODE_ENV === 'development') {
       console.log('Sample export record fields:', {
@@ -1078,7 +959,7 @@ app.get('/api/xuat-hang-list', authenticateToken, filterByBranch, async (req, re
         all_keys: Object.keys(rawItems[0].toObject())
       });
     }
-    
+
     // ✅ Đồng bộ trạng thái hoàn trả từ bảng ReturnExport (phòng khi thiếu cờ is_returned)
     let returnedSet = new Set();
     try {
@@ -1126,11 +1007,11 @@ app.get('/api/xuat-hang-list', authenticateToken, filterByBranch, async (req, re
         category: item.category || '',
       }
     }));
-    
-    res.status(200).json({ 
+
+    res.status(200).json({
       message: '✅ Danh sách xuất hàng',
       total: items.length,
-      items 
+      items
     });
   } catch (error) {
     console.error('❌ Lỗi API xuat-hang-list:', error);
@@ -1139,7 +1020,7 @@ app.get('/api/xuat-hang-list', authenticateToken, filterByBranch, async (req, re
 });
 
 // API sửa xuất hàng - ĐƠN GIẢN HÓA THEO CÁCH NHẬP HÀNG
-app.put('/api/xuat-hang/:id', async (req, res) => {
+app.put('/api/xuat-hang/:id', authenticateToken, requireBranch, async (req, res) => {
   try {
     console.log('🔄 PUT Request data:', req.body); // Debug
     console.log('🔍 PUT Request ID:', req.params.id); // Debug
@@ -1170,7 +1051,7 @@ app.put('/api/xuat-hang/:id', async (req, res) => {
     if (updateData.quantity) {
       updateData.quantity = parseInt(updateData.quantity) || 1;
     }
-    
+
     const updatedItem = await ExportHistory.findByIdAndUpdate(
       req.params.id,
       updateData,
@@ -1195,7 +1076,7 @@ app.put('/api/xuat-hang/:id', async (req, res) => {
   }
 });
 
-app.delete('/api/xuat-hang/:id', async (req, res) => {
+app.delete('/api/xuat-hang/:id', authenticateToken, requireBranch, async (req, res) => {
   try {
     // ✅ Xóa từ ExportHistory
     const exportRecord = await ExportHistory.findById(req.params.id);
@@ -1212,11 +1093,11 @@ app.delete('/api/xuat-hang/:id', async (req, res) => {
         await inventoryItem.save();
       }
     }
-    
+
     // ✅ Nếu là phụ kiện, CỘNG lại số lượng trong Inventory (logic đơn giản)
     if (!exportRecord.imei && exportRecord.sku) {
-      const inventoryItem = await Inventory.findOne({ 
-        sku: exportRecord.sku, 
+      const inventoryItem = await Inventory.findOne({
+        sku: exportRecord.sku,
         status: { $in: ['in_stock', 'sold'] }
       });
       if (inventoryItem) {
@@ -1238,9 +1119,10 @@ app.delete('/api/xuat-hang/:id', async (req, res) => {
 });
 
 // === API TRẢ NỢ NHÀ CUNG CẤP (ghi chi vào sổ quỹ) ===
-app.post('/api/tra-no-ncc', async (req, res) => {
+app.post('/api/tra-no-ncc', authenticateToken, requireBranch, async (req, res) => {
   try {
     const { supplier, amount, date, branch, source, note } = req.body;
+    const execUser = req.user?.username || 'Admin';
     await Cashbook.create({
       type: 'chi',
       amount: Number(amount),
@@ -1258,9 +1140,10 @@ app.post('/api/tra-no-ncc', async (req, res) => {
 });
 
 // === API THU NỢ KHÁCH HÀNG (ghi thu vào sổ quỹ) ===
-app.post('/api/thu-no-khach', async (req, res) => {
+app.post('/api/thu-no-khach', authenticateToken, requireBranch, async (req, res) => {
   try {
     const { customer, amount, date, branch, source, note } = req.body;
+    const execUser = req.user?.username || 'Admin';
     await Cashbook.create({
       type: 'thu',
       amount: Number(amount),
@@ -1290,56 +1173,56 @@ const mongooseOptions = {
 };
 
 mongoose.connect(process.env.MONGODB_URI, mongooseOptions)
-.then(async () => {
-  console.log('✅ Kết nối MongoDB thành công');
-  console.log('🔧 MongoDB connection options:', mongooseOptions);
-  console.log('🔧 [MONGODB] Checking models...');
-  
-  // Kiểm tra models có hoạt động không
-  try {
-    await ReturnImport.init();
-    console.log('✅ [MONGODB] ReturnImport model initialized');
-  } catch (error) {
-    console.error('❌ [MONGODB] ReturnImport model error:', error.message);
-  }
-  
-  try {
-    await ReturnExport.init();
-    console.log('✅ [MONGODB] ReturnExport model initialized');
-  } catch (error) {
-    console.error('❌ [MONGODB] ReturnExport model error:', error.message);
-  }
-  
-  try {
-    await User.init();
-    console.log('✅ [MONGODB] User model initialized');
-  } catch (error) {
-    console.error('❌ [MONGODB] User model error:', error.message);
-  }
-  
-  try {
-    await Branch.init();
-    console.log('✅ [MONGODB] Branch model initialized');
-  } catch (error) {
-    console.error('❌ [MONGODB] Branch model error:', error.message);
-  }
-  
-  // Tự động tạo admin user nếu chưa có
-  const initAdminModule = await import('./scripts/init-admin.js');
-  const { createDefaultAdmin } = initAdminModule;
-  await createDefaultAdmin();
-})
-.catch(err => {
-  console.error('❌ Kết nối MongoDB lỗi:', err);
-  console.error('❌ MongoDB Error Details:', {
-    message: err.message,
-    name: err.name,
-    code: err.code,
-    codeName: err.codeName,
-    connectionString: process.env.MONGODB_URI ? process.env.MONGODB_URI.replace(/\/\/.*@/, '//****:****@') : 'not set'
+  .then(async () => {
+    console.log('✅ Kết nối MongoDB thành công');
+    console.log('🔧 MongoDB connection options:', mongooseOptions);
+    console.log('🔧 [MONGODB] Checking models...');
+
+    // Kiểm tra models có hoạt động không
+    try {
+      await ReturnImport.init();
+      console.log('✅ [MONGODB] ReturnImport model initialized');
+    } catch (error) {
+      console.error('❌ [MONGODB] ReturnImport model error:', error.message);
+    }
+
+    try {
+      await ReturnExport.init();
+      console.log('✅ [MONGODB] ReturnExport model initialized');
+    } catch (error) {
+      console.error('❌ [MONGODB] ReturnExport model error:', error.message);
+    }
+
+    try {
+      await User.init();
+      console.log('✅ [MONGODB] User model initialized');
+    } catch (error) {
+      console.error('❌ [MONGODB] User model error:', error.message);
+    }
+
+    try {
+      await Branch.init();
+      console.log('✅ [MONGODB] Branch model initialized');
+    } catch (error) {
+      console.error('❌ [MONGODB] Branch model error:', error.message);
+    }
+
+    // Tự động tạo admin user nếu chưa có
+    const initAdminModule = await import('./scripts/init-admin.js');
+    const { createDefaultAdmin } = initAdminModule;
+    await createDefaultAdmin();
+  })
+  .catch(err => {
+    console.error('❌ Kết nối MongoDB lỗi:', err);
+    console.error('❌ MongoDB Error Details:', {
+      message: err.message,
+      name: err.name,
+      code: err.code,
+      codeName: err.codeName,
+      connectionString: process.env.MONGODB_URI ? process.env.MONGODB_URI.replace(/\/\/.*@/, '//****:****@') : 'not set'
+    });
+    // Không exit process để có thể retry hoặc handle gracefully
   });
-  // Không exit process để có thể retry hoặc handle gracefully
-});
 
 app.get('/', (req, res) => {
   res.send('🎉 Backend đang chạy!');
@@ -1347,76 +1230,14 @@ app.get('/', (req, res) => {
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {
-  res.status(200).json({ 
-    status: 'healthy', 
+  res.status(200).json({
+    status: 'healthy',
     timestamp: new Date().toISOString(),
     uptime: process.uptime()
   });
 });
 
 // Test endpoint for user creation
-app.get('/api/test-user-creation', async (req, res) => {
-  try {
-    console.log('🔧 [TEST] Testing user creation endpoint...');
-    
-    // Test User model
-    const userCount = await User.countDocuments();
-    console.log('✅ [TEST] User count:', userCount);
-    
-    // Test Branch model
-    const branchCount = await Branch.countDocuments();
-    console.log('✅ [TEST] Branch count:', branchCount);
-    
-    res.json({
-      status: 'success',
-      models: {
-        User: { count: userCount, available: true },
-        Branch: { count: branchCount, available: true }
-      },
-      endpoints: {
-        register: '/api/auth/register',
-        branches: '/api/branches'
-      }
-    });
-  } catch (error) {
-    console.error('❌ [TEST] User creation test error:', error);
-    res.status(500).json({
-      status: 'error',
-      message: error.message,
-      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
-    });
-  }
-});
-
-// Test endpoint for return models
-app.get('/api/test-return-models', async (req, res) => {
-  try {
-    console.log('🔧 [TEST] Testing return models...');
-    
-    // Test ReturnImport model
-    const returnImportCount = await ReturnImport.countDocuments();
-    console.log('✅ [TEST] ReturnImport count:', returnImportCount);
-    
-    // Test ReturnExport model
-    const returnExportCount = await ReturnExport.countDocuments();
-    console.log('✅ [TEST] ReturnExport count:', returnExportCount);
-    
-    res.json({
-      status: 'success',
-      models: {
-        ReturnImport: { count: returnImportCount, available: true },
-        ReturnExport: { count: returnExportCount, available: true }
-      }
-    });
-  } catch (error) {
-    console.error('❌ [TEST] Return models error:', error);
-    res.status(500).json({
-      status: 'error',
-      message: error.message,
-      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
-    });
-  }
-});
 
 // Only start server if not in test mode
 if (process.env.NODE_ENV !== 'test') {
