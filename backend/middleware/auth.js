@@ -55,27 +55,38 @@ const requireBranch = (req, res, next) => {
     return res.status(401).json({ message: 'Authentication required' });
   }
 
-  // Admin tổng (không có branch_id) có thể truy cập tất cả chi nhánh
+  // Admin tổng (role === 'admin' và không có branch_id) có thể truy cập tất cả chi nhánh
   if (req.user.role === 'admin' && !req.user.branch_id) {
     return next();
   }
 
-  // Admin chi nhánh hoặc user khác chỉ truy cập chi nhánh của mình
-  if (!req.user.branch_id && !req.user.branch_name) {
-    return res.status(403).json({ message: 'User not assigned to any branch' });
+  // Admin chi nhánh (quan_ly_chi_nhanh) PHẢI có branch_id và branch_name
+  if (req.user.role === 'quan_ly_chi_nhanh') {
+    if (!req.user.branch_id || !req.user.branch_name) {
+      return res.status(403).json({ 
+        message: 'Admin chi nhánh phải được gán vào một chi nhánh. Vui lòng liên hệ quản trị viên để cập nhật thông tin chi nhánh.' 
+      });
+    }
   }
 
-  // Thêm branch filter vào query nếu có
-  if (req.query.branch && req.user.branch_name && req.user.branch_name !== req.query.branch) {
-    return res.status(403).json({ message: 'Access denied to this branch (query)' });
+  // Các role khác (thu_ngan, nhan_vien_ban_hang) cũng cần branch info
+  if (req.user.role !== 'admin' && !req.user.branch_id && !req.user.branch_name) {
+    return res.status(403).json({ 
+      message: 'Người dùng chưa được gán vào chi nhánh nào. Vui lòng liên hệ quản trị viên.' 
+    });
+  }
+
+  // Kiểm tra branch trong query parameter
+  if (req.query.branch && req.user.branch_name && req.query.branch !== 'all' && req.query.branch !== req.user.branch_name) {
+    return res.status(403).json({ message: 'Không đủ quyền truy cập vào chi nhánh này' });
   }
 
   // Kiểm tra branch trong body cho các mutation
-  if (req.body.branch && req.user.branch_name && req.user.branch_name !== req.body.branch) {
-    return res.status(403).json({ message: 'Access denied to this branch (body)' });
+  if (req.body.branch && req.user.branch_name && req.body.branch !== req.user.branch_name) {
+    return res.status(403).json({ message: 'Không đủ quyền thao tác với chi nhánh này' });
   }
 
-  // Tự động set branch filter nếu user có branch_name
+  // Tự động set branch filter nếu user có branch_name và chưa có trong query
   if (req.user.branch_name && !req.query.branch) {
     req.query.branch = req.user.branch_name;
   }
@@ -89,7 +100,7 @@ const filterByBranch = (req, res, next) => {
     return res.status(401).json({ message: 'Authentication required' });
   }
 
-  // Admin tổng (không có branch_id) có thể xem tất cả
+  // Admin tổng (role === 'admin' và không có branch_id) có thể xem tất cả
   if (req.user.role === 'admin' && !req.user.branch_id) {
     return next();
   }
@@ -97,6 +108,11 @@ const filterByBranch = (req, res, next) => {
   // Admin chi nhánh, nhân viên hoặc thu ngân chỉ xem chi nhánh của mình
   if (req.user.branch_name) {
     req.branchFilter = { branch: req.user.branch_name };
+  } else if (req.user.role !== 'admin') {
+    // Nếu không phải admin tổng và không có branch_name, trả về lỗi
+    return res.status(403).json({ 
+      message: 'Người dùng chưa được gán vào chi nhánh nào. Vui lòng liên hệ quản trị viên.' 
+    });
   }
 
   next();

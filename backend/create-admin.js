@@ -17,7 +17,7 @@ const UserSchema = new mongoose.Schema({
   email: { type: String, required: true, unique: true },
   username: { type: String, unique: true, sparse: true },
   password: { type: String, required: true },
-  role: { type: String, enum: ['admin', 'quan_ly', 'nhan_vien_ban_hang', 'thu_ngan'], required: true },
+  role: { type: String, enum: ['admin', 'quan_ly_chi_nhanh', 'nhan_vien_ban_hang', 'thu_ngan'], required: true },
   full_name: { type: String, required: true },
   phone: { type: String },
   approved: { type: Boolean, default: false },

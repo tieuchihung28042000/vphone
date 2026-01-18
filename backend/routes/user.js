@@ -1,8 +1,10 @@
 import express from 'express';
 import User from '../models/User.js';
+import Branch from '../models/Branch.js';
 import ActivityLog from '../models/ActivityLog.js';
 import { authenticateToken, requireRole } from '../middleware/auth.js';
 import bcrypt from 'bcryptjs';
+import mongoose from 'mongoose';
 
 const router = express.Router();
 
@@ -216,7 +218,7 @@ router.put('/change-password/:id', authenticateToken, requireRole(['admin', 'thu
 router.put('/update/:id', authenticateToken, requireRole(['admin', 'thu_ngan']), async (req, res) => {
   try {
     const { id } = req.params;
-    const { full_name, email, phone, branch_id, role } = req.body;
+    const { full_name, email, phone, branch_id, branch_name, role } = req.body;
 
     const target = await User.findById(id);
     if (!target) return res.status(404).json({ message: 'User không tồn tại' });
@@ -237,16 +239,62 @@ router.put('/update/:id', authenticateToken, requireRole(['admin', 'thu_ngan']),
 
     if (full_name !== undefined) target.full_name = full_name;
     if (phone !== undefined) target.phone = phone;
-    if (branch_id !== undefined) {
-      // Xử lý branch_id: nếu role là admin hoặc branch_id là empty string thì set null
-      target.branch_id = (role === 'admin' || branch_id === '') ? null : branch_id;
+
+    // Xử lý role và branch_id
+    const newRole = role !== undefined ? role : target.role;
+    
+    // Nếu cập nhật role thành admin tổng, clear branch info
+    if (role === 'admin') {
+      target.branch_id = null;
+      target.branch_name = null;
+    } else if (role === 'quan_ly_chi_nhanh') {
+      // Nếu cập nhật role thành quan_ly_chi_nhanh, phải có branch_id
+      if (branch_id !== undefined) {
+        if (!branch_id || branch_id === '') {
+          return res.status(400).json({ message: 'Admin chi nhánh phải được gán vào một chi nhánh' });
+        }
+        
+        // Validate branch_id
+        if (!mongoose.Types.ObjectId.isValid(branch_id)) {
+          return res.status(400).json({ message: 'ID chi nhánh không hợp lệ' });
+        }
+        
+        // Kiểm tra branch tồn tại
+        const branch = await Branch.findById(branch_id);
+        if (!branch) {
+          return res.status(400).json({ message: 'Chi nhánh không tồn tại trong hệ thống' });
+        }
+        
+        target.branch_id = branch_id;
+        // Tự động lấy branch_name nếu không có
+        target.branch_name = branch_name || branch.name;
+      } else if (!target.branch_id) {
+        // Nếu đang cập nhật role thành quan_ly_chi_nhanh mà chưa có branch_id
+        return res.status(400).json({ message: 'Admin chi nhánh phải được gán vào một chi nhánh' });
+      }
+    } else if (branch_id !== undefined) {
+      // Các role khác (thu_ngan, nhan_vien_ban_hang)
+      if (branch_id === '' || branch_id === null) {
+        target.branch_id = null;
+        target.branch_name = null;
+      } else {
+        // Validate branch_id
+        if (!mongoose.Types.ObjectId.isValid(branch_id)) {
+          return res.status(400).json({ message: 'ID chi nhánh không hợp lệ' });
+        }
+        
+        const branch = await Branch.findById(branch_id);
+        if (!branch) {
+          return res.status(400).json({ message: 'Chi nhánh không tồn tại trong hệ thống' });
+        }
+        
+        target.branch_id = branch_id;
+        target.branch_name = branch_name || branch.name;
+      }
     }
+    
     if (role !== undefined) {
       target.role = role;
-      // Nếu role là admin thì clear branch_name
-      if (role === 'admin') {
-        target.branch_name = null;
-      }
     }
 
     await target.save();

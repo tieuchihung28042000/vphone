@@ -26,7 +26,7 @@ function App() {
       <Route
         path="/nhap-hang"
         element={
-          <PrivateRoute requiredRole={["admin","quan_ly","thu_ngan"]}>
+          <PrivateRoute requiredRole={["admin","quan_ly_chi_nhanh","thu_ngan"]}>
             <NhapHang />
           </PrivateRoute>
         }
@@ -66,7 +66,7 @@ function App() {
       <Route
         path="/lich-su-hoat-dong"
         element={
-          <PrivateRoute requiredRole={["admin","quan_ly"]}>
+          <PrivateRoute requiredRole={["admin","quan_ly_chi_nhanh"]}>
             <LichSuHoatDong />
           </PrivateRoute>
         }

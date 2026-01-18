@@ -3,6 +3,7 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import mongoose from 'mongoose';
 import User from '../models/User.js';
+import Branch from '../models/Branch.js';
 import nodemailer from 'nodemailer';
 import { authenticateToken, requireRole } from '../middleware/auth.js';
 
@@ -34,6 +35,28 @@ router.post('/register', authenticateToken, requireRole(['admin', 'thu_ngan']), 
       return res.status(400).json({ message: '❌ ID chi nhánh không hợp lệ' });
     }
 
+    // Validate và lấy thông tin branch nếu cần
+    let branch = null;
+    let finalBranchName = branch_name;
+
+    if (role && role !== 'admin' && branch_id) {
+      // Đặc biệt kiểm tra cho admin chi nhánh (quan_ly_chi_nhanh)
+      if (role === 'quan_ly_chi_nhanh' && !branch_id) {
+        return res.status(400).json({ message: '❌ Admin chi nhánh phải được gán vào một chi nhánh' });
+      }
+
+      // Kiểm tra branch_id có tồn tại trong database không
+      branch = await Branch.findById(branch_id);
+      if (!branch) {
+        return res.status(400).json({ message: '❌ Chi nhánh không tồn tại trong hệ thống' });
+      }
+
+      // Nếu không có branch_name, tự động lấy từ Branch model
+      if (!branch_name && branch) {
+        finalBranchName = branch.name;
+      }
+    }
+
     // Kiểm tra email đã tồn tại
     const existingEmail = await User.findOne({ email });
     if (existingEmail) {
@@ -60,10 +83,24 @@ router.post('/register', authenticateToken, requireRole(['admin', 'thu_ngan']), 
       approved: true, // Tự động approve user được tạo bởi admin
     };
 
-    // Chỉ thêm branch info nếu không phải admin
+    // Chỉ thêm branch info nếu không phải admin tổng
     if (role !== 'admin') {
       userData.branch_id = branch_id;
-      userData.branch_name = branch_name;
+      userData.branch_name = finalBranchName || branch_name;
+      
+      // Đảm bảo branch_name được set
+      if (!userData.branch_name && branch) {
+        userData.branch_name = branch.name;
+      }
+      
+      // Validate cuối cùng: quan_ly_chi_nhanh phải có branch_name
+      if (role === 'quan_ly_chi_nhanh' && !userData.branch_name) {
+        return res.status(400).json({ message: '❌ Không thể xác định tên chi nhánh. Vui lòng cung cấp branch_name hoặc đảm bảo branch_id hợp lệ.' });
+      }
+    } else {
+      // Admin tổng không có branch_id và branch_name
+      userData.branch_id = null;
+      userData.branch_name = null;
     }
 
     console.log('🔧 [REGISTER] Creating user with data:', userData);

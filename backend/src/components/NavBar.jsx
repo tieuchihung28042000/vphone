@@ -44,7 +44,7 @@ function NavBar() {
           📊 Doanh thu
         </button>
       )}
-      {(role === 'admin' || role === 'quan_ly') && (
+      {(role === 'admin' || role === 'quan_ly_chi_nhanh') && (
         <button
           onClick={() => navigate("/lich-su-hoat-dong")}
           className={`${btnClass} bg-gray-700`}
