@@ -3,7 +3,8 @@ import { Navigate } from "react-router-dom";
 import * as jwt_decode from "jwt-decode";
 
 function getDecodedToken() {
-  const token = localStorage.getItem("token");
+  // Kiểm tra cả localStorage và sessionStorage
+  const token = localStorage.getItem("token") || sessionStorage.getItem("token");
   if (!token) return null;
   try {
     return jwt_decode.default(token);
@@ -23,6 +24,7 @@ function PrivateRoute({ children, requiredRole, requireReportAccess }) {
   const now = Date.now().valueOf() / 1000;
   if (decoded.exp && decoded.exp < now) {
     localStorage.removeItem("token");
+    sessionStorage.removeItem("token");
     return <Navigate to="/login" replace />;
   }
 

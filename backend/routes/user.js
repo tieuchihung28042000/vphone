@@ -249,7 +249,7 @@ router.put('/update/:id', authenticateToken, requireRole(['admin', 'thu_ngan']),
       target.branch_name = null;
     } else if (role === 'quan_ly_chi_nhanh') {
       // Nếu cập nhật role thành quan_ly_chi_nhanh, phải có branch_id
-      if (branch_id !== undefined) {
+    if (branch_id !== undefined) {
         if (!branch_id || branch_id === '') {
           return res.status(400).json({ message: 'Admin chi nhánh phải được gán vào một chi nhánh' });
         }

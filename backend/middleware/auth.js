@@ -1,5 +1,6 @@
 import jwt from 'jsonwebtoken';
 import User from '../models/User.js';
+import Branch from '../models/Branch.js';
 
 // Middleware xác thực JWT
 const authenticateToken = async (req, res, next) => {
@@ -22,6 +23,62 @@ const authenticateToken = async (req, res, next) => {
 
     if (!user.approved) {
       return res.status(401).json({ message: 'User not approved' });
+    }
+
+    // Đồng bộ branch_name từ populated branch nếu có
+    if (user.branch_id) {
+      // Kiểm tra nếu branch_id là object (đã được populate)
+      if (user.branch_id && typeof user.branch_id === 'object' && user.branch_id.name) {
+        // Branch đã được populate thành công, lấy name từ đó
+        const populatedBranchName = user.branch_id.name;
+        if (!user.branch_name || user.branch_name !== populatedBranchName) {
+          console.log('🔄 [AUTH] Syncing branch_name from populated branch:', {
+            old: user.branch_name,
+            new: populatedBranchName,
+            email: user.email
+          });
+          user.branch_name = populatedBranchName;
+          // Lưu lại vào database để đồng bộ (async, không cần await)
+          User.findByIdAndUpdate(user._id, { branch_name: populatedBranchName }).catch(err => {
+            console.error('❌ [AUTH] Error syncing branch_name:', err.message);
+          });
+        }
+      } else {
+        // Branch chưa được populate hoặc là ObjectId string
+        // Nếu branch_name chưa có, lấy từ database
+        if (!user.branch_name) {
+          try {
+            const branchIdToQuery = typeof user.branch_id === 'object' && user.branch_id._id 
+              ? user.branch_id._id 
+              : user.branch_id;
+            const branch = await Branch.findById(branchIdToQuery);
+            if (branch && branch.name) {
+              console.log('🔄 [AUTH] Fetching branch_name from database:', {
+                branch_id: branchIdToQuery,
+                branch_name: branch.name,
+                email: user.email
+              });
+              user.branch_name = branch.name;
+              // Lưu lại vào database
+              await User.findByIdAndUpdate(user._id, { branch_name: branch.name });
+            } else {
+              console.error('❌ [AUTH] Branch not found:', branchIdToQuery);
+            }
+          } catch (err) {
+            console.error('❌ [AUTH] Error fetching branch:', err.message);
+          }
+        }
+      }
+      
+      // Log để debug
+      console.log('✅ [AUTH] User authenticated:', {
+        email: user.email,
+        role: user.role,
+        branch_id: user.branch_id,
+        branch_name: user.branch_name,
+        branch_id_type: typeof user.branch_id,
+        branch_id_is_object: typeof user.branch_id === 'object'
+      });
     }
 
     req.user = user;
@@ -63,6 +120,13 @@ const requireBranch = (req, res, next) => {
   // Admin chi nhánh (quan_ly_chi_nhanh) PHẢI có branch_id và branch_name
   if (req.user.role === 'quan_ly_chi_nhanh') {
     if (!req.user.branch_id || !req.user.branch_name) {
+      console.error('❌ [REQUIRE_BRANCH] Admin chi nhánh thiếu thông tin:', {
+        role: req.user.role,
+        branch_id: req.user.branch_id,
+        branch_name: req.user.branch_name,
+        user_id: req.user._id,
+        email: req.user.email
+      });
       return res.status(403).json({ 
         message: 'Admin chi nhánh phải được gán vào một chi nhánh. Vui lòng liên hệ quản trị viên để cập nhật thông tin chi nhánh.' 
       });
@@ -100,16 +164,42 @@ const filterByBranch = (req, res, next) => {
     return res.status(401).json({ message: 'Authentication required' });
   }
 
+  console.log('🔍 [FILTER_BY_BRANCH] User info:', {
+    role: req.user.role,
+    branch_id: req.user.branch_id,
+    branch_name: req.user.branch_name,
+    email: req.user.email,
+    branch_id_type: typeof req.user.branch_id,
+    branch_id_is_object: typeof req.user.branch_id === 'object',
+    branch_id_name: req.user.branch_id?.name
+  });
+
   // Admin tổng (role === 'admin' và không có branch_id) có thể xem tất cả
   if (req.user.role === 'admin' && !req.user.branch_id) {
+    console.log('✅ [FILTER_BY_BRANCH] Admin tổng - cho phép truy cập tất cả');
     return next();
+  }
+
+  // Đồng bộ branch_name từ populated branch nếu có
+  if (req.user.branch_id && typeof req.user.branch_id === 'object' && req.user.branch_id.name) {
+    if (!req.user.branch_name || req.user.branch_name !== req.user.branch_id.name) {
+      req.user.branch_name = req.user.branch_id.name;
+      console.log('🔄 [FILTER_BY_BRANCH] Đồng bộ branch_name từ populated branch:', req.user.branch_name);
+    }
   }
 
   // Admin chi nhánh, nhân viên hoặc thu ngân chỉ xem chi nhánh của mình
   if (req.user.branch_name) {
     req.branchFilter = { branch: req.user.branch_name };
+    console.log('✅ [FILTER_BY_BRANCH] Set branch filter:', req.branchFilter);
   } else if (req.user.role !== 'admin') {
     // Nếu không phải admin tổng và không có branch_name, trả về lỗi
+    console.error('❌ [FILTER_BY_BRANCH] User thiếu branch_name:', {
+      role: req.user.role,
+      branch_id: req.user.branch_id,
+      branch_name: req.user.branch_name,
+      email: req.user.email
+    });
     return res.status(403).json({ 
       message: 'Người dùng chưa được gán vào chi nhánh nào. Vui lòng liên hệ quản trị viên.' 
     });
