@@ -29,6 +29,18 @@ const BaoCao = () => {
     };
   };
 
+  // ✅ Helper function để đảm bảo API URL luôn đi qua nginx proxy
+  // Khi VITE_API_URL rỗng, dùng relative path để nginx proxy đến backend
+  const getApiUrl = (endpoint) => {
+    const apiBase = import.meta.env.VITE_API_URL || '';
+    // Nếu có VITE_API_URL thì dùng, nếu không thì dùng relative path (đi qua nginx)
+    if (apiBase) {
+      return `${apiBase.replace(/\/+$/, '')}${endpoint.startsWith('/') ? endpoint : '/' + endpoint}`;
+    }
+    // Relative path sẽ được browser resolve thành current origin + endpoint
+    return endpoint.startsWith('/') ? endpoint : '/' + endpoint;
+  };
+
   // Lấy role và branch từ token
   useEffect(() => {
     try {
@@ -57,12 +69,16 @@ const BaoCao = () => {
   useEffect(() => {
     const loadBranches = async () => {
       try {
-        const res = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/branches`, {
+        const res = await fetch(getApiUrl('/api/branches'), {
           headers: getAuthHeaders()
         });
         if (res.ok) {
           const data = await res.json();
-          setBranches(Array.isArray(data) ? data : []);
+          // API trả về [{_id, name}] hoặc [string], cần extract name
+          const branchList = Array.isArray(data) 
+            ? data.map(b => typeof b === 'string' ? b : (b.name || b))
+            : [];
+          setBranches(branchList);
         }
       } catch (err) {
         console.error('Error loading branches:', err);
@@ -75,18 +91,22 @@ const BaoCao = () => {
   useEffect(() => {
     const loadCategories = async () => {
       try {
-        const res = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/categories`, {
+        const res = await fetch(getApiUrl('/api/categories'), {
           headers: getAuthHeaders()
         });
         if (res.ok) {
           const data = await res.json();
-          setCategories(Array.isArray(data) ? data : []);
+          // API trả về [{_id, name}] hoặc [string], cần extract name
+          const categoryList = Array.isArray(data) 
+            ? data.map(c => typeof c === 'string' ? c : (c.name || c))
+            : [];
+          setCategories(categoryList);
         }
       } catch (err) {
         console.error('Error loading categories:', err);
         // Fallback: lấy từ inventory nếu API categories không có
         try {
-          const invRes = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/ton-kho`, {
+          const invRes = await fetch(getApiUrl('/api/ton-kho'), {
             headers: getAuthHeaders()
           });
           if (invRes.ok) {
@@ -111,7 +131,7 @@ const BaoCao = () => {
       setLoading(true);
       const branchParam = selectedBranch && selectedBranch !== 'all' ? `&branch=${selectedBranch}` : '';
       const categoryParam = selectedCategory && selectedCategory !== 'all' ? `&category=${selectedCategory}` : '';
-      const url = `${import.meta.env.VITE_API_URL || ''}/api/report/financial-report/summary?from=2024-01-01&to=2024-12-31${branchParam}${categoryParam}`;
+      const url = `${getApiUrl('/api/report/financial-report/summary')}?from=2024-01-01&to=2024-12-31${branchParam}${categoryParam}`;
       const res = await fetch(url, {
         headers: getAuthHeaders()
       });
@@ -180,9 +200,10 @@ const BaoCao = () => {
         >
           <option value="all">Tất cả chi nhánh</option>
           {/* Admin tổng thấy tất cả, admin chi nhánh chỉ thấy chi nhánh của mình */}
-          {((userRole === 'admin' && !userBranch) ? branches : (userBranch ? [userBranch] : branches)).map((branch) => (
-            <option key={branch} value={branch}>{branch}</option>
-          ))}
+          {Array.isArray(branches) && ((userRole === 'admin' && !userBranch) ? branches : (userBranch ? [userBranch] : branches)).map((branch) => {
+            const branchName = typeof branch === 'string' ? branch : (branch?.name || branch);
+            return <option key={branchName} value={branchName}>{branchName}</option>;
+          })}
         </select>
         <label style={{ fontWeight: 'bold', marginLeft: '20px' }}>Danh mục:</label>
         <select
@@ -198,23 +219,24 @@ const BaoCao = () => {
           }}
         >
           <option value="all">Tất cả danh mục</option>
-          {categories.map((category) => (
-            <option key={category} value={category}>{category}</option>
-          ))}
+          {Array.isArray(categories) && categories.map((category) => {
+            const categoryName = typeof category === 'string' ? category : (category?.name || category);
+            return <option key={categoryName} value={categoryName}>{categoryName}</option>;
+          })}
         </select>
         {(userRole === 'admin' && userBranch) && (
           <span style={{ fontSize: '12px', color: '#666' }}>
-            (Admin chi nhánh: Chỉ xem được chi nhánh {userBranch})
+            (Admin chi nhánh: Chỉ xem được chi nhánh {typeof userBranch === 'string' ? userBranch : (userBranch?.name || userBranch)})
           </span>
         )}
         {userRole === 'thu_ngan' && (
           <span style={{ fontSize: '12px', color: '#666' }}>
-            (Thu ngân: Chỉ xem báo cáo chi nhánh {userBranch || selectedBranch})
+            (Thu ngân: Chỉ xem báo cáo chi nhánh {typeof userBranch === 'string' ? userBranch : (userBranch?.name || userBranch) || selectedBranch})
           </span>
         )}
         {userRole === 'nhan_vien_ban_hang' && (
           <span style={{ fontSize: '12px', color: '#666' }}>
-            (Nhân viên: Chỉ xem được xuất hàng chi nhánh {userBranch || selectedBranch})
+            (Nhân viên: Chỉ xem được xuất hàng chi nhánh {typeof userBranch === 'string' ? userBranch : (userBranch?.name || userBranch) || selectedBranch})
           </span>
         )}
       </div>
@@ -259,7 +281,7 @@ const BaoCao = () => {
             try {
               const branchParam = selectedBranch && selectedBranch !== 'all' ? `&branch=${selectedBranch}` : '';
               const categoryParam = selectedCategory && selectedCategory !== 'all' ? `&category=${selectedCategory}` : '';
-              const url = `${import.meta.env.VITE_API_URL || ''}/api/report/export-excel?from=2024-01-01&to=2024-12-31${branchParam}${categoryParam}`;
+              const url = `${getApiUrl('/api/report/export-excel')}?from=2024-01-01&to=2024-12-31${branchParam}${categoryParam}`;
               const res = await fetch(url, {
                 headers: getAuthHeaders()
               });

@@ -6,16 +6,14 @@ import ResetMatKhau from "./pages/ResetMatKhau";
 import NhapHang from "./pages/NhapHang";
 import XuatHang from "./pages/XuatHang";
 import TonKhoSoLuong from "./pages/TonKhoSoLuong";
-import BaoCao from "./BaoCao"; // Nếu BaoCao.jsx nằm ngoài thư mục pages
+import BaoCao from "./pages/BaoCao";
 import PrivateRoute from "./components/PrivateRoute";
 import CongNo from "./pages/CongNo";
+import Cashbook from "./pages/Cashbook";
 import QuanLyUser from "./pages/QuanLyUser";
 import NotAuthorized from "./pages/NotAuthorized";
 import DanhSachCanhBao from "./pages/DanhSachCanhBao";
 import LichSuHoatDong from "./pages/LichSuHoatDong";
-
-// === THÊM DÒNG NÀY ===
-import Cashbook from "./pages/Cashbook"; // <--- Sổ quỹ
 
 function App() {
   return (
@@ -78,11 +76,11 @@ function App() {
         }
       />
 
-      {/* ===== THÊM ROUTE SỔ QUỸ ===== */}
+      {/* Sổ quỹ */}
       <Route
         path="/so-quy"
         element={
-          <PrivateRoute requiredRole={["admin", "quan_ly_chi_nhanh", "thu_ngan", "nhan_vien_ban_hang"]}>
+          <PrivateRoute requiredRole={["admin", "quan_ly_chi_nhanh", "thu_ngan"]}>
             <Cashbook />
           </PrivateRoute>
         }

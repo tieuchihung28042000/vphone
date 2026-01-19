@@ -38,80 +38,96 @@ function TonKhoSoLuong() {
   };
 
   useEffect(() => {
-    fetch(`${import.meta.env.VITE_API_URL || ''}/api/ton-kho`, {
+    // ✅ Dùng endpoint báo cáo (có tính sẵn totalImport/totalSold/totalRemain)
+    fetch(`${import.meta.env.VITE_API_URL || ''}/api/report/ton-kho`, {
       headers: getAuthHeaders()
     })
-      .then((res) => res.json())
       .then((res) => {
-        console.log("API trả về:", res.items);
+        console.log("📡 Response status:", res.status, res.statusText);
+        if (!res.ok) {
+          return res.json().then(err => {
+            console.error("❌ API error:", err);
+            throw new Error(err.message || 'API error');
+          });
+        }
+        return res.json();
+      })
+      .then((res) => {
+        console.log("✅ API trả về:", res);
 
         const grouped = {};
 
-        // ✅ FIX: Tính totalSold từ tất cả items (bao gồm cả đã bán), nhưng chỉ hiển thị items chưa bán trong tồn kho
-        // Bước 1: Tính tổng nhập và tổng bán từ TẤT CẢ items
-        const soldCountMap = new Map(); // Map để đếm số lượng đã bán theo key
+        // ✅ FIX: API đã tính sẵn totalSold, totalImport và totalRemain
+        // Với iPhone (có IMEI): API đã filter và chỉ trả về các IMEI còn tồn kho (totalRemain > 0)
+        // Với phụ kiện (không IMEI): API đã gom nhóm và tính sẵn totalRemain, chỉ trả về các nhóm còn tồn kho
         res.items.forEach((item) => {
-          const uniqueKey = item.sku && item.sku.trim()
-            ? item.sku
-            : item.product_name || item.tenSanPham || `product_${item._id}`;
-          const key = uniqueKey + "|" + (item.product_name || item.tenSanPham || "") + "|" + (item.category || "") + "|" + (item.branch || "");
-          
-          if (item.status === "sold") {
-            const isAccessory = !item.imei;
-            const soldQty = isAccessory ? Number(item.quantity) || 0 : 1;
-            soldCountMap.set(key, (soldCountMap.get(key) || 0) + soldQty);
-          }
-        });
-
-        // Bước 2: Chỉ xử lý các items CHƯA BÁN (status !== "sold") để hiển thị trong tồn kho
-        res.items
-          .filter((item) => item.status !== "sold")
-          .forEach((item) => {
           const importDate = item.import_date ? new Date(item.import_date) : null;
           const importMonth =
             importDate && !isNaN(importDate)
               ? `${importDate.getFullYear()}-${String(importDate.getMonth() + 1).padStart(2, "0")}`
               : "Không rõ";
 
-          // Sử dụng product_name khi SKU rỗng để tránh gom nhóm sai
+          const isAccessory = !item.imei;
+          
+        // ✅ Gom nhóm theo SKU + tên + category + branch + tháng nhập (để khớp tổng nhập/IMEI)
           const uniqueKey = item.sku && item.sku.trim()
             ? item.sku
             : item.product_name || item.tenSanPham || `product_${item._id}`;
-
-          // ✅ Sửa: Gộp theo tên + SKU + thư mục + chi nhánh, KHÔNG phân biệt ngày tháng
-          const key = uniqueKey + "|" + (item.product_name || item.tenSanPham || "") + "|" + (item.category || "") + "|" + (item.branch || "");
+        const key = uniqueKey + "|" + (item.product_name || item.tenSanPham || "") + "|" + (item.category || "") + "|" + (item.branch || "") + "|" + importMonth;
 
           if (!grouped[key]) {
+            // ✅ Dùng trực tiếp giá trị từ API (API đã tính sẵn)
             grouped[key] = {
               sku: item.sku || "Không rõ",
               tenSanPham: item.tenSanPham || item.product_name || "Không rõ",
               branch: (item.branch || "Mặc định").trim(),
               importMonth,
               category: item.category || "Không rõ",
-              totalImport: 0,
-                totalSold: soldCountMap.get(key) || 0, // ✅ Lấy từ map đã tính
-              totalRemain: 0,
+              totalImport: item.totalImport !== undefined ? item.totalImport : 0,
+              totalSold: item.totalSold !== undefined ? item.totalSold : 0,
+              totalRemain: item.totalRemain !== undefined ? item.totalRemain : 0,
               imeis: [],
             };
+          } else {
+            // ✅ Cập nhật giá trị từ API nếu lớn hơn (đảm bảo dùng giá trị đúng của cả nhóm)
+            if (item.totalImport !== undefined && item.totalImport > grouped[key].totalImport) {
+              grouped[key].totalImport = item.totalImport;
+            }
+            if (item.totalSold !== undefined && item.totalSold > grouped[key].totalSold) {
+              grouped[key].totalSold = item.totalSold;
+            }
+            if (item.totalRemain !== undefined && item.totalRemain > grouped[key].totalRemain) {
+              grouped[key].totalRemain = item.totalRemain;
+            }
           }
 
-          const isAccessory = !item.imei;
-          const importQty = isAccessory ? Number(item.quantity) || 0 : 1;
-
-          grouped[key].totalImport += importQty;
-
-            if (!isAccessory) {
+          // ✅ Thêm IMEI vào danh sách (chỉ với iPhone)
+          if (!isAccessory && item.imei) {
             grouped[key].imeis.push(item.imei);
           }
         });
 
+        console.log("📊 Sau khi group:", Object.keys(grouped).length, "nhóm");
+        
+        // ✅ API đã filter sẵn các items có totalRemain > 0, nhưng vẫn filter lại để chắc chắn
         const result = Object.values(grouped)
-          .map((g) => ({
+          .map((g) => {
+            const calculatedRemain = g.totalRemain > 0 ? g.totalRemain : Math.max(0, g.totalImport - g.totalSold);
+            return {
             ...g,
-            totalRemain: g.totalImport - g.totalSold,
-          }))
-          .filter((g) => g.totalRemain > 0); // ✅ Chỉ hiển thị sản phẩm còn tồn kho > 0
+              // ✅ Tính lại totalRemain để đảm bảo chính xác (nếu API chưa tính đúng)
+              totalRemain: calculatedRemain,
+            };
+          })
+          .filter((g) => {
+            const shouldShow = g.totalRemain > 0;
+            if (!shouldShow) {
+              console.log("🚫 Filtered out:", g.sku, "totalRemain:", g.totalRemain, "totalImport:", g.totalImport, "totalSold:", g.totalSold);
+            }
+            return shouldShow;
+          }); // ✅ Chỉ hiển thị sản phẩm còn tồn kho > 0
 
+        console.log("✅ Kết quả cuối cùng:", result.length, "items");
         setData(result);
 
         // ✅ Get unique branches - đảm bảo có "Mặc định" cho dữ liệu cũ

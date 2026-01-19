@@ -842,86 +842,160 @@ app.get('/api/imei-detail/:imei', authenticateToken, filterByBranch, async (req,
   }
 });
 
-// API tồn kho (logic đơn giản)
+// API tồn kho (đồng bộ với logic gộp trong routes/report.js)
 app.get('/api/ton-kho', authenticateToken, filterByBranch, async (req, res) => {
   try {
-    console.log('🔍 API /api/ton-kho được gọi (logic đơn giản)');
-    const { branch } = req.query;
-    let filter = {};
+    let mongoQuery = { status: 'in_stock' };
+    let soldQuery = { status: 'sold' };
+
+    const getImportMonth = (d) => {
+      const dt = d ? new Date(d) : null;
+      if (!dt || isNaN(dt)) return 'Unknown';
+      return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}`;
+    };
+
+    // Bộ lọc chi nhánh
     if (req.branchFilter) {
-      filter = { ...req.branchFilter };
-    } else if (branch && branch !== 'all') {
-      filter.branch = branch;
+      mongoQuery = { ...mongoQuery, ...req.branchFilter };
+      soldQuery = { ...soldQuery, ...req.branchFilter };
+    } else if (req.query.branch && req.query.branch !== 'all') {
+      mongoQuery.branch = req.query.branch;
+      soldQuery.branch = req.query.branch;
     }
 
-    // ✅ Chỉ lấy từ Inventory, không cần tính toán phức tạp
-    const items = await Inventory.find(filter);
+    const inventories = await Inventory.find(mongoQuery); // Chỉ item còn trong kho
+    const soldInventories = await Inventory.find(soldQuery); // Item đã bán để tính totalSold
 
-    // ✅ Phân loại sản phẩm: iPhone (có IMEI) vs phụ kiện (không IMEI)
-    const imeiItems = []; // Máy có IMEI
-    const accessoriesMap = {}; // Phụ kiện gom nhóm theo SKU
+    // Map tổng đã bán theo key sku|product|category|branch
+    const soldCountMap = new Map();
+    // NOTE: Đồng bộ với frontend dist hiện tại: gộp theo SKU + tên + category + branch (KHÔNG tách theo tháng)
+    soldInventories.forEach((item) => {
+      const uniqueKey = item.sku && item.sku.trim()
+        ? item.sku
+        : item.product_name || item.tenSanPham || `product_${item._id}`;
+      const key = uniqueKey + "|" + (item.product_name || item.tenSanPham || "") + "|" + (item.category || "") + "|" + (item.branch || "");
+      const isAccessory = !item.imei;
+      const soldQty = isAccessory ? Number(item.quantity) || 0 : 1;
+      soldCountMap.set(key, (soldCountMap.get(key) || 0) + soldQty);
+    });
 
-    for (const item of items) {
+    // Tổng xuất phụ kiện từ ExportHistory (phòng trường hợp soldCountMap thiếu)
+    const exportAgg = await ExportHistory.aggregate([
+      { $match: { imei: { $in: [null, ""] } } },
+      { $group: { _id: "$sku", totalExported: { $sum: "$quantity" } } }
+    ]);
+    const exportMap = {};
+    exportAgg.forEach(e => { exportMap[e._id] = e.totalExported; });
+
+    // Tổng nhập iPhone (cả in_stock + sold)
+    const iphoneImportMap = new Map();
+    const allIphoneQuery = {
+      imei: { $exists: true, $ne: null, $ne: "" }
+    };
+    if (req.branchFilter) {
+      Object.assign(allIphoneQuery, req.branchFilter);
+    } else if (req.query.branch && req.query.branch !== 'all') {
+      allIphoneQuery.branch = req.query.branch;
+    }
+    const allIphones = await Inventory.find(allIphoneQuery);
+    allIphones.forEach((item) => {
+      const uniqueKey = item.sku && item.sku.trim()
+        ? item.sku
+        : item.product_name || item.tenSanPham || `product_${item._id}`;
+      const groupKey = uniqueKey + "|" + (item.product_name || item.tenSanPham || "") + "|" + (item.category || "") + "|" + (item.branch || "");
+      iphoneImportMap.set(groupKey, (iphoneImportMap.get(groupKey) || 0) + 1);
+    });
+
+    // Gom nhóm
+    const iphoneGroupMap = new Map();
+    const accessoriesMap = {};
+    const imeiItems = [];
+
+    for (const item of inventories) {
       if (item.imei) {
-        // ✅ Sản phẩm có IMEI: giữ nguyên từng item riêng biệt
-        imeiItems.push({
-          _id: item._id,
-          imei: item.imei,
-          product_name: item.product_name || item.tenSanPham,
-          tenSanPham: item.tenSanPham || item.product_name,
-          sku: item.sku,
-          price_import: item.price_import || 0,
-          import_date: item.import_date,
-          supplier: item.supplier,
-          branch: item.branch,
-          category: item.category,
-          note: item.note,
-          status: item.status || 'in_stock',
-          quantity: 1 // iPhone luôn là 1 cái
-        });
+        const uniqueKey = item.sku && item.sku.trim()
+          ? item.sku
+          : item.product_name || item.tenSanPham || `product_${item._id}`;
+        const groupKey = uniqueKey + "|" + (item.product_name || item.tenSanPham || "") + "|" + (item.category || "") + "|" + (item.branch || "");
+
+        if (!iphoneGroupMap.has(groupKey)) {
+          iphoneGroupMap.set(groupKey, {
+            items: [],
+            totalSold: soldCountMap.get(groupKey) || 0,
+            totalImport: iphoneImportMap.get(groupKey) || 0
+          });
+        }
+        iphoneGroupMap.get(groupKey).items.push(item);
       } else {
-        // ✅ Phụ kiện: gom nhóm theo SKU + branch + category
-        const key = `${item.sku || 'unknown'}_${item.branch || ''}_${item.category || ''}`;
+        const importMonth = getImportMonth(item.import_date);
+        const key = (item.sku || '') + '|' + (item.product_name || item.tenSanPham || '') + '|' + (item.category || '') + '|' + (item.branch || '');
         if (!accessoriesMap[key]) {
           accessoriesMap[key] = {
-            _id: item._id, // Lấy ID của item đầu tiên
-            imei: null,
-            product_name: item.product_name || item.tenSanPham,
-            tenSanPham: item.tenSanPham || item.product_name,
-            sku: item.sku,
+            sku: item.sku || "",
+            product_name: item.product_name || item.tenSanPham || "",
+            tenSanPham: item.product_name || item.tenSanPham || "",
             price_import: item.price_import || 0,
             import_date: item.import_date,
             supplier: item.supplier,
             branch: item.branch,
             category: item.category,
             note: item.note,
-            status: 'in_stock',
-            quantity: 0 // Tổng số còn lại
+            importMonth,
+            quantity: 0,
+            soLuongConLai: 0,
+            totalImport: 0,
+            totalSold: soldCountMap.get(key) || 0,
+            totalRemain: 0,
+            _id: item._id,
           };
         }
-        // ✅ Chỉ cộng quantity nếu status = 'in_stock'
-        if (item.status !== 'sold') {
-          accessoriesMap[key].quantity += Number(item.quantity) || 0;
-        }
+        const importQty = Number(item.quantity) || 1;
+        accessoriesMap[key].quantity += importQty;
+        accessoriesMap[key].totalImport += importQty;
       }
     }
 
-    // Kết quả trả về: iPhone (IMEI riêng) + phụ kiện (mỗi loại 1 dòng)
-    const accessoriesItems = Object.values(accessoriesMap);
-    const allItems = [...imeiItems, ...accessoriesItems];
+    // Hoàn thiện iPhone
+    for (const [groupKey, group] of iphoneGroupMap.entries()) {
+      const totalSold = group.totalSold;
+      const totalImport = group.totalImport;
+      const totalRemain = Math.max(totalImport - totalSold, group.items.length, 0);
 
-    res.status(200).json({
-      message: '✅ Danh sách tồn kho (logic đơn giản)',
-      total: allItems.length,
-      items: allItems,
-      imeiItems, // Máy có IMEI
-      accessoriesItems, // Phụ kiện đã gom nhóm
+      for (const item of group.items) {
+        imeiItems.push({
+          ...item.toObject(),
+          totalSold,
+          totalImport,
+          totalRemain,
+          importMonth: getImportMonth(item.import_date)
+        });
+      }
+    }
+
+    // Hoàn thiện phụ kiện
+    for (const key in accessoriesMap) {
+      const acc = accessoriesMap[key];
+      acc.totalRemain = acc.totalImport - acc.totalSold;
+      if (acc.totalSold === 0 && exportMap[acc.sku]) {
+        acc.totalRemain = acc.totalImport - (exportMap[acc.sku] || 0);
+        }
+      if (acc.totalRemain < 0) acc.totalRemain = 0;
+      acc.soLuongConLai = acc.totalRemain;
+    }
+
+    const accessoriesItems = Object.values(accessoriesMap);
+
+    res.json({
+      imeiItems,
+      accessoriesItems,
+      items: [...imeiItems, ...accessoriesItems]
     });
   } catch (error) {
     console.error('❌ Lỗi khi lấy tồn kho:', error.message);
     res.status(500).json({ message: '❌ Lỗi server khi lấy tồn kho', error: error.message });
   }
 });
+
 
 // Duplicate route removed (combined above)
 

@@ -238,18 +238,45 @@ router.get('/nhap-hang', async (req, res) => {
 router.get('/ton-kho', async (req, res) => {
   try {
     let mongoQuery = { status: 'in_stock' };
+    let soldQuery = { status: 'sold' };
 
     // Apply branch filter
     if (req.branchFilter) {
       mongoQuery = { ...mongoQuery, ...req.branchFilter };
+      soldQuery = { ...soldQuery, ...req.branchFilter };
     } else if (req.query.branch && req.query.branch !== 'all') {
       mongoQuery.branch = req.query.branch;
+      soldQuery.branch = req.query.branch;
     }
 
-    // Lấy tất cả phụ kiện (IMEI null) và máy iPhone (có IMEI)
+    const getImportMonth = (d) => {
+      const dt = d ? new Date(d) : null;
+      if (!dt || isNaN(dt)) return 'Unknown';
+      return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}`;
+    };
+
+    // Lấy tất cả phụ kiện (IMEI null) và máy iPhone (có IMEI) - CHỈ items in_stock
     const inventories = await Inventory.find(mongoQuery);
 
-    // Lấy tổng xuất theo từng sku (chỉ cho phụ kiện)
+    // ✅ TÍNH TOTAL SOLD: Lấy tất cả items đã bán để tính totalSold chính xác
+    const soldInventories = await Inventory.find(soldQuery);
+
+    // ✅ Tạo map để tính totalSold theo key (sku|product|category|branch)
+    // NOTE: Frontend bản hiện tại (đang serve dist) đang gộp theo SKU + tên + category + branch (KHÔNG tách theo tháng).
+    // Để số liệu "Tổng nhập" khớp với "IMEI(x)" ngay lập tức mà không cần rebuild frontend, backend cũng gộp theo key này.
+    const soldCountMap = new Map();
+    soldInventories.forEach((item) => {
+      const uniqueKey = item.sku && item.sku.trim()
+        ? item.sku
+        : item.product_name || item.tenSanPham || `product_${item._id}`;
+      const key = uniqueKey + "|" + (item.product_name || item.tenSanPham || "") + "|" + (item.category || "") + "|" + (item.branch || "");
+      
+      const isAccessory = !item.imei;
+      const soldQty = isAccessory ? Number(item.quantity) || 0 : 1;
+      soldCountMap.set(key, (soldCountMap.get(key) || 0) + soldQty);
+    });
+
+    // Lấy tổng xuất theo từng sku (chỉ cho phụ kiện) - từ ExportHistory
     const exportAgg = await ExportHistory.aggregate([
       { $match: { imei: { $in: [null, ""] } } }, // Chỉ phụ kiện (không IMEI)
       { $group: { _id: "$sku", totalExported: { $sum: "$quantity" } } }
@@ -257,38 +284,106 @@ router.get('/ton-kho', async (req, res) => {
     const exportMap = {};
     exportAgg.forEach(e => exportMap[e._id] = e.totalExported);
 
-    // Gom phụ kiện thành 1 dòng duy nhất mỗi SKU
+    // ✅ Tính totalImport cho iPhone: Lấy cả in_stock và sold
+    const iphoneImportMap = new Map();
+    const allIphoneQuery = { 
+      imei: { $exists: true, $ne: null, $ne: "" } 
+    };
+    // Apply branch filter nếu có
+    if (req.branchFilter) {
+      Object.assign(allIphoneQuery, req.branchFilter);
+    } else if (req.query.branch && req.query.branch !== 'all') {
+      allIphoneQuery.branch = req.query.branch;
+    }
+    const allIphones = await Inventory.find(allIphoneQuery); // Lấy cả in_stock và sold
+    allIphones.forEach((item) => {
+      const uniqueKey = item.sku && item.sku.trim()
+        ? item.sku
+        : item.product_name || item.tenSanPham || `product_${item._id}`;
+      const groupKey = uniqueKey + "|" + (item.product_name || item.tenSanPham || "") + "|" + (item.category || "") + "|" + (item.branch || "");
+      iphoneImportMap.set(groupKey, (iphoneImportMap.get(groupKey) || 0) + 1);
+    });
+    
+    // ✅ Gom iPhone theo SKU để tính totalSold chính xác
+    const iphoneGroupMap = new Map();
     const accessoriesMap = {};
     const imeiItems = [];
+    
     for (const item of inventories) {
       if (item.imei) {
-        imeiItems.push(item);
+        // ✅ Gom iPhone theo SKU + category + branch để tính totalSold
+        const uniqueKey = item.sku && item.sku.trim()
+          ? item.sku
+          : item.product_name || item.tenSanPham || `product_${item._id}`;
+        const groupKey = uniqueKey + "|" + (item.product_name || item.tenSanPham || "") + "|" + (item.category || "") + "|" + (item.branch || "");
+        
+        if (!iphoneGroupMap.has(groupKey)) {
+          iphoneGroupMap.set(groupKey, {
+            items: [],
+            totalSold: soldCountMap.get(groupKey) || 0,
+            totalImport: iphoneImportMap.get(groupKey) || 0 // ✅ Tổng số nhập (in_stock + sold)
+          });
+        }
+        iphoneGroupMap.get(groupKey).items.push(item);
       } else {
         // ✅ Sửa: Gom theo SKU + tên + thư mục + chi nhánh, KHÔNG phân biệt ngày tháng  
+        const importMonth = getImportMonth(item.import_date);
         const key = (item.sku || '') + '|' + (item.product_name || item.tenSanPham || '') + '|' + (item.category || '') + '|' + (item.branch || '');
         if (!accessoriesMap[key]) {
           accessoriesMap[key] = {
             sku: item.sku || "",
             product_name: item.product_name || item.tenSanPham || "",
+            tenSanPham: item.product_name || item.tenSanPham || "",
             price_import: item.price_import || 0,
             import_date: item.import_date,
             supplier: item.supplier,
             branch: item.branch,
             category: item.category,
             note: item.note,
+            importMonth,
             quantity: 0, // Tổng số nhập
             soLuongConLai: 0, // Tổng tồn kho
+            totalImport: 0, // Tổng nhập
+            totalSold: soldCountMap.get(key) || 0, // ✅ Tổng đã bán từ map
+            totalRemain: 0, // Sẽ tính sau
             _id: item._id,
           };
         }
-        accessoriesMap[key].quantity += Number(item.quantity) || 1;
+        const importQty = Number(item.quantity) || 1;
+        accessoriesMap[key].quantity += importQty;
+        accessoriesMap[key].totalImport += importQty;
       }
     }
+    
+    // ✅ Xử lý iPhone: Thêm totalSold và totalImport cho mỗi item
+    for (const [groupKey, group] of iphoneGroupMap.entries()) {
+      const totalSold = group.totalSold;
+      const totalImport = group.totalImport; // ✅ Tổng số nhập (in_stock + sold)
+      const totalRemain = Math.max(totalImport - totalSold, group.items.length, 0); // ✅ Đảm bảo không nhỏ hơn số máy còn in_stock
+      
+      for (const item of group.items) {
+        const itemWithSold = {
+          ...item.toObject(),
+          totalSold: totalSold, // ✅ Tổng đã bán của cả nhóm
+          totalImport: totalImport, // ✅ Tổng nhập của cả nhóm (in_stock + sold)
+          totalRemain, // Gán tồn kho nhóm cho từng item để frontend đọc đúng
+          importMonth: getImportMonth(item.import_date)
+        };
+        imeiItems.push(itemWithSold);
+      }
+    }
+    
     // Gán số lượng còn lại (tồn kho) cho phụ kiện
     for (const key in accessoriesMap) {
       const acc = accessoriesMap[key];
-      acc.soLuongConLai = acc.quantity - (exportMap[acc.sku] || 0);
-      if (acc.soLuongConLai < 0) acc.soLuongConLai = 0;
+      // ✅ Tính totalRemain từ totalImport - totalSold (ưu tiên dùng soldCountMap)
+      acc.totalRemain = acc.totalImport - acc.totalSold;
+      // Fallback: dùng exportMap nếu không có trong soldCountMap (cho phụ kiện)
+      if (acc.totalSold === 0 && exportMap[acc.sku]) {
+        acc.totalRemain = acc.totalImport - (exportMap[acc.sku] || 0);
+      }
+      if (acc.totalRemain < 0) acc.totalRemain = 0;
+      acc.soLuongConLai = acc.totalRemain; // Đồng bộ với soLuongConLai
     }
     // Kết quả trả về: iPhone (IMEI riêng) + phụ kiện (mỗi loại 1 dòng)
     const accessoriesItems = Object.values(accessoriesMap);
