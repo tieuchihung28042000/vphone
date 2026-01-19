@@ -1612,21 +1612,16 @@ function XuatHang() {
     }
   };
 
-  // ✅ SỬA LỖI: Group by batch_id + customer + date để tránh duplicate
+  // ✅ SỬA LỖI: CHỈ group khi có batch_id thật sự. Nếu không có batch_id, giữ nguyên từng record riêng lẻ
   const groupedSoldItems = (() => {
     if (!Array.isArray(soldItems) || soldItems.length === 0) return [];
     const map = new Map();
 
     for (const it of soldItems) {
-      // ✅ Tạo key duy nhất dựa trên batch_id + customer + date để tránh duplicate
-      const customerKey = `${it.buyer_name || it.customer_name || ''}_${it.buyer_phone || it.customer_phone || ''}`;
-      const dateKey = it.sale_date?.slice(0, 10) || '';
-
-      // ✅ CẢI THIỆN: Nếu có batch_id, gộp theo batch_id + customer + date
-      // Nếu không có batch_id, gộp theo customer + date để tránh duplicate hoàn toàn
+      // ✅ CHỈ group khi có batch_id. Nếu không có batch_id, dùng _id làm key để giữ riêng từng record
       const key = it.batch_id ?
-        `${it.batch_id}_${customerKey}_${dateKey}` :
-        `${customerKey}_${dateKey}`;
+        `${it.batch_id}_${it.buyer_name || it.customer_name || ''}_${it.buyer_phone || it.customer_phone || ''}_${it.sale_date?.slice(0, 10) || ''}` :
+        `${it._id || `${Date.now()}_${Math.random()}`}`; // Mỗi record không có batch_id sẽ có key riêng dựa trên _id
 
       if (!map.has(key)) {
         map.set(key, {
@@ -1636,18 +1631,20 @@ function XuatHang() {
           quantity_sum: parseInt(it.quantity) || 1,
           // ✅ FIX: Preserve warranty từ first item
           warranty: it.warranty || '',
-          // ✅ Lưu toàn bộ danh sách sản phẩm trong đơn để hiển thị đầy đủ
-          items_list: [
+          // ✅ Lưu toàn bộ danh sách sản phẩm trong đơn để hiển thị đầy đủ (chỉ khi có batch_id)
+          items_list: it.batch_id ? [
             {
               product_name: it.product_name || it.item?.product_name || it.item?.tenSanPham || '',
               sku: it.sku || it.item?.sku || '',
               imei: it.imei || it.item?.imei || '',
               quantity: parseInt(it.quantity) || 1,
-              warranty: it.warranty || ''  // ✅ FIX: Add warranty to items_list
+              warranty: it.warranty || ''
             }
-          ]
+          ] : [] // Không có batch_id thì items_list rỗng (hiển thị single item)
         });
       } else {
+        // Chỉ group nếu có batch_id (key sẽ trùng khi có batch_id)
+        if (it.batch_id) {
         const g = map.get(key);
         g.total_amount += ((parseFloat(it.price_sell || it.sale_price || 0) || 0) * (parseInt(it.quantity) || 1));
         g.total_paid += (parseFloat(it.da_thanh_toan) || 0);
@@ -1670,9 +1667,11 @@ function XuatHang() {
           sku: it.sku || it.item?.sku || '',
           imei: it.imei || it.item?.imei || '',
           quantity: parseInt(it.quantity) || 1,
-          warranty: it.warranty || ''  // ✅ FIX: Add warranty to items_list
+            warranty: it.warranty || ''
         });
         map.set(key, g);
+        }
+        // Nếu không có batch_id, mỗi record có key riêng nên sẽ không vào đây
       }
     }
     return Array.from(map.values());

@@ -301,7 +301,9 @@ export default function Cashbook() {
       setLoadingBranches(true);
       console.log('🏢 Loading branches...'); // Debug
 
-      const response = await fetch(getApiUrl('/api/branches'));
+      const response = await fetch(getApiUrl('/api/branches'), {
+        headers: getAuthHeaders()
+      });
       const data = await response.json();
 
       console.log('🏢 Branches API response:', data); // Debug

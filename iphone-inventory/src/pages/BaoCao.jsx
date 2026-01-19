@@ -8,6 +8,8 @@ const BaoCao = () => {
   const [userBranch, setUserBranch] = useState(null);
   const [branches, setBranches] = useState([]);
   const [selectedBranch, setSelectedBranch] = useState('all');
+  const [categories, setCategories] = useState([]);
+  const [selectedCategory, setSelectedCategory] = useState('all');
   const [reportData, setReportData] = useState({
     totalRevenue: 0,
     totalReturnRevenue: 0,
@@ -69,15 +71,47 @@ const BaoCao = () => {
     loadBranches();
   }, []);
 
+  // Load danh sách danh mục
+  useEffect(() => {
+    const loadCategories = async () => {
+      try {
+        const res = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/categories`, {
+          headers: getAuthHeaders()
+        });
+        if (res.ok) {
+          const data = await res.json();
+          setCategories(Array.isArray(data) ? data : []);
+        }
+      } catch (err) {
+        console.error('Error loading categories:', err);
+        // Fallback: lấy từ inventory nếu API categories không có
+        try {
+          const invRes = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/ton-kho`, {
+            headers: getAuthHeaders()
+          });
+          if (invRes.ok) {
+            const invData = await invRes.json();
+            const uniqueCategories = [...new Set((invData.items || []).map(item => item.category).filter(Boolean))];
+            setCategories(uniqueCategories.sort());
+          }
+        } catch (e) {
+          console.error('Error loading categories from inventory:', e);
+        }
+      }
+    };
+    loadCategories();
+  }, []);
+
   useEffect(() => {
     loadFinancialReport();
-  }, [selectedBranch]);
+  }, [selectedBranch, selectedCategory]);
 
   const loadFinancialReport = async () => {
     try {
       setLoading(true);
       const branchParam = selectedBranch && selectedBranch !== 'all' ? `&branch=${selectedBranch}` : '';
-      const url = `${import.meta.env.VITE_API_URL || ''}/api/report/financial-report/summary?from=2024-01-01&to=2024-12-31${branchParam}`;
+      const categoryParam = selectedCategory && selectedCategory !== 'all' ? `&category=${selectedCategory}` : '';
+      const url = `${import.meta.env.VITE_API_URL || ''}/api/report/financial-report/summary?from=2024-01-01&to=2024-12-31${branchParam}${categoryParam}`;
       const res = await fetch(url, {
         headers: getAuthHeaders()
       });
@@ -121,8 +155,8 @@ const BaoCao = () => {
     <div style={{ padding: '20px' }}>
       <h2>Báo cáo tài chính tổng hợp</h2>
 
-      {/* Filter branch */}
-      <div style={{ marginBottom: '20px', display: 'flex', gap: '10px', alignItems: 'center' }}>
+      {/* Filter branch và category */}
+      <div style={{ marginBottom: '20px', display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
         <label style={{ fontWeight: 'bold' }}>Chi nhánh:</label>
         <select
           value={selectedBranch}
@@ -148,6 +182,24 @@ const BaoCao = () => {
           {/* Admin tổng thấy tất cả, admin chi nhánh chỉ thấy chi nhánh của mình */}
           {((userRole === 'admin' && !userBranch) ? branches : (userBranch ? [userBranch] : branches)).map((branch) => (
             <option key={branch} value={branch}>{branch}</option>
+          ))}
+        </select>
+        <label style={{ fontWeight: 'bold', marginLeft: '20px' }}>Danh mục:</label>
+        <select
+          value={selectedCategory}
+          onChange={(e) => setSelectedCategory(e.target.value)}
+          style={{
+            padding: '8px 12px',
+            borderRadius: '5px',
+            border: '1px solid #ccc',
+            fontSize: '14px',
+            minWidth: '200px',
+            cursor: 'pointer'
+          }}
+        >
+          <option value="all">Tất cả danh mục</option>
+          {categories.map((category) => (
+            <option key={category} value={category}>{category}</option>
           ))}
         </select>
         {(userRole === 'admin' && userBranch) && (
@@ -206,7 +258,8 @@ const BaoCao = () => {
           onClick={async () => {
             try {
               const branchParam = selectedBranch && selectedBranch !== 'all' ? `&branch=${selectedBranch}` : '';
-              const url = `${import.meta.env.VITE_API_URL || ''}/api/report/export-excel?from=2024-01-01&to=2024-12-31${branchParam}`;
+              const categoryParam = selectedCategory && selectedCategory !== 'all' ? `&category=${selectedCategory}` : '';
+              const url = `${import.meta.env.VITE_API_URL || ''}/api/report/export-excel?from=2024-01-01&to=2024-12-31${branchParam}${categoryParam}`;
               const res = await fetch(url, {
                 headers: getAuthHeaders()
               });

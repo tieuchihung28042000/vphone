@@ -47,7 +47,26 @@ function TonKhoSoLuong() {
 
         const grouped = {};
 
+        // ✅ FIX: Tính totalSold từ tất cả items (bao gồm cả đã bán), nhưng chỉ hiển thị items chưa bán trong tồn kho
+        // Bước 1: Tính tổng nhập và tổng bán từ TẤT CẢ items
+        const soldCountMap = new Map(); // Map để đếm số lượng đã bán theo key
         res.items.forEach((item) => {
+          const uniqueKey = item.sku && item.sku.trim()
+            ? item.sku
+            : item.product_name || item.tenSanPham || `product_${item._id}`;
+          const key = uniqueKey + "|" + (item.product_name || item.tenSanPham || "") + "|" + (item.category || "") + "|" + (item.branch || "");
+          
+          if (item.status === "sold") {
+            const isAccessory = !item.imei;
+            const soldQty = isAccessory ? Number(item.quantity) || 0 : 1;
+            soldCountMap.set(key, (soldCountMap.get(key) || 0) + soldQty);
+          }
+        });
+
+        // Bước 2: Chỉ xử lý các items CHƯA BÁN (status !== "sold") để hiển thị trong tồn kho
+        res.items
+          .filter((item) => item.status !== "sold")
+          .forEach((item) => {
           const importDate = item.import_date ? new Date(item.import_date) : null;
           const importMonth =
             importDate && !isNaN(importDate)
@@ -70,7 +89,7 @@ function TonKhoSoLuong() {
               importMonth,
               category: item.category || "Không rõ",
               totalImport: 0,
-              totalSold: 0,
+                totalSold: soldCountMap.get(key) || 0, // ✅ Lấy từ map đã tính
               totalRemain: 0,
               imeis: [],
             };
@@ -78,12 +97,10 @@ function TonKhoSoLuong() {
 
           const isAccessory = !item.imei;
           const importQty = isAccessory ? Number(item.quantity) || 0 : 1;
-          const soldQty = isAccessory ? Number(item.sold_quantity) || 0 : (item.status === "sold" ? 1 : 0);
 
           grouped[key].totalImport += importQty;
-          grouped[key].totalSold += soldQty;
 
-          if (!isAccessory && item.status !== "sold") {
+            if (!isAccessory) {
             grouped[key].imeis.push(item.imei);
           }
         });
@@ -93,7 +110,7 @@ function TonKhoSoLuong() {
             ...g,
             totalRemain: g.totalImport - g.totalSold,
           }))
-          .filter((g) => g.totalRemain >= 0);
+          .filter((g) => g.totalRemain > 0); // ✅ Chỉ hiển thị sản phẩm còn tồn kho > 0
 
         setData(result);
 

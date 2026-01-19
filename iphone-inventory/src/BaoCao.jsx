@@ -31,11 +31,13 @@ function BaoCao() {
   const [to, setTo] = useState("");
   const [filter, setFilter] = useState("Hôm nay"); // ✅ Mặc định hôm nay
   const [branch, setBranch] = useState("all");
+  const [category, setCategory] = useState("all");
   const [userRole, setUserRole] = useState(null);
   const [userBranch, setUserBranch] = useState(null);
 
   const [loading, setLoading] = useState(false);
   const [branches, setBranches] = useState([]);
+  const [categories, setCategories] = useState([]);
   const navigate = useNavigate();
 
   // Predefined date ranges
@@ -81,7 +83,7 @@ function BaoCao() {
   };
 
   // API call to fetch report data
-  const fetchData = async (fromDate, toDate, branchParam) => {
+  const fetchData = async (fromDate, toDate, branchParam, categoryParam) => {
     // Thu ngân chỉ xem chi nhánh của mình
     if (userRole === 'thu_ngan' && userBranch) {
       branchParam = userBranch;
@@ -90,12 +92,17 @@ function BaoCao() {
       branchParam = "all"; // Đặt mặc định là "all"
     }
     
-    console.log('📊 Fetching report data:', { fromDate, toDate, branch: branchParam }); // Debug
+    if (!categoryParam) {
+      categoryParam = category || "all";
+    }
+    
+    console.log('📊 Fetching report data:', { fromDate, toDate, branch: branchParam, category: categoryParam }); // Debug
     setLoading(true);
     try {
+      const categoryQuery = categoryParam && categoryParam !== 'all' ? `&category=${categoryParam}` : '';
       let api = `${import.meta.env.VITE_API_URL || ''}/api/report/bao-cao-loi-nhuan`;
       if (fromDate && toDate) {
-        api += `?from=${fromDate}&to=${toDate}&branch=${branchParam}`;
+        api += `?from=${fromDate}&to=${toDate}&branch=${branchParam}${categoryQuery}`;
       }
       
       console.log('📊 API URL:', api); // Debug
@@ -115,7 +122,8 @@ function BaoCao() {
 
       // ✅ Gọi thêm API tóm tắt tài chính cho 6 metrics
       if (fromDate && toDate) {
-        const urlFinancial = `${import.meta.env.VITE_API_URL || ''}/api/report/financial-report/summary?from=${fromDate}&to=${toDate}&branch=${branchParam}`;
+        const categoryQueryFinancial = categoryParam && categoryParam !== 'all' ? `&category=${categoryParam}` : '';
+        const urlFinancial = `${import.meta.env.VITE_API_URL || ''}/api/report/financial-report/summary?from=${fromDate}&to=${toDate}&branch=${branchParam}${categoryQueryFinancial}`;
         const resFinancial = await fetch(urlFinancial, { headers: { 'Authorization': `Bearer ${token}` } });
         if (resFinancial.ok) {
           const fin = await resFinancial.json();
@@ -130,6 +138,42 @@ function BaoCao() {
       setFinancial(null);
     } finally {
       setLoading(false);
+    }
+  };
+
+  // ✅ Load categories từ API
+  const loadCategories = async () => {
+    try {
+      const token = localStorage.getItem('token') || sessionStorage.getItem('token');
+      const res = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/categories`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setCategories(Array.isArray(data) ? data.map(c => c.name || c) : []);
+      } else {
+        // Fallback: lấy từ inventory nếu API categories không có
+        try {
+          const invRes = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/ton-kho`, {
+            headers: {
+              'Authorization': `Bearer ${token}`,
+              'Content-Type': 'application/json'
+            }
+          });
+          if (invRes.ok) {
+            const invData = await invRes.json();
+            const uniqueCategories = [...new Set((invData.items || []).map(item => item.category).filter(Boolean))];
+            setCategories(uniqueCategories.sort());
+          }
+        } catch (e) {
+          console.error('Error loading categories from inventory:', e);
+        }
+      }
+    } catch (err) {
+      console.error('Error loading categories:', err);
     }
   };
 
@@ -155,31 +199,32 @@ function BaoCao() {
 
   useEffect(() => {
     loadBranches();
+    loadCategories();
   }, []);
 
-  // ✅ Update dates and fetch data when filter or branch changes (với debounce nhẹ)
+  // ✅ Update dates and fetch data when filter, branch or category changes (với debounce nhẹ)
   useEffect(() => {
     // ✅ Thêm timeout nhỏ để tránh load nhiều lần khi chuyển chi nhánh
     const timeoutId = setTimeout(() => {
       if (filter !== "Tùy chọn" && branch && predefined[filter]) {
-        console.log('📊 useEffect triggered:', { filter, branch }); // Debug
+        console.log('📊 useEffect triggered:', { filter, branch, category }); // Debug
         const [f, t] = predefined[filter];
         const fromDate = f.toISOString().slice(0, 10);
         const toDate = t.toISOString().slice(0, 10);
         setFrom(fromDate);
         setTo(toDate);
-        fetchData(fromDate, toDate, branch);
+        fetchData(fromDate, toDate, branch, category);
       }
     }, 50); // Giảm xuống 50ms để responsive hơn
 
     return () => clearTimeout(timeoutId);
-  }, [filter, branch]);
+  }, [filter, branch, category]);
 
   // Handle custom date range submit
   const handleSubmit = (e) => {
     e.preventDefault();
     if (from && to) {
-      fetchData(from, to, branch);
+      fetchData(from, to, branch, category);
     }
   };
 
@@ -211,6 +256,7 @@ function BaoCao() {
   const clearFilters = () => {
     setFilter("Tất cả"); // Đổi về "Tất cả" để hiển thị dữ liệu
     setBranch("all");
+    setCategory("all");
   };
 
 
@@ -430,6 +476,20 @@ function BaoCao() {
         {userRole === 'thu_ngan' && (
           <div className="text-xs text-gray-500 mt-1">Thu ngân chỉ xem báo cáo của chi nhánh được phân công</div>
         )}
+          </div>
+
+          <div>
+            <label className="block text-sm font-semibold text-gray-700 mb-2">Danh mục</label>
+            <select
+              value={category}
+              onChange={(e) => setCategory(e.target.value)}
+              className="form-input"
+            >
+              <option value="all">📁 Tất cả danh mục</option>
+              {categories.map((cat) => (
+                <option key={cat} value={cat}>{cat}</option>
+              ))}
+            </select>
           </div>
 
         {filter === "Tùy chọn" && (

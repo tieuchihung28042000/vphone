@@ -26,13 +26,15 @@ router.get('/bao-cao-loi-nhuan', async (req, res) => {
       sold_date: { $gte: fromDate, $lt: toDate }
     };
     if (branch && branch !== 'all') query.branch = branch;
+    const { category } = req.query;
+    if (category && category !== 'all') query.category = category;
 
     // ✅ LẤY TỪ ExportHistory; mặc định loại trừ đơn đã hoàn trả
     const finalQuery = {
       ...query,
       ...(include_returns === 'true' ? {} : { $or: [{ is_returned: { $exists: false } }, { is_returned: false }] })
     };
-    const soldItems = await ExportHistory.find(finalQuery);
+    const soldItems = await ExportHistory.find(finalQuery).sort({ sold_date: -1, createdAt: -1 });
 
     const totalDevicesSold = soldItems.length;
     const totalRevenue = soldItems.reduce(
@@ -61,7 +63,7 @@ router.get('/bao-cao-loi-nhuan', async (req, res) => {
 // ==================== API: Báo cáo tài chính 7 chỉ tiêu ====================
 router.get('/financial-report/summary', async (req, res) => {
   try {
-    const { from, to, branch } = req.query;
+    const { from, to, branch, category } = req.query;
     if (!from || !to) {
       return res.status(400).json({ message: 'Thiếu khoảng thời gian' });
     }
@@ -71,6 +73,7 @@ router.get('/financial-report/summary', async (req, res) => {
 
     const exportQuery = { sold_date: { $gte: fromDate, $lt: toDate } };
     if (branch && branch !== 'all') exportQuery.branch = branch;
+    if (category && category !== 'all') exportQuery.category = category;
 
     const exports = await ExportHistory.find(exportQuery);
     const totalRevenue = exports.reduce((s, e) => s + (e.price_sell || 0) * (e.quantity || 1), 0);
@@ -118,8 +121,9 @@ router.get('/financial-report/summary', async (req, res) => {
     const cashItems = await Cashbook.find(cbQuery);
 
     // ✅ Chi phí chỉ tính những phiếu được tạo thủ công (không tính phiếu tự động) và có include_in_profit = true
+    // ❌ KHÔNG tính nhập hàng (related_type: 'nhap_hang') - nhập hàng là giá vốn, không phải chi phí ngoài
     const totalExpense = cashItems
-      .filter(i => i.type === 'chi' && i.is_auto === false && (i.include_in_profit !== false))
+      .filter(i => i.type === 'chi' && i.is_auto === false && (i.include_in_profit !== false) && i.related_type !== 'nhap_hang')
       .reduce((s, i) => s + (i.amount || 0), 0);
 
     const otherIncome = cashItems
@@ -157,7 +161,7 @@ router.get('/financial-report/summary', async (req, res) => {
 // ==================== API: Báo cáo chi tiết đơn hàng đã bán (lấy từ ExportHistory) ====================
 router.get('/bao-cao-don-hang-chi-tiet', async (req, res) => {
   try {
-    const { from, to, branch } = req.query;
+    const { from, to, branch, category } = req.query;
     if (!from || !to) {
       return res.status(400).json({ message: "❌ Thiếu tham số ngày" });
     }
@@ -171,6 +175,9 @@ router.get('/bao-cao-don-hang-chi-tiet', async (req, res) => {
     };
     if (branch && branch !== "all") {
       query.branch = branch;
+    }
+    if (category && category !== "all") {
+      query.category = category;
     }
 
     // Lấy từ ExportHistory để có cả phụ kiện và iPhone
@@ -823,7 +830,7 @@ router.post('/migrate-export-history', async (req, res) => {
 // ==================== API: Xuất Excel báo cáo tài chính ====================
 router.get('/export-excel', authenticateToken, requireReportAccess, async (req, res) => {
   try {
-    const { from, to, branch } = req.query;
+    const { from, to, branch, category } = req.query;
     if (!from || !to) {
       return res.status(400).json({ message: 'Thiếu khoảng thời gian' });
     }
@@ -833,8 +840,9 @@ router.get('/export-excel', authenticateToken, requireReportAccess, async (req, 
 
     const exportQuery = { sold_date: { $gte: fromDate, $lt: toDate } };
     if (branch && branch !== 'all') exportQuery.branch = branch;
+    if (category && category !== 'all') exportQuery.category = category;
 
-    const exports = await ExportHistory.find(exportQuery);
+    const exports = await ExportHistory.find(exportQuery).sort({ sold_date: -1, createdAt: -1 });
     const totalRevenue = exports.reduce((s, e) => s + (e.price_sell || 0) * (e.quantity || 1), 0);
     const totalCostRaw = exports.reduce((s, e) => s + (e.price_import || 0) * (e.quantity || 1), 0);
 
@@ -876,8 +884,10 @@ router.get('/export-excel', authenticateToken, requireReportAccess, async (req, 
     if (branch && branch !== 'all') cbQuery.branch = branch;
     const cashItems = await Cashbook.find(cbQuery);
 
+    // ✅ Chi phí chỉ tính những phiếu được tạo thủ công (không tính phiếu tự động) và có include_in_profit = true
+    // ❌ KHÔNG tính nhập hàng (related_type: 'nhap_hang') - nhập hàng là giá vốn, không phải chi phí ngoài
     const totalExpense = cashItems
-      .filter(i => i.type === 'chi' && i.is_auto === false && (i.include_in_profit !== false))
+      .filter(i => i.type === 'chi' && i.is_auto === false && (i.include_in_profit !== false) && i.related_type !== 'nhap_hang')
       .reduce((s, i) => s + (i.amount || 0), 0);
 
     const otherIncome = cashItems
