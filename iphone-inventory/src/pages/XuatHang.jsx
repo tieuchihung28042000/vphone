@@ -195,11 +195,23 @@ function XuatHang() {
     };
   };
 
+  // ✅ Helper function để đảm bảo API URL luôn đi qua nginx proxy
+  // Khi VITE_API_URL rỗng, dùng relative path để nginx proxy đến backend
+  const getApiUrl = (endpoint) => {
+    const apiBase = import.meta.env.VITE_API_URL || '';
+    // Nếu có VITE_API_URL thì dùng, nếu không thì dùng relative path (đi qua nginx)
+    if (apiBase) {
+      return `${apiBase.replace(/\/+$/, '')}${endpoint.startsWith('/') ? endpoint : '/' + endpoint}`;
+    }
+    // Relative path sẽ được browser resolve thành current origin + endpoint
+    return endpoint.startsWith('/') ? endpoint : '/' + endpoint;
+  };
+
   // API functions
   const fetchAvailableItems = async () => {
     try {
-      // ✅ Sửa: Gọi API tồn kho (sử dụng VITE_API_URL)
-      const res = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/ton-kho`, {
+      // ✅ Sửa: Gọi API tồn kho (sử dụng getApiUrl)
+      const res = await fetch(getApiUrl('/api/ton-kho'), {
         headers: getAuthHeaders()
       });
 
@@ -231,8 +243,8 @@ function XuatHang() {
     try {
       const token = localStorage.getItem('token') || sessionStorage.getItem('token');
       const branchParam = formData.branch ? `&branch=${formData.branch}` : '';
-      const res = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/inventory?limit=1000${branchParam}`, {
-        headers: token ? { 'Authorization': `Bearer ${token}` } : {}
+      const res = await fetch(`${getApiUrl('/api/inventory')}?limit=1000${branchParam}`, {
+        headers: token ? { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' } : { 'Content-Type': 'application/json' }
       });
       const data = await res.json();
       if (res.ok) {
@@ -248,7 +260,7 @@ function XuatHang() {
 
   const fetchSoldItems = async () => {
     try {
-      const res = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/xuat-hang-list`, {
+      const res = await fetch(getApiUrl('/api/xuat-hang-list'), {
         headers: getAuthHeaders()
       });
 
@@ -273,7 +285,7 @@ function XuatHang() {
 
   const fetchBranches = async () => {
     try {
-      const res = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/branches`, {
+      const res = await fetch(getApiUrl('/api/branches'), {
         headers: getAuthHeaders()
       });
       const data = await res.json();
@@ -285,7 +297,7 @@ function XuatHang() {
 
   const fetchCategories = async () => {
     try {
-      const res = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/categories`, {
+      const res = await fetch(getApiUrl('/api/categories'), {
         headers: getAuthHeaders()
       });
       const data = await res.json();
@@ -364,7 +376,9 @@ function XuatHang() {
     try {
       // ✅ Thêm timestamp để tránh cache
       const timestamp = Date.now();
-      const res = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/ton-kho?t=${timestamp}`);
+      const res = await fetch(`${getApiUrl('/api/ton-kho')}?t=${timestamp}`, {
+        headers: getAuthHeaders()
+      });
       const data = await res.json();
       const lowerQuery = query.trim().toLowerCase();
 
@@ -1269,7 +1283,9 @@ function XuatHang() {
       setBatchSuggest([]); setShowBatchSuggest(false); return;
     }
     try {
-      const res = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/ton-kho?t=${Date.now()}`);
+      const res = await fetch(`${getApiUrl('/api/ton-kho')}?t=${Date.now()}`, {
+        headers: getAuthHeaders()
+      });
       const data = await res.json();
       const lower = query.toLowerCase();
       const filtered = (data.items || []).filter(it =>

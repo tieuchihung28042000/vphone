@@ -6,7 +6,7 @@ import ResetMatKhau from "./pages/ResetMatKhau";
 import NhapHang from "./pages/NhapHang";
 import XuatHang from "./pages/XuatHang";
 import TonKhoSoLuong from "./pages/TonKhoSoLuong";
-import BaoCao from "./pages/BaoCao";
+import BaoCao from "./BaoCao";
 import PrivateRoute from "./components/PrivateRoute";
 import CongNo from "./pages/CongNo";
 import Cashbook from "./pages/Cashbook";

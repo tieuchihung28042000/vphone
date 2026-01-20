@@ -21,6 +21,7 @@ function TonKhoSoLuong() {
   const [categoryFilter, setCategoryFilter] = useState("all");
   const [categories, setCategories] = useState([]);
   const [selectedSKU, setSelectedSKU] = useState(null);
+  const [selectedRow, setSelectedRow] = useState(null); // ✅ Lưu row hiện tại để có thể retry
   const [imeiList, setImeiList] = useState([]);
   const [imeiDetails, setImeiDetails] = useState([]);
   const [showLowStockOnly, setShowLowStockOnly] = useState(false);
@@ -229,20 +230,62 @@ function TonKhoSoLuong() {
 
   const handleShowIMEI = async (row) => {
     setSelectedSKU(row.sku);
-    setImeiList(row.imeis);
+    setSelectedRow(row); // ✅ Lưu row để có thể retry
+    setImeiList([]);
     setImeiDetails([]); // ✅ Reset data trước khi load
 
-    // ✅ Thêm loading state để hiển thị spinner
-    if (row.imeis.length === 0) {
-      console.warn('⚠️ Không có IMEI nào để hiển thị');
-      return;
-    }
-
-    // Fetch detailed info for each IMEI
     try {
-      console.log('🔍 Fetching details for IMEIs:', row.imeis); // Debug
+      // ✅ Fetch lại danh sách IMEI từ API để đảm bảo đầy đủ và chính xác
+      console.log('🔍 Fetching IMEIs for:', row.sku, row.tenSanPham, row.branch, row.category, row.importMonth);
+      
+      const res = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/report/ton-kho`, {
+        headers: getAuthHeaders()
+      });
+      
+      if (!res.ok) {
+        throw new Error('Failed to fetch IMEI list');
+      }
+      
+      const data = await res.json();
+      
+      // ✅ Filter IMEIs theo đúng tiêu chí của row (SKU + tên + category + branch + importMonth)
+      const importDate = row.importMonth && row.importMonth !== 'Không rõ' 
+        ? new Date(row.importMonth + '-01') 
+        : null;
+      const importMonth = row.importMonth || 'Không rõ';
+      
+      const filteredImeis = (data.items || []).filter(item => {
+        const itemImportDate = item.import_date ? new Date(item.import_date) : null;
+        const itemImportMonth = itemImportDate && !isNaN(itemImportDate)
+          ? `${itemImportDate.getFullYear()}-${String(itemImportDate.getMonth() + 1).padStart(2, "0")}`
+          : "Không rõ";
+        
+        return item.imei && 
+               item.sku === row.sku &&
+               (item.product_name || item.tenSanPham) === row.tenSanPham &&
+               (item.category || '') === (row.category || '') &&
+               (item.branch || '') === (row.branch || '') &&
+               itemImportMonth === importMonth &&
+               item.status === 'in_stock'; // Chỉ lấy IMEI còn tồn kho
+      });
+      
+      const imeiList = filteredImeis.map(item => item.imei).filter(Boolean);
+      
+      if (imeiList.length === 0) {
+        console.warn('⚠️ Không có IMEI nào để hiển thị');
+        setImeiList([]);
+        setImeiDetails([{
+          error: true,
+          message: 'Không tìm thấy IMEI nào cho sản phẩm này.'
+        }]);
+        return;
+      }
+      
+      setImeiList(imeiList);
+      console.log('✅ Found IMEIs:', imeiList.length, imeiList);
 
-      const imeiDetailsPromises = row.imeis.map(async (imei) => {
+      // Fetch detailed info for each IMEI
+      const imeiDetailsPromises = imeiList.map(async (imei) => {
         try {
           const res = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/imei-detail/${imei}`, {
             headers: getAuthHeaders()
@@ -379,18 +422,26 @@ function TonKhoSoLuong() {
     {
       header: "Thao tác",
       key: "actions",
-      render: (row) => (
-        <div className="flex gap-2">
-          {row.imeis.length > 0 && (
-            <button
-              onClick={() => handleShowIMEI(row)}
-              className="btn-action-edit text-xs"
-            >
-              📱 IMEI ({row.imeis.length})
-            </button>
-          )}
-        </div>
-      )
+      render: (row) => {
+        // ✅ Hiển thị số IMEI dựa trên totalRemain (khớp với tổng nhập - đã bán)
+        // Với sản phẩm có IMEI: totalRemain = số lượng IMEI còn tồn kho
+        // Với phụ kiện: không hiển thị nút IMEI
+        const hasImei = row.imeis && row.imeis.length > 0;
+        const imeiCount = hasImei ? row.totalRemain : 0;
+        
+        return (
+          <div className="flex gap-2">
+            {hasImei && imeiCount > 0 && (
+              <button
+                onClick={() => handleShowIMEI(row)}
+                className="btn-action-edit text-xs"
+              >
+                📱 IMEI ({imeiCount})
+              </button>
+            )}
+          </div>
+        );
+      }
     }
   ];
 
@@ -564,7 +615,12 @@ function TonKhoSoLuong() {
                 <p className="text-red-600 font-semibold mb-2">Lỗi tải dữ liệu</p>
                 <p className="text-gray-600 mb-4">{imeiDetails[0].message}</p>
                 <button
-                  onClick={() => handleShowIMEI({ sku: selectedSKU, imeis: imeiList })}
+                  onClick={() => {
+                    // ✅ Dùng lại row đã lưu để retry
+                    if (selectedRow) {
+                      handleShowIMEI(selectedRow);
+                    }
+                  }}
                   className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition-all"
                 >
                   🔄 Thử lại
@@ -666,6 +722,7 @@ function TonKhoSoLuong() {
               <button
                 onClick={() => {
                   setSelectedSKU(null);
+                  setSelectedRow(null); // ✅ Reset row khi đóng
                   setImeiList([]);
                   setImeiDetails([]);
                 }}
